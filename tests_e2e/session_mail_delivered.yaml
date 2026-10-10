@@ -1,0 +1,94 @@
+name: Чат — доставленное письмо показано доставленным
+description: >
+  Страница «Логи → Сессии», вкладка «Чат» (/admin/session). Письмо, которое
+  DatingAi реально отправил человеку, отмечается у нас вызовом
+  /chat/message/delivered — он ставит companion_session.delivered_at, и лента
+  рисует чип «✓ доставлено». Случай стережёт, что под отбором «Доставлен»
+  показано ровно доставленное: ни одного чипа «⏳ не доставлено» среди обменов
+  канала mail. Расхождение значит, что отметка и её показ разошлись, — а
+  увидеть это иначе нечем: ошибки при этом нет ни одной.
+
+page: /admin/session
+widths: [1440]
+
+steps:
+  # Вкладка «Чат»: страница открывается на «Агентах», и без этого шага
+  # проверялась бы не та половина.
+  - click: '.page-tab[data-tab="chat"]'
+
+  # ⚠⚠ Ждём КОНЕЦ первой загрузки, а не «список непустой». Список приходит
+  # запросом, и до ответа в нём лежит единственный вариант «Загрузка...» —
+  # условие «вариантов больше нуля» истинно мгновенно, на заглушке.
+  - wait_for: |
+      const opts = [...document.querySelectorAll('#chatSessionSelect option')];
+      return opts.length > 0 && !opts.some(o => o.textContent.includes('Загрузка'));
+    timeout: 20000
+
+  # Канал и отбор. Щелчок по `<select>` значения не меняет — поэтому `set`.
+  - set: '#chatSessionKind'
+    value: mail
+  - set: '#chatSessionDelivered'
+    value: 'yes'
+
+  # ⚠ После смены отбора список перезагружается, и выбор в нём надо делать
+  # ПОСЛЕ прихода новых строк: сделай раньше — пришедший список затрёт выбор,
+  # а лента останется от прежнего отбора.
+  - wait_for: |
+      const opts = [...document.querySelectorAll('#chatSessionSelect option')];
+      return opts.length > 0 && !opts.some(o => o.textContent.includes('Загрузка'));
+    timeout: 20000
+
+  # Первый разговор из отобранных. По счёту, а не по значению: в `value` лежит
+  # номер строки собеседника, и в случае его знать неоткуда.
+  - set: '#chatSessionSelect'
+    index: 0
+
+  # ⚠ Признак готовой ленты — ИСЧЕЗЛА «Загрузка...», а не «есть узлы»:
+  # заглушка загрузки сама лежит в потоке одним узлом.
+  - wait_for: |
+      const box = document.querySelector('#chatSessionStream');
+      return box && box.children.length > 0 && !box.innerText.includes('Загрузка');
+    timeout: 25000
+
+areas:
+  - name: Отбор доставки
+    selector: '#chatSessionDelivered'
+    rules: [visible, inside]
+
+  - name: Список разговоров
+    selector: '#chatSessionSelect'
+    rules: [visible, inside, filled]
+
+  - name: Лента обменов
+    selector: '#chatSessionStream'
+    rules: [visible, inside, filled]
+
+checks:
+  # Главное утверждение случая. Отбор говорит «Доставлен» — значит каждый
+  # показанный обмен с нашим ответом обязан нести чип доставки. Хоть один
+  # «⏳ не доставлено» здесь значит, что отбор и показ разошлись.
+  - name: обменов «не доставлено» под отбором «Доставлен»
+    expect: 0
+    js: |
+      return document.querySelectorAll(
+        '#chatSessionStream .chip-undelivered').length;
+
+  # ⚠⚠ Защита от ложной зелени. Пустая лента даёт ноль недоставленных — то
+  # есть проверка выше зеленеет на странице, где не проверено НИЧЕГО. Считаем
+  # это провалом явно: «ожидали 0, получили 1» читается как «лента пуста».
+  - name: лента пуста, проверять было нечего (1 — пуста)
+    expect: 0
+    js: |
+      return document.querySelectorAll(
+        '#chatSessionStream .chip-delivered').length > 0 ? 0 : 1;
+
+  # Канал обменов — тот, про который случай. Отбор по каналу мог перестать
+  # действовать, и тогда проверка выше мерила бы чат, а не почту.
+  - name: обменов не почтового канала в ленте
+    expect: 0
+    js: |
+      const all = document.querySelectorAll(
+        '#chatSessionStream .chip-channel').length;
+      const mail = document.querySelectorAll(
+        '#chatSessionStream .chip-channel-mail').length;
+      return all - mail;
