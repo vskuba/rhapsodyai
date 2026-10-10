@@ -381,7 +381,7 @@ class TestThePhotoBranchAnswersInCommon:
     """
 
     async def test_it_returns_through_the_common_answer(self, talk, llm_answers):
-        await llm_answers(talk_plan(topic='photo_mail'), default=photo_answer())
+        await llm_answers(talk_plan(), default=photo_answer())
 
         got = await talk("Can you send me your photos? I'd love to see more of you")
 

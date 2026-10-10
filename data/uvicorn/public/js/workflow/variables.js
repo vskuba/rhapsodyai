@@ -9,7 +9,7 @@ import {stepVariables, groupWorkflowVariables, variableGroupIndex,
     workflowVariableSections, VAR_ID_TOOL, VAR_ID_DYNAMIC,
     VAR_ID_UNDEFINED} from './variable-group.js';
 import {hiddenNamesFor, invalidateUndefinedIndex} from './variable-undefined.js';
-import {branchRoadIs} from './branch-roads.js';
+import {topicRoadIs} from './topic-roads.js';
 
 /**
  * Разбивка переменных по группам для **открытого в редакторе** workflow.
@@ -24,7 +24,7 @@ export function editorVariableGroups(variables) {
     return groupWorkflowVariables(variables, state.allCurrentStepsData,
                                   state.allWorkflows, state.allAvailableTools,
                                   hiddenNamesFor(editorWorkflowId()),
-                                  branchRoadIs(editorWorkflowId()));
+                                  topicRoadIs(editorWorkflowId()));
 }
 
 /**
@@ -38,7 +38,7 @@ export function editorVariableGroupIndex() {
     return variableGroupIndex(state.allCurrentVariables || [], state.allCurrentStepsData,
                               state.allWorkflows, state.allAvailableTools,
                               hiddenNamesFor(editorWorkflowId()),
-                              branchRoadIs(editorWorkflowId()));
+                              topicRoadIs(editorWorkflowId()));
 }
 
 /**

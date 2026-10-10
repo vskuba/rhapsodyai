@@ -884,63 +884,66 @@ export function renderCustomStepFields(step, metadata) {
             wfContainer.appendChild(repeatContainer);
             fieldWrapper.appendChild(wfContainer);
 
-        } else if (field.type === 'widget_branch') {
-            // --- Виджет ветки разговора ---
+        } else if (field.type === 'widget_topic_action') {
+            // --- Виджет «Тема и действие» ---
             //
-            // Ветка выбирается статически: только так редактор покажет её
-            // контракт, а граф сумеет нарисовать стрелку к subflow.
+            // ⚠⚠ Шагу называют **переменную с историей**, а не с метками:
+            // метки не называет модель, их ищет код прямо в тексте разговора.
             //
-            // ## ⚠⚠ Подпоток выбирается ЗДЕСЬ, рядом с картами
-            //
-            // Прежде он жил у ветки, на вкладке Branch, и настройка вызова была
-            // разорвана пополам: карты человек правит тут, а кого они вызывают —
-            // выбирал на другой вкладке. Карты принадлежат паре «шаг +
-            // подпоток»: имена в них — переменные конкретного подпотока, и
-            // смена дороги из другого места оставляла карты от прежней молча.
-            //
-            // ⚠ Отбор списка — тот же, что у `workflow_invoke`: только
-            // `subflow = 1`. Обычный workflow дорогой ветки быть не может — его
-            // зовут запросом к агенту, а шаг `branch` ждёт возврата родителю.
-            const branchContainer = document.createElement('div');
-            branchContainer.id = `field_${field.key}`;
-            branchContainer.style = "display: flex; flex-direction: column; gap: 12px; "
+            // ⚠⚠ Подпоток ОБЯЗАТЕЛЕН. Прежняя «ветка» умела обходиться без
+            // него, кладя `topic_*` в переменные родителя; здесь тем может
+            // подняться несколько, и тот приём означал бы «побеждает
+            // последняя» — инструкции первой темы молча затёрлись бы второй.
+            const taContainer = document.createElement('div');
+            taContainer.id = `field_${field.key}`;
+            taContainer.style = "display: flex; flex-direction: column; gap: 12px; "
                 + "background: #f8fafc; padding: 12px; border: 1px solid #e2e8f0; border-radius: 6px;";
 
-            // 1. Селект ветки
-            const branchSelect = document.createElement('select');
-            branchSelect.className = 'form-control branch-select';
-            branchSelect.style = "width: 100%; padding: 6px; font-size: 13px; height: 36px; font-weight: 500;";
-            branchSelect.innerHTML = '<option value="">-- Выберите ветку --</option>';
+            // 1. Группа тем
+            //
+            // ⚠ С подписью, как у двух полей ниже: без неё на кадре читается
+            // как недоделка — два поля названы, третье нет.
+            const taGroupRow = document.createElement('div');
+            taGroupRow.style = 'display: flex; flex-direction: column; gap: 4px;';
+            const taGroupLabel = document.createElement('div');
+            taGroupLabel.style = 'font-size: 12px; color: #475569;';
+            taGroupLabel.textContent = 'Группа тем (её темы проверяет этот шаг)';
+            const taGroupSelect = document.createElement('select');
+            taGroupSelect.className = 'form-control topic-action-group-select';
+            taGroupSelect.style = "width: 100%; padding: 6px; font-size: 13px; height: 36px; font-weight: 500;";
+            taGroupSelect.innerHTML = '<option value="">-- Выберите группу тем --</option>';
+            taGroupRow.append(taGroupLabel, taGroupSelect);
 
-            // 2. Переменная, в которой лежат метки от шага-развилки
-            const tagsRow = document.createElement('div');
-            tagsRow.style = 'display: flex; flex-direction: column; gap: 4px;';
-            const tagsLabel = document.createElement('div');
-            tagsLabel.style = 'font-size: 12px; color: #475569;';
-            tagsLabel.textContent = 'Переменная с метками (их называет шаг-развилка)';
-            const tagsSelect = document.createElement('select');
-            tagsSelect.className = 'form-control branch-tags-select';
-            tagsSelect.style = "padding: 6px; font-size: 13px; height: 36px;";
-            fillVariablesSelectOptions(tagsSelect, (currentValue && currentValue.tags) || '',
-                                       '-- переменная с метками --');
-            tagsRow.append(tagsLabel, tagsSelect);
+            // 2. Переменная с текстом разговора — то, в чём ищут метки
+            const taHistoryRow = document.createElement('div');
+            taHistoryRow.style = 'display: flex; flex-direction: column; gap: 4px;';
+            const taHistoryLabel = document.createElement('div');
+            taHistoryLabel.style = 'font-size: 12px; color: #475569;';
+            taHistoryLabel.textContent = 'Переменная с историей общения (в ней ищут метки)';
+            const taHistorySelect = document.createElement('select');
+            taHistorySelect.className = 'form-control topic-action-history-select';
+            taHistorySelect.style = "padding: 6px; font-size: 13px; height: 36px;";
+            fillVariablesSelectOptions(taHistorySelect,
+                                       (currentValue && currentValue.history) || '',
+                                       '-- переменная с историей --');
+            const taHistoryHint = document.createElement('div');
+            taHistoryHint.style = 'font-size: 12px; color: #64748b;';
+            taHistoryHint.textContent = 'Метки темы ищутся в этом тексте словом целиком. '
+                + 'Чем длиннее срез, тем дольше тема считается поднятой.';
+            taHistoryRow.append(taHistoryLabel, taHistorySelect, taHistoryHint);
 
-            // 2.5. Своя дорога: подпоток, которым отвечает тема этой ветки
-            const roadRow = document.createElement('div');
-            roadRow.style = 'display: flex; flex-direction: column; gap: 4px;';
-            const roadLabel = document.createElement('div');
-            roadLabel.style = 'font-size: 12px; color: #475569;';
-            roadLabel.textContent = 'Своя дорога (subflow)';
+            // 3. Подпоток: он задаёт вопросы и решает, поднята ли тема
+            const taRoadRow = document.createElement('div');
+            taRoadRow.style = 'display: flex; flex-direction: column; gap: 4px;';
+            const taRoadLabel = document.createElement('div');
+            taRoadLabel.style = 'font-size: 12px; color: #475569;';
+            taRoadLabel.textContent = 'Subflow вопросов (обязателен)';
 
-            const roadSelect = document.createElement('select');
-            roadSelect.className = 'form-control branch-road-select';
-            roadSelect.style = "padding: 6px; font-size: 13px; height: 36px;";
-            roadSelect.innerHTML =
-                '<option value="">— нет, ветка сужает общий ответ —</option>';
+            const taRoadSelect = document.createElement('select');
+            taRoadSelect.className = 'form-control topic-action-road-select';
+            taRoadSelect.style = "padding: 6px; font-size: 13px; height: 36px;";
+            taRoadSelect.innerHTML = '<option value="">-- выберите subflow --</option>';
 
-            // ⚠ Подпоток заводится человеком заранее, на странице Workflow:
-            // кнопки «создать» здесь нет и у ветки больше нет. Порядок прямой —
-            // сперва завести дорогу, потом выбрать её в шаге.
             (state.allWorkflows || [])
                 .filter(wf => Number(wf.subflow) === 1
                               && String(wf.id) !== String(editorWorkflowId()))
@@ -951,152 +954,135 @@ export function renderCustomStepFields(step, metadata) {
                     if (currentValue && String(currentValue.workflow_id) === String(wf.id)) {
                         option.selected = true;
                     }
-                    roadSelect.appendChild(option);
+                    taRoadSelect.appendChild(option);
                 });
 
-            // Ссылка на выбранную дорогу — чтобы править её шаги не через поиск.
-            // ⚠ Переход событием, а не вызовом `main.js`: импортировать его
-            // отсюда нельзя, замкнётся круг. Тем же приёмом ходит соседний
-            // `workflow_invoke`.
-            const roadLink = document.createElement('a');
-            roadLink.style = "display: none; align-self: flex-start; font-size: 12px; "
+            // Ссылка на выбранный подпоток — правка его шагов без поиска.
+            // ⚠ Переход событием, а не вызовом `main.js`: импорт отсюда замкнул
+            // бы круг. Тем же приёмом ходят соседи.
+            const taRoadLink = document.createElement('a');
+            taRoadLink.style = "display: none; align-self: flex-start; font-size: 12px; "
                 + "font-weight: 600; color: #3e8ee3; text-decoration: none;";
-            roadLink.onclick = (e) => {
+            taRoadLink.onclick = (e) => {
                 if (e.ctrlKey || e.metaKey) return;
                 e.preventDefault();
                 document.dispatchEvent(new CustomEvent('workflow:open',
-                    {detail: {workflowId: roadSelect.value}}));
+                    {detail: {workflowId: taRoadSelect.value}}));
             };
 
-            const roadLinkUpdate = () => {
+            const taRoadLinkUpdate = () => {
                 const wf = (state.allWorkflows || [])
-                    .find(w => String(w.id) === String(roadSelect.value));
+                    .find(w => String(w.id) === String(taRoadSelect.value));
                 if (!wf) {
-                    roadLink.style.display = 'none';
+                    taRoadLink.style.display = 'none';
                     return;
                 }
-                roadLink.textContent = `🔗 Перейти в '${wf.title || wf.name}'`;
-                roadLink.href = `/admin/workflow?workflow_id=${wf.id}`;
-                roadLink.style.display = 'inline-flex';
+                taRoadLink.textContent = `🔗 Перейти в '${wf.title || wf.name}'`;
+                taRoadLink.href = `/admin/workflow?workflow_id=${wf.id}`;
+                taRoadLink.style.display = 'inline-flex';
             };
 
-            roadRow.append(roadLabel, roadSelect, roadLink);
+            taRoadRow.append(taRoadLabel, taRoadSelect, taRoadLink);
 
-            // 3. Пять `topic_*` — показываем, но не даём править
+            // 4. Что приедет в подпоток само
             //
-            // ⚠⚠ Карты для них нет намеренно: с ней один забытый маппинг
-            // выключал бы тему молча — ветка отработала, промпт собрался,
-            // инструкций в нём нет. Отказ не виден ни в журнале, ни в ответе.
-            const topicNote = document.createElement('div');
-            topicNote.style = "font-size: 12px; color: #64748b; background: #f1f5f9; "
+            // ⚠⚠ Карты для этих имён нет намеренно: с ней один забытый маппинг
+            // выключал бы тему молча — шаг отработал, промпт собрался,
+            // инструкций в нём нет.
+            const taNote = document.createElement('div');
+            taNote.style = "font-size: 12px; color: #64748b; background: #f1f5f9; "
                 + "padding: 8px 10px; border-radius: 4px; line-height: 1.5;";
-            topicNote.innerHTML = 'Из темы приедут сами, настраивать нечего:<br>'
-                + '<code style="color:#475569">topic_name, topic_title, topic_tags, '
-                + 'topic_instructions, topic_score</code>';
+            taNote.innerHTML = 'Приедут в subflow сами, настраивать нечего:<br>'
+                + '<code style="color:#475569">topic_action_name, topic_action_title, '
+                + 'topic_action_tags, topic_action_tags_found, topic_action_instructions, '
+                + 'topic_action_questions, topic_action_questions_qty, '
+                + 'topic_action_questions_qty_yes_accept</code>';
 
-            // 4. Карты вызова — те же, что у `workflow_invoke`
-            const branchMaps = document.createElement('div');
-            branchMaps.style = 'display: flex; flex-direction: column; gap: 6px;';
+            // 5. Карты вызова — те же, что у соседей
+            const taMaps = document.createElement('div');
+            taMaps.style = 'display: flex; flex-direction: column; gap: 6px;';
 
-            const branchHint = document.createElement('div');
-            branchHint.style = 'font-size: 12px; color: #64748b;';
+            const taHint = document.createElement('div');
+            taHint.style = 'font-size: 12px; color: #64748b;';
 
-            const collectBranchData = () => {
-                const maps = subflowMapsCollect(branchMaps);
+            const collectTopicActionData = () => {
+                const maps = subflowMapsCollect(taMaps);
                 const payload = {
-                    branch_id: branchSelect.value ? parseInt(branchSelect.value) : null,
-                    tags: tagsSelect.value,
+                    topic_group_id: taGroupSelect.value ? parseInt(taGroupSelect.value) : null,
+                    history: taHistorySelect.value,
                     inputs_map: maps.inputs_map,
                     outputs_map: maps.outputs_map,
                 };
-
-                // ⚠ Без дороги ключа нет вовсе, а не `null`: движок читает
-                // `branch_meta.get('workflow_id')`, и отсутствие отвечает тем же
-                // — зато в метаданных не остаётся следа от снятого выбора.
-                if (roadSelect.value) payload.workflow_id = parseInt(roadSelect.value);
-
+                if (taRoadSelect.value) payload.workflow_id = parseInt(taRoadSelect.value);
                 saveChanges(payload);
             };
 
-            const renderBranchMaps = renderSubflowMaps(branchMaps, step.id, () => {
-                collectBranchData();
+            const renderTopicActionMaps = renderSubflowMaps(taMaps, step.id, () => {
+                collectTopicActionData();
                 document.dispatchEvent(new CustomEvent('workflow:step-dirty'));
             });
 
-            let branchRows = [];
+            let taGroupRows = [];
 
-            // Что показывать под селектами. Дорогу спрашиваем у ШАГА, порог — у
-            // ветки: он общий для всех её шагов и живёт в реестре.
-            const branchApply = async (saved) => {
-                const branch = branchRows.find(b => String(b.id) === String(branchSelect.value));
-                const road = roadSelect.value;
+            const topicActionApply = async (saved) => {
+                const group = taGroupRows.find(
+                    g => String(g.id) === String(taGroupSelect.value));
+                const road = taRoadSelect.value;
 
-                roadLinkUpdate();
-                branchMaps.style.display = road ? 'flex' : 'none';
+                taRoadLinkUpdate();
+                taMaps.style.display = road ? 'flex' : 'none';
 
-                const threshold = branch ? ` (порог совпадений ${branch.match_min})` : '';
-
-                if (road) {
-                    branchHint.textContent =
-                        `Своя дорога: тема этой ветки отвечает подпотоком${threshold}.`;
-                    await renderBranchMaps(road, saved);
-                } else if (branch) {
-                    branchHint.textContent = 'Ветка сужает общий ответ: критерии темы приедут '
-                        + `метками в промпт генерации${threshold}.`;
+                // ⚠ Отсутствие подпотока — это отказ движка на прогоне, а не
+                // мелочь оформления: говорим об этом в самой подсказке, пока
+                // человек ещё в редакторе.
+                if (!road) {
+                    taHint.textContent = 'Без subflow шаг упадёт: вопросы темы задаёт он. '
+                        + 'Заведите подпоток на странице Workflow и выберите его здесь.';
+                } else if (group) {
+                    taHint.textContent = `Темы группы «${group.title}» проверяются по меткам, `
+                        + 'затем — вопросами в subflow. Поднятых тем может быть несколько: '
+                        + 'инструкции накапливайте картами вызова.';
                 } else {
-                    branchHint.textContent = '';
+                    taHint.textContent = '';
                 }
+                if (road) await renderTopicActionMaps(road, saved);
             };
 
-            // Ветки берутся у ноды текущего workflow
-            const branchNodeId = (state.allWorkflows || [])
+            const taNodeId = (state.allWorkflows || [])
                 .find(w => String(w.id) === String(editorWorkflowId()))?.node_id;
 
-            if (branchNodeId) {
-                fetch(`/workflow_branch/list?node_id=${branchNodeId}`)
+            if (taNodeId) {
+                fetch(`/workflow_topic/list?node_id=${taNodeId}`)
                     .then(response => response.json())
                     .then(async (body) => {
-                        branchRows = body.result || [];
-                        branchRows.forEach(branch => {
+                        taGroupRows = body.result || [];
+                        taGroupRows.forEach(group => {
                             const option = document.createElement('option');
-                            option.value = branch.id;
-                            // ⚠ Значка дороги в этой строке больше нет: дорога
-                            // теперь у шага, а не у ветки, и одна и та же ветка
-                            // в соседних шагах может идти разными путями.
-                            option.textContent = `${branch.title} (${branch.topic_count})`;
-                            if (currentValue && String(currentValue.branch_id) === String(branch.id)) {
+                            option.value = group.id;
+                            option.textContent = `${group.title} (${group.topic_count})`;
+                            if (currentValue
+                                && String(currentValue.topic_group_id) === String(group.id)) {
                                 option.selected = true;
                             }
-                            branchSelect.appendChild(option);
+                            taGroupSelect.appendChild(option);
                         });
-                        await branchApply(currentValue);
+                        await topicActionApply(currentValue);
                     })
                     .catch(() => {
-                        branchHint.textContent = 'Список веток не загрузился — вкладка Branch';
+                        taHint.textContent = 'Не удалось загрузить группы тем этой ноды';
                     });
             }
 
-            branchSelect.onchange = async () => {
-                await branchApply(null);
-                collectBranchData();
-                document.dispatchEvent(new CustomEvent('workflow:step-dirty'));
-            };
-            // ⚠⚠ Сменили дорогу — карты рисуются ПУСТЫМИ (`branchApply(null)`):
-            // прежние пары называли переменные другого подпотока, и перенеси мы
-            // их, в метаданных осталась бы карта в никуда. Тот же довод, что у
-            // соседнего `workflow_invoke`.
-            roadSelect.onchange = async () => {
-                await branchApply(null);
-                collectBranchData();
-                document.dispatchEvent(new CustomEvent('workflow:step-dirty'));
-            };
-            tagsSelect.onchange = () => {
-                collectBranchData();
-                document.dispatchEvent(new CustomEvent('workflow:step-dirty'));
-            };
+            [taGroupSelect, taHistorySelect, taRoadSelect].forEach(control => {
+                control.onchange = async () => {
+                    await topicActionApply(null);
+                    collectTopicActionData();
+                    document.dispatchEvent(new CustomEvent('workflow:step-dirty'));
+                };
+            });
 
-            branchContainer.append(branchSelect, tagsRow, roadRow, topicNote, branchHint, branchMaps);
-            fieldWrapper.appendChild(branchContainer);
+            taContainer.append(taGroupRow, taHistoryRow, taRoadRow, taNote, taMaps, taHint);
+            fieldWrapper.appendChild(taContainer);
 
         } else if (field.type === 'widget_llm_to_image') {
             // --- Виджет настроек генерации изображения ---

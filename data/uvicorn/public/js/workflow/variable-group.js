@@ -47,29 +47,32 @@ export const VAR_GROUP_UNKNOWN = {key: 'unknown', icon: '∅', label: 'не об
 export const VAR_ID_TOOL = -2;
 export const VAR_ID_DYNAMIC = -3;
 export const VAR_ID_UNDEFINED = -4;
-export const VAR_ID_BRANCH = -5;
+export const VAR_ID_TOPIC = -5;
 
 /**
- * Пять значений, которые шаг `branch` кладёт подпотоку сам.
+ * Значения, которые шаг темы кладёт подпотоку сам.
  *
  * ⚠⚠ Записи в `agent_workflow_variable` у них нет и не будет: шаг протаскивает
  * их сквозь, как движок протаскивает `user_language`. Карты для них тоже нет —
  * с ней один забытый маппинг выключал бы тему молча. Но **увидеть** их в
- * подпотоке надо: без списка человек пишет `%topic_instructions%` вслепую и не
- * знает, ни что ещё приедет, ни как оно пишется.
+ * подпотоке надо: без списка человек пишет `%topic_action_instructions%`
+ * вслепую и не знает, ни что ещё приедет, ни как оно пишется.
  *
- * Устройство слоя — `.claude/docs/workflow_branch.md`.
+ * Устройство слоя — `.claude/docs/workflow_topic.md`.
  */
-export function branchTopicNames() {
-    return new Set(VAR_BRANCH_TOPIC.map(([name]) => name));
+export function topicActionNames() {
+    return new Set(VAR_TOPIC_ACTION.map(([name]) => name));
 }
 
-export const VAR_BRANCH_TOPIC = [
-    ['topic_name', 'код темы — он же виден в журнале прогона'],
-    ['topic_title', 'название темы'],
-    ['topic_tags', 'все метки темы через запятую'],
-    ['topic_instructions', 'инструкция темы: что делать, когда она поднята'],
-    ['topic_score', 'сколько меток совпало'],
+export const VAR_TOPIC_ACTION = [
+    ['topic_action_name', 'код темы — он же виден в журнале прогона'],
+    ['topic_action_title', 'название темы'],
+    ['topic_action_tags', 'все метки темы через запятую'],
+    ['topic_action_tags_found', 'какие метки нашлись в истории — через запятую'],
+    ['topic_action_instructions', 'инструкция темы: что делать, когда она поднята'],
+    ['topic_action_questions', 'вопросы темы нумерованным списком'],
+    ['topic_action_questions_qty', 'сколько вопросов у темы'],
+    ['topic_action_questions_qty_yes_accept', 'сколько ответов «yes» означают, что тема поднята'],
 ];
 
 // Приставка литерала в `inputs_map`: значение за ней — текст, а не имя переменной.
@@ -579,8 +582,8 @@ export function groupWorkflowVariables(variables, stepsData, workflows, tools, h
     // (`girl_fact_invent`, `companion_fact_extract`) этих значений не бывает, и
     // список из семи никому не нужных имён сбивал бы с толку.
     const branchGroup = isBranchRoad
-        ? VAR_BRANCH_TOPIC.map(([name, description]) => ({
-            id: VAR_ID_BRANCH, name, default: null, description,
+        ? VAR_TOPIC_ACTION.map(([name, description]) => ({
+            id: VAR_ID_TOPIC, name, default: null, description,
         }))
         : [];
     const branchNames = new Set(branchGroup.map(item => item.name));
@@ -746,7 +749,8 @@ export function workflowVariableSections(groups) {
         // ⚠ Значок тот же, что у типа шага `branch`: связь «эти значения кладёт
         // вон тот шаг» должна читаться без объяснений. Пустую секцию списки не
         // рисуют, поэтому у обычных подпотоков её не видно вовсе.
-        {key: 'branch', icon: '🌿', label: 'Branch переменные', items: groups.branchGroup || []},
+        {key: 'branch', icon: '🌿', label: 'Topic & Action переменные',
+         items: groups.branchGroup || []},
         // ⚠ Перед dynamic: «про то, что не заведено нигде» важнее для глаза, чем
         // «про то, что кладёт шаг», а пустую секцию списки не рисуют вовсе.
         {key: 'undefined', icon: '⚠️', label: 'Undefined переменные', items: groups.undefinedGroup || []},

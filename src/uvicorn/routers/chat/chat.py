@@ -8,7 +8,6 @@ from pydantic import BaseModel
 from fastapi import UploadFile, File
 
 from src.ai.ai_llm import ai_llm_node_get
-from src.ai.ai_workflow_branch import ai_workflow_branch_catalog
 from src.ai.ai_workflow import ai_workflow_load
 from src.ai.ai_workflow import ai_workflow_variables_render
 from src.ai.ai_workflow import ai_workflow_variables_input_get
@@ -133,17 +132,6 @@ async def chat_ask_ai(
         (await setting_value_get('languages', node_id or 0, 'ru'))['value']
     )
     workflow_variables_all.setdefault('node_languages', ','.join(node_languages))
-
-    # branch_topic_catalog — метки всех включённых тем ноды: из этого словаря
-    # шаг-развилка выбирает подходящие, своих не придумывая (`workflow_branch.md`).
-    #
-    # ⚠⚠ Кладётся ЗДЕСЬ, а не только в движке, потому что переменная объявлена
-    # глобальной, а контракт глобальной в этом проекте — «приезжает на входе»:
-    # проверка ниже требует её в маппинге и отвечает 400, если её нет. Тот же
-    # случай, что у `node_languages` строкой выше — глобальная, чьё значение
-    # требует запроса, и сборщик `ai_workflow_variables_base` синхронный.
-    workflow_variables_all.setdefault(
-        'branch_topic_catalog', await ai_workflow_branch_catalog(node_id or 0))
 
     # user_language — активный язык workflow: всегда выбор пользователя из личного кабинета,
     # а не настройка ноды. Нода лишь публикует СПИСОК поддерживаемых языков (node_languages) —

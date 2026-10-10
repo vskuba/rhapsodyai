@@ -68,10 +68,11 @@ export const WORKFLOW_STEP_CONFIG = {
             type: 'widget_workflow_invoke',
         }
     ],
-    'branch': [ // Ветка разговора: тема из реестра и её subflow
+    // Тема и действие: отсев тем по меткам в тексте истории, вопросы — в subflow.
+    'topic_action': [
         {
-            key: 'branch',
-            type: 'widget_branch',
+            key: 'topic_action',
+            type: 'widget_topic_action',
         }
     ],
     'llm_to_image': [ // Генерация изображения через LLM

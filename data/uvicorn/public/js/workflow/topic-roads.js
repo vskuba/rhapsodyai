@@ -7,7 +7,7 @@
  * шага, и граф читает её там же, где движок. Здесь отвечают на другое: **открытый
  * workflow — он чья-то дорога?** Ответ на это лежит в ЧУЖИХ шагах, в других
  * workflow той же ноды, которых страница не грузит; собрать его может только
- * сервер (`/workflow_branch/road/list`).
+ * сервер (`/workflow_topic/road/list`).
  *
  * Спрашивают двое, и оба про одно: список переменных — показывать ли группу
  * «🌿 Branch переменные», и сторож «Undefined» — снимать ли с `topic_*` красный.
@@ -30,14 +30,14 @@
 const roads = {nodeId: null, workflowIds: new Set()};
 
 /** Прочитать дороги ноды. Молчит при отказе: нет ответа — нет и дорог. */
-export async function branchRoadsLoad(nodeId) {
+export async function topicRoadsLoad(nodeId) {
     roads.nodeId = nodeId || null;
     roads.workflowIds = new Set();
 
     if (!nodeId) return;
 
     try {
-        const response = await fetch(`/workflow_branch/road/list?node_id=${nodeId}`);
+        const response = await fetch(`/workflow_topic/road/list?node_id=${nodeId}`);
         const body = await response.json();
         (body.result || []).forEach(id => roads.workflowIds.add(String(id)));
     } catch (e) {
@@ -46,6 +46,6 @@ export async function branchRoadsLoad(nodeId) {
 }
 
 /** Этот workflow — дорога какого-нибудь шага `branch`? */
-export function branchRoadIs(workflowId) {
+export function topicRoadIs(workflowId) {
     return roads.workflowIds.has(String(workflowId));
 }

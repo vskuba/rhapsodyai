@@ -43,7 +43,7 @@ from tests_llm.dating_talk.conftest import (FACTS_MAN,
                                             STEP_FACTS_MAN,
                                             STEP_FACTS_PLAIN,
                                             STEP_FACTS_TAGS,
-                                            STEP_TOPIC, facts_girl_for,
+                                            facts_girl_for,
                                             photo_answer, talk_plan)
 
 pytestmark = pytest.mark.llm
@@ -107,20 +107,29 @@ class TestTheJudgeDecidesTheEnding:
 
 
 class TestTheTopicSendsToTheBranch:
-    """⚠ Тема разговора уводит в ветку «письма и фото» — и это тоже решение
-    модели, которое живым прогоном по заказу не воспроизвести."""
+    """Тему поднимают **слова собеседника**, а не отдельный шаг-развилка.
+
+    ## ⚠⚠ Шага «Тема разговора» больше нет, и это не упрощение теста
+
+    Он звал модель на каждом ответе и клал `talk_tags`, которые после перехода
+    на `topic_action` не читал никто: шаг темы ищет метки в тексте сам. Здесь
+    проверяется то, что осталось, — что реплика с метками доводит до шага темы,
+    а реплика без них не доводит.
+
+    ⚠ «Поднялась ли тема» этими тестами **не** проверяется: за порогом меток
+    стоят вопросы, и ответ на них даёт модель. Проверяется маршрут.
+    """
 
     async def test_a_photo_topic_takes_the_branch(self, talk, llm_answers):
-        await llm_answers(talk_plan(topic='photo_mail'),
-                          # ⚠ Умолчание нужно ветке письма-фото: у её подпрогона
-                          # свои шаги, и заготовка обычного захода их не знает.
+        await llm_answers(talk_plan(),
+                          # ⚠ Умолчание нужно подпотоку темы: у него свои шаги,
+                          # и заготовка обычного захода их не знает.
                           default=photo_answer())
 
         got = await talk('Can you send me your photos?')
 
-        assert got.ran(STEP_TOPIC), f'шаг темы не отработал.{got}'
         assert got.ran(STEP_BRANCH), \
-            f'тема photo_mail не увела в ветку письма-фото.{got}'
+            f'реплика с метками не дошла до шага темы.{got}'
 
     async def test_a_usual_topic_stays_in_chat(self, talk, llm_answers):
         await llm_answers(talk_plan())
@@ -128,8 +137,6 @@ class TestTheTopicSendsToTheBranch:
         got = await talk('Tell me about your weekend')
 
         assert got.ran(STEP_CHAT), f'ветка чата не отработала.{got}'
-        assert not got.ran(STEP_BRANCH), \
-            f'обычная тема ушла в ветку письма-фото.{got}'
 
 
 class TestWhatThePanelAlwaysSendsArrives:

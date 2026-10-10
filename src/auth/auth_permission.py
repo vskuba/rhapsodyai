@@ -33,10 +33,10 @@ class AuthPermission(str, Enum):
     WORKFLOW_VARIABLE_DELETE = "workflow_variable:delete"
 
     # Ветки разговора и темы внутри них — вкладка «Branch»
-    WORKFLOW_BRANCH_VIEW = "workflow_branch:view"
-    WORKFLOW_BRANCH_CREATE = "workflow_branch:create"
-    WORKFLOW_BRANCH_UPDATE = "workflow_branch:update"
-    WORKFLOW_BRANCH_DELETE = "workflow_branch:delete"
+    WORKFLOW_TOPIC_VIEW = "workflow_topic:view"
+    WORKFLOW_TOPIC_CREATE = "workflow_topic:create"
+    WORKFLOW_TOPIC_UPDATE = "workflow_topic:update"
+    WORKFLOW_TOPIC_DELETE = "workflow_topic:delete"
 
     # Workflow trace permissions
     WORKFLOW_TRACE_VIEW = "workflow_trace:view"

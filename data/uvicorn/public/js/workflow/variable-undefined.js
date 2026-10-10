@@ -13,8 +13,8 @@
 // пакета, который мог быть скачан до правки шага.
 
 import {getData} from '../api.js';
-import {branchTopicNames, undefinedVariables} from './variable-group.js';
-import {branchRoadIs} from './branch-roads.js';
+import {topicActionNames, undefinedVariables} from './variable-group.js';
+import {topicRoadIs} from './topic-roads.js';
 import {state} from './state.js';
 import {editorWorkflowId} from './utils.js';
 
@@ -159,14 +159,14 @@ function _workflowUndefinedEntriesSync(workflowId) {
 
     // ⚠⚠ У подпотока, который и есть дорога ветки, `topic_*` — не
     // «неопределённые»: записи в реестре у них нет по устройству, а значение
-    // приедет от шага `branch` (`workflow_branch.md`).
+    // приедет от шага `branch` (`workflow_topic.md`).
     //
     // ⚠ Отсев стоит **здесь**, а не у читателя: `undefinedVariables` — общий
     // источник для троих (панель графа, значок ⚠️ в списке, группы переменных),
     // и отфильтруй я одного, двое других продолжали бы врать красным. Ровно это
     // и случилось: группу я сделал, а граф остался с «undefined».
-    if (branchRoadIs(key)) {
-        branchTopicNames().forEach(name => result.delete(name));
+    if (topicRoadIs(key)) {
+        topicActionNames().forEach(name => result.delete(name));
     }
 
     _computed.set(key, result);

@@ -1,8 +1,12 @@
 /**
- * Вкладка «Branch» страницы Workflow: ветки разговора и темы внутри них.
+ * Вкладка «Topic & Action» страницы Workflow: группы тем и темы внутри них.
  *
- * Ветка — род разговора со своим контрактом и необязательным подпотоком. Тема —
- * запись внутри ветки: метки и один текст инструкции.
+ * Группа — свод тем одного рода. Тема — запись внутри неё: метки-иглы, два
+ * порога, вопросы и один текст инструкции.
+ *
+ * ⚠ Имена в коде остались `branch*` (файл, классы, ручки): переименование
+ * видимых подписей и переименование кода — разные работы, и вторая трогает
+ * ручки, которые зовёт ещё и шаг. Здесь сделана первая.
  *
  * ## Устройство страницы
  *
@@ -18,17 +22,17 @@
  * карусели страницы.
  *
  * ⚠⚠ Правил выбора темы здесь нет и быть не должно: их считает движок
- * (`src/ai/ai_workflow_branch.py`). Своя копия арифметики на странице разошлась
+ * (`src/ai/ai_workflow_topic_action.py`). Своя копия арифметики на странице разошлась
  * бы с ним на первой же правке.
  *
- * Устройство слоя — `.claude/docs/workflow_branch.md`.
+ * Устройство слоя — `.claude/docs/workflow_topic.md`.
  */
 
 import {postData} from '../api.js';
 import {showNotification} from '/static/js/notification.js';
 import {textModalIcon} from './text-modal.js';
 import {textTranslateGuess} from './text-translate.js';
-import {branchRoadsLoad} from './branch-roads.js';
+import {topicRoadsLoad} from './topic-roads.js';
 
 const PAGE_SIZE = 20;
 
@@ -40,7 +44,7 @@ const TAG_LANGS = [
     {code: 'ru', flag: '🇷🇺', word: 'русский'},
 ];
 
-const branchState = {
+const topicState = {
     nodeId: null,
     branches: [],
     topicsByBranch: {},
@@ -51,9 +55,12 @@ const branchState = {
     // Метки открытой темы, уже приведённые. Живут отдельно от карточки: поле
     // ввода перерисовывать нельзя, иначе уедет фокус.
     tags: [],
+    // Вопросы открытой темы: `{question, is_enabled}` в порядке показа, он же
+    // порядок номеров в промпте. Живут здесь по той же причине, что метки.
+    questions: [],
 };
 
-async function branchApi(url, options) {
+async function topicApi(url, options) {
     const response = await fetch(url, options);
     let body = null;
     try {
@@ -93,19 +100,19 @@ function plural(count, one, few, many) {
 }
 
 function topicsOf(branchId) {
-    return branchState.topicsByBranch[String(branchId)] || [];
+    return topicState.topicsByBranch[String(branchId)] || [];
 }
 
-function branchCurrent() {
-    const id = branchState.picked.kind === 'branch' ? branchState.picked.id
-        : (topicCurrent() || {}).branch_id;
-    return branchState.branches.find(b => String(b.id) === String(id)) || null;
+function groupCurrent() {
+    const id = topicState.picked.kind === 'branch' ? topicState.picked.id
+        : (topicCurrent() || {}).topic_group_id;
+    return topicState.branches.find(b => String(b.id) === String(id)) || null;
 }
 
 function topicCurrent() {
-    if (branchState.picked.kind !== 'topic') return null;
-    for (const rows of Object.values(branchState.topicsByBranch)) {
-        const found = rows.find(t => String(t.id) === String(branchState.picked.id));
+    if (topicState.picked.kind !== 'topic') return null;
+    for (const rows of Object.values(topicState.topicsByBranch)) {
+        const found = rows.find(t => String(t.id) === String(topicState.picked.id));
         if (found) return found;
     }
     return null;
@@ -116,57 +123,57 @@ function topicCurrent() {
  *
  * @param {object|null} node нода из карусели страницы; без неё рисуется подсказка.
  */
-export async function openWorkflowBranch(node) {
-    const host = document.getElementById('workflowBranch');
+export async function openWorkflowTopic(node) {
+    const host = document.getElementById('workflowTopic');
     host.style.display = 'block';
 
     if (!node || !node.id) {
-        host.innerHTML = '<div class="branch-empty">Выберите ноду слева: '
-            + 'ветки принадлежат ноде, а не отдельному workflow</div>';
+        host.innerHTML = '<div class="topic-empty">Выберите ноду слева: '
+            + 'группы тем принадлежат ноде, а не отдельному workflow</div>';
         return;
     }
 
-    if (branchState.nodeId !== node.id) {
-        branchState.nodeId = node.id;
-        branchState.picked = {kind: null, id: null};
-        branchState.page = 0;
+    if (topicState.nodeId !== node.id) {
+        topicState.nodeId = node.id;
+        topicState.picked = {kind: null, id: null};
+        topicState.page = 0;
     }
 
     host.innerHTML = `
-      <div class="branch-body">
-        <div class="branch-sidebar">
-          <div class="branch-sidebar-head">
-            <span class="branch-node-name">${esc(node.name)}</span>
-            <button type="button" class="btn-branch btn-branch-primary" id="branchNew">+ Ветка</button>
+      <div class="topic-body">
+        <div class="topic-sidebar">
+          <div class="topic-sidebar-head">
+            <span class="topic-node-name">${esc(node.name)}</span>
+            <button type="button" class="btn-branch btn-topic-primary" id="groupNew">+ Группа</button>
           </div>
-          <div class="branch-list" id="branchList"></div>
-          <div class="branch-pager">
-            <button type="button" class="btn-branch" id="branchPagePrev">Назад</button>
-            <span id="branchPageLabel">0</span>
-            <button type="button" class="btn-branch" id="branchPageNext">Вперёд</button>
+          <div class="topic-list" id="groupList"></div>
+          <div class="topic-pager">
+            <button type="button" class="btn-branch" id="groupPagePrev">Назад</button>
+            <span id="groupPageLabel">0</span>
+            <button type="button" class="btn-branch" id="groupPageNext">Вперёд</button>
           </div>
         </div>
-        <div class="branch-detail" id="branchDetail">
-          <div class="branch-empty">Выберите ветку или тему слева</div>
+        <div class="topic-detail" id="branchDetail">
+          <div class="topic-empty">Выберите группу или тему слева</div>
         </div>
       </div>`;
 
-    document.getElementById('branchNew').onclick = branchNew;
-    document.getElementById('branchPagePrev').onclick = () => {
-        if (branchState.page > 0) {
-            branchState.page -= 1;
+    document.getElementById('groupNew').onclick = groupNew;
+    document.getElementById('groupPagePrev').onclick = () => {
+        if (topicState.page > 0) {
+            topicState.page -= 1;
             treeRender();
         }
     };
-    document.getElementById('branchPageNext').onclick = () => {
-        if ((branchState.page + 1) * PAGE_SIZE < branchState.branches.length) {
-            branchState.page += 1;
+    document.getElementById('groupPageNext').onclick = () => {
+        if ((topicState.page + 1) * PAGE_SIZE < topicState.branches.length) {
+            topicState.page += 1;
             treeRender();
         }
     };
 
     await treeLoad();
-    await branchRoadsLoad(branchState.nodeId);
+    await topicRoadsLoad(topicState.nodeId);
     detailRender();
 }
 
@@ -177,54 +184,54 @@ export async function openWorkflowBranch(node) {
  * их сразу все, и запрос на каждую ветку означал бы десяток походов на отрисовку.
  */
 async function treeLoad() {
-    branchState.branches = (await branchApi(
-        `/workflow_branch/list?node_id=${branchState.nodeId}`)).result || [];
+    topicState.branches = (await topicApi(
+        `/workflow_topic/list?node_id=${topicState.nodeId}`)).result || [];
 
-    const topics = (await branchApi(
-        `/workflow_branch/topic/list?node_id=${branchState.nodeId}`)).result || [];
+    const topics = (await topicApi(
+        `/workflow_topic/topic/list?node_id=${topicState.nodeId}`)).result || [];
 
-    branchState.topicsByBranch = {};
+    topicState.topicsByBranch = {};
     topics.forEach(topic => {
-        const key = String(topic.branch_id);
-        (branchState.topicsByBranch[key] = branchState.topicsByBranch[key] || []).push(topic);
+        const key = String(topic.topic_group_id);
+        (topicState.topicsByBranch[key] = topicState.topicsByBranch[key] || []).push(topic);
     });
 
-    if (branchState.page * PAGE_SIZE >= branchState.branches.length) branchState.page = 0;
+    if (topicState.page * PAGE_SIZE >= topicState.branches.length) topicState.page = 0;
     treeRender();
 }
 
 function treeRender() {
-    const list = document.getElementById('branchList');
+    const list = document.getElementById('groupList');
     if (!list) return;
 
-    if (!branchState.branches.length) {
-        list.innerHTML = '<div class="branch-empty">Веток нет</div>';
-        document.getElementById('branchPageLabel').textContent = '0';
+    if (!topicState.branches.length) {
+        list.innerHTML = '<div class="topic-empty">Веток нет</div>';
+        document.getElementById('groupPageLabel').textContent = '0';
         return;
     }
 
-    const activeBranchId = String((branchCurrent() || {}).id || '');
-    const from = branchState.page * PAGE_SIZE;
+    const activeBranchId = String((groupCurrent() || {}).id || '');
+    const from = topicState.page * PAGE_SIZE;
 
-    list.innerHTML = branchState.branches.slice(from, from + PAGE_SIZE).map(branch => {
+    list.innerHTML = topicState.branches.slice(from, from + PAGE_SIZE).map(branch => {
         const topics = topicsOf(branch.id);
-        const isActiveBranch = branchState.picked.kind === 'branch'
-            && String(branchState.picked.id) === String(branch.id);
+        const isActiveBranch = topicState.picked.kind === 'branch'
+            && String(topicState.picked.id) === String(branch.id);
         // «+ Тема» показываем только у ветки, с которой сейчас работают: у
         // каждой она была бы шумом в дереве
         const showAdd = String(branch.id) === activeBranchId;
 
         const children = topics.map((topic, index) => {
             const last = index === topics.length - 1 && !showAdd;
-            const isActiveTopic = branchState.picked.kind === 'topic'
-                && String(branchState.picked.id) === String(topic.id);
+            const isActiveTopic = topicState.picked.kind === 'topic'
+                && String(topicState.picked.id) === String(topic.id);
             return `
               <div class="tree-child ${last ? 'is-last' : ''} ${isActiveTopic ? 'is-active' : ''}"
                    data-topic="${topic.id}">
-                <span class="branch-dot ${topic.is_enabled ? 'is-on' : ''}"></span>
+                <span class="topic-dot ${topic.is_enabled ? 'is-on' : ''}"></span>
                 <span class="tree-child-main">
                   <span class="tree-child-title">${esc(topic.title)}</span><br>
-                  <span class="branch-row-name">${esc(topic.name)}</span>
+                  <span class="topic-row-name">${esc(topic.name)}</span>
                 </span>
                 <span class="topic-count">${plural(
                     tagList(topic.tags).length, 'метка', 'метки', 'меток')}</span>
@@ -238,13 +245,13 @@ function treeRender() {
 
         return `
           <div class="tree-branch">
-            <div class="branch-row ${isActiveBranch ? 'is-active' : ''}" data-branch="${branch.id}">
-              <span class="branch-dot ${branch.is_enabled ? 'is-on' : ''}"></span>
-              <span class="branch-row-main">
-                <span class="branch-row-title">${esc(branch.title)}</span><br>
-                <span class="branch-row-name">${esc(branch.name)}</span>
+            <div class="topic-row ${isActiveBranch ? 'is-active' : ''}" data-branch="${branch.id}">
+              <span class="topic-dot ${branch.is_enabled ? 'is-on' : ''}"></span>
+              <span class="topic-row-main">
+                <span class="topic-row-title">${esc(branch.title)}</span><br>
+                <span class="topic-row-name">${esc(branch.name)}</span>
               </span>
-              <span class="branch-row-count">${plural(
+              <span class="topic-row-count">${plural(
                   topics.length, 'тема', 'темы', 'тем')}</span>
             </div>
             ${children}${addRow}
@@ -259,18 +266,18 @@ function treeRender() {
     });
     list.querySelectorAll('[data-add]').forEach(row => {
         row.onclick = () => {
-            branchState.picked = {kind: 'topic', id: null};
+            topicState.picked = {kind: 'topic', id: null};
             treeRender();
             detailRender();
         };
     });
 
-    const pages = Math.ceil(branchState.branches.length / PAGE_SIZE);
-    document.getElementById('branchPageLabel').textContent = `${branchState.page + 1} / ${pages}`;
+    const pages = Math.ceil(topicState.branches.length / PAGE_SIZE);
+    document.getElementById('groupPageLabel').textContent = `${topicState.page + 1} / ${pages}`;
 }
 
 function pick(kind, id) {
-    branchState.picked = {kind, id};
+    topicState.picked = {kind, id};
     treeRender();
     detailRender();
 }
@@ -281,90 +288,88 @@ function detailRender() {
     const detail = document.getElementById('branchDetail');
     if (!detail) return;
 
-    if (branchState.picked.kind === 'topic') {
+    if (topicState.picked.kind === 'topic') {
         topicCardRender(detail);
         return;
     }
-    if (branchState.picked.kind === 'branch') {
-        branchCardRender(detail);
+    if (topicState.picked.kind === 'branch') {
+        groupCardRender(detail);
         return;
     }
-    detail.innerHTML = '<div class="branch-empty">Выберите ветку или тему слева</div>';
+    detail.innerHTML = '<div class="topic-empty">Выберите группу или тему слева</div>';
 }
 
-function branchCardRender(detail) {
-    const branch = branchCurrent();
+function groupCardRender(detail) {
+    const branch = groupCurrent();
     if (!branch) {
-        detail.innerHTML = '<div class="branch-empty">Выберите ветку или тему слева</div>';
+        detail.innerHTML = '<div class="topic-empty">Выберите группу или тему слева</div>';
         return;
     }
 
     detail.innerHTML = `
-      <div class="branch-card">
-        <div class="branch-card-head">Ветка</div>
-        <div class="branch-form-row">
-          <div class="branch-field"><label>Название</label>
-            <input class="branch-control" id="b_title" value="${esc(branch.title)}"></div>
-          <div class="branch-field branch-field-check">
-            <label class="branch-check">
-              <input type="checkbox" id="b_is_enabled" ${branch.is_enabled ? 'checked' : ''}>
+      <div class="topic-card">
+        <div class="topic-card-head">Группа тем</div>
+        <div class="topic-form-row">
+          <div class="topic-field"><label>Название</label>
+            <input class="topic-control" id="g_title" value="${esc(branch.title)}"></div>
+          <div class="topic-field topic-field-check">
+            <label class="topic-check">
+              <input type="checkbox" id="g_is_enabled" ${branch.is_enabled ? 'checked' : ''}>
               Включена
             </label>
           </div>
         </div>
-        <div class="branch-field" style="max-width:50%">
-          <label>Минимум совпавших меток</label>
-          <input class="branch-control" id="b_match_min" type="number" min="1" max="10"
-                 value="${branch.match_min}">
-          <div class="branch-hint">Тема ниже этого порога в выборе не участвует.
-               Порог живёт у ветки: на шаге он глушил бы и чужие темы.</div>
+        <div class="topic-hint" style="margin-top:4px">
+          Пороги живут <b>у темы</b>, а не здесь: у каждой свои метки и свои вопросы,
+          и судится она независимо от соседей.
         </div>
-        <div class="branch-hint" style="margin-top:4px">
+        <div class="topic-hint" style="margin-top:4px">
           Своя дорога (subflow) выбирается <b>на шаге</b>, на вкладке «Шаги», — там же,
           где настраиваются карты вызова. Здесь её нет намеренно: карты принадлежат паре
           «шаг + подпоток», и смена дороги из другого места оставила бы карты от прежней
-          молча. Одна и та же ветка в соседних шагах может идти разными путями.
+          молча. Одна и та же группа в соседних шагах может идти разными путями.
         </div>
-        <div class="branch-actions">
-          <button type="button" class="btn-branch btn-branch-primary" id="b_save">Сохранить</button>
-          <button type="button" class="btn-branch" id="b_topic_new">+ Тема</button>
-          <button type="button" class="btn-branch btn-branch-danger" id="b_delete">Удалить ветку</button>
+        <div class="topic-actions">
+          <button type="button" class="btn-branch btn-topic-primary" id="g_save">Сохранить</button>
+          <button type="button" class="btn-branch" id="g_topic_new">+ Тема</button>
+          <button type="button" class="btn-branch btn-topic-danger" id="g_delete">Удалить группу</button>
         </div>
       </div>`;
 
-    document.getElementById('b_save').onclick = branchSave;
-    document.getElementById('b_delete').onclick = branchDelete;
-    document.getElementById('b_topic_new').onclick = () => pick('topic', null);
+    document.getElementById('g_save').onclick = groupSave;
+    document.getElementById('g_delete').onclick = groupDelete;
+    document.getElementById('g_topic_new').onclick = () => pick('topic', null);
 }
 
 function topicCardRender(detail) {
-    const branch = branchCurrent();
+    const branch = groupCurrent();
     const topic = topicCurrent() || {
         name: '', title: '', tags: '', instructions: '', is_enabled: 1,
+        tags_qty_accept: 2, questions_qty_yes_accept: 1,
     };
     const isNew = !topicCurrent();
 
     detail.innerHTML = `
-      <div class="branch-card">
-        <div class="branch-card-head">
-          <span class="branch-crumb">${esc((branch || {}).title || '')}</span>
+      <div class="topic-card">
+        <div class="topic-card-head">
+          <span class="topic-crumb">${esc((branch || {}).title || '')}</span>
           ${isNew ? 'новая тема' : 'тема'}
         </div>
-        <div class="branch-form-row">
-          <div class="branch-field"><label>Название</label>
-            <input class="branch-control" id="t_title" value="${esc(topic.title)}"></div>
-          <div class="branch-field"><label>Код</label>
-            <input class="branch-control" id="t_name" value="${esc(topic.name)}">
-            <div class="branch-hint">Под ним тема видна в журнале прогона
+        <div class="topic-form-row">
+          <div class="topic-field"><label>Название</label>
+            <input class="topic-control" id="t_title" value="${esc(topic.title)}"></div>
+          <div class="topic-field"><label>Код</label>
+            <input class="topic-control" id="t_name" value="${esc(topic.name)}">
+            <div class="topic-hint">Под ним тема видна в журнале прогона
                  и приезжает агенту переменной <code>%topic_name%</code>.</div></div>
-          <div class="branch-field branch-field-check">
-            <label class="branch-check">
+          <div class="topic-field topic-field-check">
+            <label class="topic-check">
               <input type="checkbox" id="t_is_enabled" ${topic.is_enabled ? 'checked' : ''}>
               Включена
             </label>
           </div>
         </div>
-        <div class="branch-field">
+        <div class="topic-field">
           <div class="tag-head">
             <label>Метки <span class="tag-counter" id="t_tags_count"></span></label>
             <div class="tag-langs" id="t_tags_langs"></div>
@@ -372,27 +377,56 @@ function topicCardRender(detail) {
           <div class="tag-editor" id="t_tags_box">
             <input class="tag-input" id="t_tags_input" placeholder="добавить метку и Enter…">
           </div>
-          <div class="branch-hint">Каждая из двух слов и больше: «обмен письмами»,
-               «пришли письмо». Односложные не различают близкие темы.</div>
+          <div class="topic-hint">Ищутся в тексте разговора <b>словом целиком</b>, поэтому
+               метка — короткое слово, которое человек вправду пишет (<code>photo</code>,
+               <code>send</code>), и каждая форма своя: <code>photo</code> не найдёт
+               <code>photos</code>. Точность даёт не метка, а вопрос ниже.</div>
         </div>
-        <div class="branch-field">
+        <div class="topic-form-row">
+          <div class="topic-field">
+            <label>Минимум разных меток</label>
+            <input class="topic-control" id="t_tags_qty_accept" type="number" min="1" max="20"
+                   value="${Number(topic.tags_qty_accept) || 1}">
+            <div class="topic-hint">Сколько <b>разных</b> меток нашлось — тогда тему
+                 проверяют вопросами. Повтор одной метки считается за одну.</div>
+          </div>
+          <div class="topic-field">
+            <label>Минимум ответов «yes»</label>
+            <input class="topic-control" id="t_questions_qty_yes_accept" type="number" min="1" max="20"
+                   value="${Number(topic.questions_qty_yes_accept) || 1}">
+            <div class="topic-hint">Сколько ответов «yes» означают, что тема поднята.
+                 Вопросов нет — хватает одних меток.</div>
+          </div>
+        </div>
+        <div class="topic-field">
+          <div class="tag-head">
+            <label>Вопросы <span class="tag-counter" id="t_questions_count"></span></label>
+          </div>
+          <div id="t_questions_box"></div>
+          <button type="button" class="btn-branch" id="t_question_add">+ Вопрос</button>
+          <div class="topic-hint">Ответ на вопрос — только «yes» или «no», и спрашивают
+               о том, что в тексте вправду написано. Метки решают, стоит ли спрашивать;
+               вопросы — поднята ли тема. Список пуст — модель не зовут вовсе.</div>
+        </div>
+        <div class="topic-field">
           <div class="instr-head">
             <label>Инструкция</label>
             <span class="instr-big" id="t_instructions_big"></span>
           </div>
-          <textarea class="branch-control instr-area" id="t_instructions"
+          <textarea class="topic-control instr-area" id="t_instructions"
                     placeholder="Что делать, когда тема поднята: как отвечать, куда вести разговор, чего нельзя"
                     >${esc(topic.instructions)}</textarea>
-          <div class="branch-hint">Весь текст уезжает агенту переменной
+          <div class="topic-hint">Весь текст уезжает агенту переменной
                <code>%topic_instructions%</code> — и в генерацию ответа, и к судье.</div>
         </div>
-        <div class="branch-actions">
-          <button type="button" class="btn-branch btn-branch-primary" id="t_save">Сохранить тему</button>
-          ${isNew ? '' : '<button type="button" class="btn-branch btn-branch-danger" id="t_delete">Удалить тему</button>'}
+        <div class="topic-actions">
+          <button type="button" class="btn-branch btn-topic-primary" id="t_save">Сохранить тему</button>
+          ${isNew ? '' : '<button type="button" class="btn-branch btn-topic-danger" id="t_delete">Удалить тему</button>'}
         </div>
       </div>`;
 
     tagsEditorInit(tagList(topic.tags));
+    questionsEditorInit(topic.questions);
     instructionsBigInit();
 
     document.getElementById('t_save').onclick = () => topicSave(isNew ? null : topic.id);
@@ -425,7 +459,7 @@ function instructionsBigInit() {
 // уезжал за край. А метка — единица отбора темы, и смотрят на них поштучно:
 // «есть ли такая», «не завелась ли дважды».
 
-/** Приведение — **то же**, что у движка (`ai_workflow_branch_tags_split`).
+/** Приведение — **то же**, что у движка (`ai_workflow_topic_action_tags_split`).
  *
  * ⚠ Нижний регистр и схлопнутые пробелы: сравнение идёт приведёнными, и человек
  * должен видеть ровно то, что будет сравниваться. Покажи мы «Обмен Письмами»,
@@ -451,12 +485,12 @@ function tagNormalize(raw) {
  * тему». Промахнулся языком — ушёл с темы, и ничего не случилось.
  */
 async function tagsTranslate(lang, button) {
-    if (!branchState.tags.length) {
+    if (!topicState.tags.length) {
         showNotification('Меток нет', 'error');
         return;
     }
 
-    const source = textTranslateGuess(branchState.tags.join(' '));
+    const source = textTranslateGuess(topicState.tags.join(' '));
     if (source === lang.code) {
         showNotification(`Метки и так на ${lang.word}`, 'info');
         return;
@@ -467,7 +501,7 @@ async function tagsTranslate(lang, button) {
     button.textContent = '…';
 
     try {
-        const done = await Promise.all(branchState.tags.map(async (tag) => {
+        const done = await Promise.all(topicState.tags.map(async (tag) => {
             const answer = await postData('/translate', {
                 text: tag,
                 language_from: source,
@@ -476,7 +510,7 @@ async function tagsTranslate(lang, button) {
             return tagNormalize(answer.result || '');
         }));
 
-        const lost = branchState.tags.filter((tag, index) => !done[index]);
+        const lost = topicState.tags.filter((tag, index) => !done[index]);
         if (lost.length) {
             showNotification(
                 `Не перевелось: «${lost[0]}» — метки оставлены как были`, 'error');
@@ -488,7 +522,7 @@ async function tagsTranslate(lang, button) {
         done.forEach(tag => {
             if (!kept.includes(tag)) kept.push(tag);
         });
-        branchState.tags = kept;
+        topicState.tags = kept;
         tagsEditorRender();
 
         showNotification(
@@ -517,8 +551,94 @@ function tagsLangsRender() {
     });
 }
 
+// ── Вопросы темы ────────────────────────────────────────────────────────────
+//
+// ⚠⚠ Строками с полем ввода, а не чипсами, как метки. Метка — слово, вопрос —
+// предложение: в чипс он не помещается и правится целиком, а не заводится
+// заново. Отсюда же своё состояние и свои кнопки.
+//
+// ⚠ Порядок строк = порядок номеров в промпте. Модель отвечает ключом-номером,
+// поэтому перестановка строк меняет нумерацию — это видно глазами, и так и надо.
+
+function questionsEditorInit(questions) {
+    topicState.questions = (questions || []).map(item => ({
+        question: String(item.question || ''),
+        is_enabled: Number(item.is_enabled ?? 1) ? 1 : 0,
+    }));
+    questionsEditorRender();
+
+    const add = document.getElementById('t_question_add');
+    if (add) add.onclick = () => {
+        topicState.questions.push({question: '', is_enabled: 1});
+        questionsEditorRender();
+        // Фокус в только что заведённую строку: кнопку нажали, чтобы писать
+        const rows = document.querySelectorAll('.question-text');
+        if (rows.length) rows[rows.length - 1].focus();
+    };
+}
+
+function questionsEditorRender() {
+    const host = document.getElementById('t_questions_box');
+    if (!host) return;
+
+    host.innerHTML = '';
+    topicState.questions.forEach((item, index) => {
+        const row = document.createElement('div');
+        row.className = 'question-row';
+
+        const number = document.createElement('span');
+        number.className = 'question-no';
+        number.textContent = `${index + 1}.`;
+        row.appendChild(number);
+
+        const text = document.createElement('input');
+        text.className = 'topic-control question-text';
+        text.value = item.question;
+        text.placeholder = 'Does either of them offer to send a photo?';
+        // ⚠ Пишем в состояние на каждый знак, а не перерисовываем строку: иначе
+        // уедет курсор. Та же причина, что у поля ввода меток.
+        text.oninput = () => { topicState.questions[index].question = text.value; };
+        row.appendChild(text);
+
+        const enabled = document.createElement('label');
+        enabled.className = 'topic-check question-enabled';
+        enabled.title = 'выключенный вопрос модели не показывается';
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.checked = !!item.is_enabled;
+        box.onchange = () => {
+            topicState.questions[index].is_enabled = box.checked ? 1 : 0;
+            questionsEditorRender();
+        };
+        enabled.appendChild(box);
+        row.appendChild(enabled);
+
+        const drop = document.createElement('button');
+        drop.type = 'button';
+        drop.className = 'btn-branch btn-topic-danger question-drop';
+        drop.textContent = '×';
+        drop.title = 'убрать вопрос';
+        drop.onclick = () => {
+            topicState.questions.splice(index, 1);
+            questionsEditorRender();
+        };
+        row.appendChild(drop);
+
+        if (!item.is_enabled) row.classList.add('question-row-off');
+        host.appendChild(row);
+    });
+
+    const counter = document.getElementById('t_questions_count');
+    if (counter) {
+        const live = topicState.questions.filter(one => one.is_enabled
+            && one.question.trim()).length;
+        counter.textContent = live
+            ? plural(live, 'вопрос', 'вопроса', 'вопросов') : '';
+    }
+}
+
 function tagsEditorInit(tags) {
-    branchState.tags = tags.map(tagNormalize).filter(Boolean);
+    topicState.tags = tags.map(tagNormalize).filter(Boolean);
     tagsLangsRender();
 
     const input = document.getElementById('t_tags_input');
@@ -530,10 +650,10 @@ function tagsEditorInit(tags) {
             tagsAdd(input.value);
             input.value = '';
             tagsEditorRender();
-        } else if (event.key === 'Backspace' && !input.value && branchState.tags.length) {
+        } else if (event.key === 'Backspace' && !input.value && topicState.tags.length) {
             // Привычное поведение поля с чипсами: пустой ввод и Backspace
             // снимают последнюю метку
-            branchState.tags.pop();
+            topicState.tags.pop();
             tagsEditorRender();
         }
     };
@@ -566,7 +686,7 @@ function tagsAdd(raw) {
     String(raw || '').split(',').forEach(part => {
         const tag = tagNormalize(part);
         // Повтор молча не добавляется: в словаре он всё равно схлопнется
-        if (tag && !branchState.tags.includes(tag)) branchState.tags.push(tag);
+        if (tag && !topicState.tags.includes(tag)) topicState.tags.push(tag);
     });
 }
 
@@ -579,7 +699,7 @@ function tagsEditorRender() {
     // всего блока уносила бы фокус и набранный текст на каждой метке
     box.querySelectorAll('.tag-chip').forEach(node => node.remove());
 
-    branchState.tags.forEach((tag, index) => {
+    topicState.tags.forEach((tag, index) => {
         const chip = document.createElement('span');
         chip.className = 'tag-chip';
         chip.textContent = tag;
@@ -590,7 +710,7 @@ function tagsEditorRender() {
         remove.textContent = '×';
         remove.title = 'убрать метку';
         remove.onclick = () => {
-            branchState.tags.splice(index, 1);
+            topicState.tags.splice(index, 1);
             tagsEditorRender();
         };
 
@@ -600,46 +720,47 @@ function tagsEditorRender() {
 
     const counter = document.getElementById('t_tags_count');
     if (counter) {
-        counter.textContent = branchState.tags.length
-            ? plural(branchState.tags.length, 'метка', 'метки', 'меток') : '';
+        counter.textContent = topicState.tags.length
+            ? plural(topicState.tags.length, 'метка', 'метки', 'меток') : '';
     }
 }
 
 // ── Правки ──────────────────────────────────────────────────────────────────
 
-async function branchSave() {
-    const branch = branchCurrent();
+async function groupSave() {
+    const branch = groupCurrent();
     try {
-        await branchApi(`/workflow_branch/${branch.id}`, {
+        await topicApi(`/workflow_topic/${branch.id}`, {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
             // ⚠ Кода здесь нет: он служебный и правке не подлежит — на нём
             // держатся имя скелета подпотока и поиск ветки в миграциях-сидах
+            // ⚠ `match_min` больше не шлётся: порог уехал к теме, и колонка у
+            // ветки доживает до сноса второй выкладкой
             body: JSON.stringify({
-                title: document.getElementById('b_title').value.trim(),
-                match_min: Number(document.getElementById('b_match_min').value) || 1,
-                is_enabled: document.getElementById('b_is_enabled').checked ? 1 : 0,
+                title: document.getElementById('g_title').value.trim(),
+                is_enabled: document.getElementById('g_is_enabled').checked ? 1 : 0,
             }),
         });
         await treeLoad();
         detailRender();
-        showNotification(`Ветка «${branch.title}» сохранена`, 'success');
+        showNotification(`Группа «${branch.title}» сохранена`, 'success');
     } catch (e) {
         showNotification(e.message, 'error');
     }
 }
 
-async function branchDelete() {
-    const branch = branchCurrent();
+async function groupDelete() {
+    const branch = groupCurrent();
     // ⚠ Удаление необратимо и уносит темы каскадом — спрашиваем всегда
-    if (!confirm(`Удалить ветку «${branch.title}» вместе с её темами?`)) return;
+    if (!confirm(`Удалить группу «${branch.title}» вместе с её темами?`)) return;
 
     try {
-        await branchApi(`/workflow_branch/${branch.id}`, {method: 'DELETE'});
-        branchState.picked = {kind: null, id: null};
+        await topicApi(`/workflow_topic/${branch.id}`, {method: 'DELETE'});
+        topicState.picked = {kind: null, id: null};
         await treeLoad();
         detailRender();
-        showNotification(`Ветка «${branch.title}» удалена`, 'success');
+        showNotification(`Группа «${branch.title}» удалена`, 'success');
     } catch (e) {
         showNotification(e.message, 'error');
     }
@@ -659,7 +780,18 @@ function topicBody() {
     return {
         name: document.getElementById('t_name').value.trim(),
         title: document.getElementById('t_title').value.trim(),
-        tags: branchState.tags.join(', '),
+        tags: topicState.tags.join(', '),
+        // ⚠ Пороги — у темы: у каждой свои метки и свои вопросы, и судится
+        // она независимо от соседей. `|| 1` держит низ: ноль в поле означал бы
+        // «подходит всегда», а это не порог
+        tags_qty_accept: Number(document.getElementById('t_tags_qty_accept').value) || 1,
+        questions_qty_yes_accept:
+            Number(document.getElementById('t_questions_qty_yes_accept').value) || 1,
+        // ⚠ Пустые строки отбрасываются здесь, а не на сервере: человек нажал
+        // «+ Вопрос» и передумал — это не повод отказывать в сохранении темы.
+        questions: topicState.questions
+            .filter(one => one.question.trim())
+            .map(one => ({question: one.question.trim(), is_enabled: one.is_enabled})),
         instructions: document.getElementById('t_instructions').value,
         is_enabled: document.getElementById('t_is_enabled').checked ? 1 : 0,
     };
@@ -670,18 +802,18 @@ async function topicSave(topicId) {
     const payload = topicBody();
     const body = JSON.stringify(payload);
     const title = payload.title || payload.name || 'тема';
-    const branch = branchCurrent();
+    const branch = groupCurrent();
     try {
         if (topicId) {
-            await branchApi(`/workflow_branch/topic/${topicId}`, {method: 'PUT', headers, body});
+            await topicApi(`/workflow_topic/topic/${topicId}`, {method: 'PUT', headers, body});
             await treeLoad();
             detailRender();
             showNotification(`Тема «${title}» сохранена`, 'success');
         } else {
-            const created = await branchApi(`/workflow_branch/${branch.id}/topic`,
+            const created = await topicApi(`/workflow_topic/${branch.id}/topic`,
                                             {method: 'POST', headers, body});
             await treeLoad();
-            branchState.picked = {kind: 'topic', id: created.result.id};
+            topicState.picked = {kind: 'topic', id: created.result.id};
             treeRender();
             detailRender();
             showNotification(`Тема «${title}» заведена`, 'success');
@@ -696,12 +828,12 @@ async function topicDelete(topicId) {
     const title = (topic && topic.title) || 'тема';
     if (!confirm(`Удалить тему «${title}»?`)) return;
 
-    const branch = branchCurrent();
+    const branch = groupCurrent();
     try {
-        await branchApi(`/workflow_branch/topic/${topicId}`, {method: 'DELETE'});
+        await topicApi(`/workflow_topic/topic/${topicId}`, {method: 'DELETE'});
         // После удаления темы показываем её ветку: пустая правая колонка
         // выглядела бы так, будто выбор сбросился сам
-        branchState.picked = branch ? {kind: 'branch', id: branch.id} : {kind: null, id: null};
+        topicState.picked = branch ? {kind: 'branch', id: branch.id} : {kind: null, id: null};
         await treeLoad();
         detailRender();
         showNotification(`Тема «${title}» удалена`, 'success');
@@ -710,21 +842,21 @@ async function topicDelete(topicId) {
     }
 }
 
-async function branchNew() {
+async function groupNew() {
     // ⚠ Один вопрос, а не два: код ветки собирает сервер из названия
     // («Договориться» → `dogovoritsya`). Спрашивать его у человека значило бы
     // просить придумать то, чего он нигде не увидит.
-    const title = prompt('Название ветки (например «Договориться»)');
+    const title = prompt('Название группы тем (например «Темы общения»)');
     if (!title) return;
     try {
-        const created = await branchApi('/workflow_branch', {
+        const created = await topicApi('/workflow_topic', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({node_id: branchState.nodeId, title: title.trim()}),
+            body: JSON.stringify({node_id: topicState.nodeId, title: title.trim()}),
         });
         await treeLoad();
         pick('branch', created.result.id);
-        showNotification(`Ветка «${created.result.title}» заведена`, 'success');
+        showNotification(`Группа «${created.result.title}» заведена`, 'success');
     } catch (e) {
         showNotification(e.message, 'error');
     }

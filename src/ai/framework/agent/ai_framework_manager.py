@@ -17,8 +17,8 @@ from src.ai.ai_workflow_trace import (ai_workflow_trace_run_start, ai_workflow_t
                                       ai_workflow_trace_step, ai_workflow_trace_variables_diff)
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get
-from src.ai.ai_workflow_branch import (ai_workflow_branch_catalog, ai_workflow_branch_pick,
-                                       ai_workflow_branch_tags_split, ai_workflow_branch_topics)
+from src.ai.ai_workflow_topic_action import (ai_workflow_topic_action_topics,
+                                             ai_workflow_topic_action_topics_raised)
 from src.ai.ai_fact_collection import ai_fact_collection_metadata_get
 from src.ai.ai_tool import ai_tool_args_prepare
 from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
@@ -537,26 +537,6 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
         # Снапшот переменных на входе: continue_workflow сохранит изменения относительно него
         variables_run_start = dict(variables) if depth == 0 else {}
-
-        # Словарь меток тем ноды — для шага-развилки, выбирающего метки.
-        #
-        # ⚠ Служебная переменная, по образцу `user_language` и `node_languages`:
-        # источник у неё реестр веток, а не родитель, и объявлять её в каждом
-        # workflow не нужно. Запись `type = 'global'` в реестре у неё всё же
-        # есть — иначе её не видно в списках переменных редактора, и человек
-        # пишет метку вслепую (так же объявлены `user_language`, `session_uuid`).
-        #
-        # ⚠ Имя с приставкой `branch_`: в списке переменных рядом с `topic_*`
-        # шага ветки «topic_catalog» читался бы как восьмая переменная темы, а он
-        # про весь реестр ноды и живёт раньше любой ветки.
-        #
-        # ⚠ Только на верхнем уровне: в sub-workflow она приедет сквозным
-        # scope, второй поход в базу на каждую ветку не нужен.
-        if depth == 0:
-            variables.setdefault(
-                'branch_topic_catalog',
-                await ai_workflow_branch_catalog(model.entity_agent.get('node_id') or 0)
-            )
 
         current_index = start_index
         iteration = 0
@@ -1109,80 +1089,80 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                                 f"🏷️ Переменная '%{variable_name}%' получила значение '{value}'")
 
             # ОБРАБОТКА ШАГА: Ветка разговора (тема из реестра + её subflow)
-            elif step_type == 'branch':
-                branch_meta = step_meta.get('branch', {})
-                branch_id = int(branch_meta.get('branch_id') or 0)
-                tags_var = str(branch_meta.get('tags') or '').strip()
+            elif step_type == 'topic_action':
+                topic_meta = step_meta.get('topic_action', {})
+                group_id = int(topic_meta.get('topic_group_id') or 0)
+                history_var = str(topic_meta.get('history') or '').strip()
                 step_id = current_step.get('id')
 
-                if not branch_id:
-                    raise ValueError(f"Шаг '{current_step['title']}': в branch не выбрана ветка.")
+                if not group_id:
+                    raise ValueError(
+                        f"Шаг '{current_step['title']}': в topic_action не выбрана группа тем.")
+                if not topic_meta.get('workflow_id'):
+                    # ⚠⚠ Дорога обязательна, и это отличие от прежней ветки. Та
+                    # умела «сужать общий ответ» без подпотока — кладя `topic_*`
+                    # в переменные родителя. Здесь подняться может НЕСКОЛЬКО тем,
+                    # и тот приём означал бы «побеждает последняя»: инструкции
+                    # первой темы молча затёрлись бы второй. Накопитель вместо
+                    # этого собирает подпоток через свои карты.
+                    raise ValueError(
+                        f"Шаг '{current_step['title']}': в topic_action не выбран subflow. "
+                        f"Вопросы темы задаёт он, и без него шаг ничего не делает.")
 
-                tags_named = variables.get(tags_var, '') if tags_var else ''
-                node_id = model.entity_agent.get('node_id') or 0
+                history = variables.get(history_var, '') if history_var else ''
+                raised = ai_workflow_topic_action_topics_raised(
+                    await ai_workflow_topic_action_topics(group_id), history)
 
-                # ⚠⚠ Победитель ищется ПО ВСЕМУ реестру ноды, а не среди тем своей
-                # ветки. Шагов `branch` в потоке несколько, и считай каждый только
-                # своё — цепочка брала бы первую прошедшую порог, а не лучшую.
-                topic = ai_workflow_branch_pick(
-                    await ai_workflow_branch_topics(node_id), tags_named)
-
-                if topic is None or int(topic['branch_id']) != branch_id:
-                    # ⚠⚠ Тема не моя — НЕ ТРОГАЕМ переменные вовсе. Пустые строки
-                    # здесь затёрли бы значения победителя, стоящего выше в
-                    # цепочке, и «Генерация ответа» увидела бы пустоту при верно
-                    # выбранной теме. Отказ был бы молчаливым и плавал бы от
-                    # порядка шагов.
-                    trace_output = ''
-                    logger_info(
-                        f"🌿 Ветка '{current_step['title']}': тема не моя "
-                        f"({(topic or {}).get('name') or 'темы нет'}) — пропускаем"
-                    )
-                else:
-                    named = ai_workflow_branch_tags_split(tags_named)
-                    own = ai_workflow_branch_tags_split(topic.get('tags'))
+                marks = []
+                for topic in raised:
+                    questions = topic.get('questions') or []
+                    # ⚠⚠ Имя накопителя `inputs_map` НЕ ДОЛЖНО совпадать ни с одним
+                    # ключом отсюда. Карты входа накладываются ПОВЕРХ `scope_extra`
+                    # (`_workflow_child_run`, порядок внутри цикла), поэтому
+                    # накопитель с именем `topic_action_instructions` затёр бы
+                    # инструкцию СВОЕЙ темы — ту единственную, за которой подпоток
+                    # и позвали. Отказ молчаливый: ошибки нет, инструкции есть,
+                    # просто чужие. Накопителю — своё имя.
                     topic_scope = {
-                        'topic_name': topic.get('name') or '',
-                        'topic_title': topic.get('title') or '',
-                        'topic_tags': topic.get('tags') or '',
-                        'topic_instructions': topic.get('instructions') or '',
-                        'topic_score': str(sum(1 for tag in own if tag in named)),
+                        'topic_action_name': topic.get('name') or '',
+                        'topic_action_title': topic.get('title') or '',
+                        'topic_action_tags': topic.get('tags') or '',
+                        'topic_action_tags_found': ', '.join(topic['tags_found']),
+                        'topic_action_instructions': topic.get('instructions') or '',
+                        # ⚠ Вопросы — нумерованным списком, и нумерация сквозная по
+                        # теме. Ответ подпоток обязан отдавать ключом-номером, а не
+                        # списком по порядку: список из трёх может прийти длиной
+                        # два, и выравнивание съедет на один — тема поднимется от
+                        # чужого ответа.
+                        'topic_action_questions': '\n'.join(
+                            f'{no}. {text}' for no, text in enumerate(questions, 1)),
+                        'topic_action_questions_qty': str(len(questions)),
+                        'topic_action_questions_qty_yes_accept': str(
+                            topic.get('questions_qty_yes_accept') or 1),
                     }
-                    variables.update(topic_scope)
-                    trace_output = topic_scope['topic_name']
-                    logger_info(
-                        f"🌿 Ветка '{current_step['title']}': тема "
-                        f"'{topic_scope['topic_name']}' (совпало "
-                        f"{topic_scope['topic_score']} меток)"
+                    child_result, _ = await self._workflow_child_run(
+                        model, variables, dict(topic_meta), current_step['title'], step_id,
+                        depth, workflow_stack, trace_run_id,
+                        scope_extra=topic_scope,
+                        trace_error=lambda err: trace_current_step(status='error', error=err)
                     )
+                    # ⚠ Накопление инструкций своего кода не требует: подпоток
+                    # получает накопитель через `inputs_map`, отдаёт выросшим
+                    # через `outputs_map`, а движок пишет выходы в переменные
+                    # родителя СРАЗУ после возврата ребёнка — то есть следующая
+                    # тема входит уже с накопленным текстом.
+                    variables[f'topic_action_{step_id}_result_str'] = child_result or ''
+                    marks.append(f"{topic_scope['topic_action_name']}"
+                                 f"({topic['tags_qty_found']}: "
+                                 f"{topic_scope['topic_action_tags_found']})")
 
-                    # Ветка со своей дорогой — вызов subflow общей подпрограммой.
-                    # ⚠ Пять `topic_*` едут `scope_extra`: объявлять их в
-                    # контракте ребёнка не требуется, как не требуется объявлять
-                    # `user_language`.
-                    #
-                    # ⚠⚠ Подпоток берётся у ШАГА (`branch.workflow_id`), а не у
-                    # ветки. Прежде он лежал в реестре веток, и настройка была
-                    # разорвана пополам: карты вызова правятся здесь же, на шаге,
-                    # а кого зовут — выбиралось на вкладке Branch. Сменить дорогу
-                    # из другого места значило оставить карты от прежней — молча,
-                    # без единой ошибки: на карту в никуда движок ругается в лог,
-                    # которого никто не читает. Разбор — `workflow_branch.md` §5.
-                    if branch_meta.get('workflow_id'):
-                        invoke_meta = dict(branch_meta)
-                        child_result, _ = await self._workflow_child_run(
-                            model, variables, invoke_meta, current_step['title'], step_id,
-                            depth, workflow_stack, trace_run_id,
-                            scope_extra=topic_scope,
-                            trace_error=lambda err: trace_current_step(status='error', error=err)
-                        )
-
-                        # ⚠⚠ Алиас НЕСЁТ НОМЕР ШАГА, и это не украшение: переход
-                        # «я сработала» обязан проверять именно его. Проверка вида
-                        # `topic_name != ''` сработала бы и у проигравшего шага,
-                        # если выше по цепочке уже победила ветка без subflow.
-                        variables[f'branch_{step_id}_result_str'] = child_result or ''
-                        trace_output = child_result
+                # ⚠⚠ В трассу едут и метки, поднявшие тему. Разбор ложной сработки
+                # начинается именно с этого вопроса — «почему эта тема?», — и без
+                # меток на него отвечают сверкой руками по всей истории.
+                trace_output = '; '.join(marks)
+                logger_info(
+                    f"🌿 Тема и действие '{current_step['title']}': "
+                    f"тем в отсеве {len(raised)} — {trace_output or 'ни одной'}")
 
             # ОБРАБОТКА ШАГА: Вызов вложенного workflow (sub-workflow)
             elif step_type == 'workflow_invoke':

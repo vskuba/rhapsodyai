@@ -43,10 +43,10 @@ girl_response_fixed`). Судью переделали на вердикт с п
 ## ⚠⚠ Значения задаёт тест, и в этом весь смысл
 
 Здесь не спрашивают у модели, что она думает, — ей **велят** ответить. Предмет
-проверки не её суждение, а наша раскладка: сказала `photo_mail` — значит в
-`talk_topic` обязано лежать `photo_mail`.
+проверки не её суждение, а наша раскладка: сказала столько-то — значит в
+переменной обязано лежать столько же.
 
-Суждение модели (правда ли просьба о фото — это `photo_mail`) проверяется отдельно и
+Суждение модели (правда ли просьба о фото поднимает тему) проверяется отдельно и
 живьём: `test_judgement.py`. Это два разных вопроса, и путать их нельзя.
 
 ## ⚠⚠ Значения — НЕ как умолчание, иначе тест пуст
@@ -64,7 +64,7 @@ import pytest
 
 from tests_llm.dating_talk.conftest import (ANYWAY, ASK_ANALYSE,
                                             FACTS_MAN, FACTS_TALK, STEP_BRANCH,
-                                            STEP_TOPIC, analyse_answer,
+                                            analyse_answer,
                                             photo_answer, talk_plan)
 
 pytestmark = pytest.mark.llm
@@ -117,17 +117,27 @@ PHOTO_ANSWERS = photo_answer(**BRANCHED)
 
 
 class TestTheTopicArrives:
-    """⚠ Одна пара раскладки, и на ней держится вся развилка веток."""
+    """Текст, в котором шаг темы ищет метки, обязан нести пришедшую реплику.
 
-    async def test_the_topic_reaches_its_variable(self, talk, llm_answers):
-        """Сказала `photo_mail` — значит в `talk_topic` лежит `photo_mail`."""
-        await llm_answers(talk_plan(topic='photo_mail'), default=PHOTO_ANSWERS)
+    ## ⚠⚠ Здесь живёт поломка, которую код не показывает
+
+    Шагу называют переменную с историей, а пришедшее сообщение лежит отдельно,
+    в `prompt_user`. Подай шагу `talk_history_chat` — и реплика «Can you send me
+    your photos?» в текст не попадёт: метки `send` и `photos` искать будет
+    негде, тема не поднимется ни разу, и выглядеть это будет как обычный ответ.
+    Ровно так и случилось при переводе шага на новый род.
+
+    Поэтому проверяется склейка: `talk_history_topic` содержит слова реплики.
+    """
+
+    async def test_the_history_carries_the_incoming_line(self, talk, llm_answers):
+        await llm_answers(talk_plan(), default=PHOTO_ANSWERS)
 
         got = await talk('Can you send me your photos?', variables=ANYWAY)
 
-        assert got.ran(STEP_TOPIC), f'шаг темы не отработал.{got}'
-        assert got.vars.get('talk_topic') == 'photo_mail', \
-            f'ответ шага темы не доехал до `talk_topic`.{got}'
+        history = str(got.vars.get('talk_history_topic') or '')
+        assert 'send me your photos' in history, \
+            f'пришедшая реплика не попала в текст для меток: {history!r}.{got}'
 
 
 class TestTheAnalysisVariablesArrive:
@@ -175,7 +185,7 @@ class TestTheBranchOutputsArrive:
     """
 
     async def test_both_outputs_come_out(self, talk, llm_answers):
-        await llm_answers(talk_plan(topic='photo_mail'), default=PHOTO_ANSWERS)
+        await llm_answers(talk_plan(), default=PHOTO_ANSWERS)
 
         got = await talk('Can you send me your photos?', variables=ANYWAY)
 
@@ -198,7 +208,7 @@ class TestTheBranchOutputsArrive:
         (`photo_fixed → girl_response_fixed`). Судью переделали на вердикт с
         перегенерацией, и правка исчезла из карты вместе со своим смыслом.
         """
-        await llm_answers(talk_plan(topic='photo_mail'), default=PHOTO_ANSWERS)
+        await llm_answers(talk_plan(), default=PHOTO_ANSWERS)
 
         got = await talk('Can you send me your photos?', variables=ANYWAY)
 
