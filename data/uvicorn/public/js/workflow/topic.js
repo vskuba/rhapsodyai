@@ -314,17 +314,22 @@ function groupCardRender(detail) {
 
     detail.innerHTML = `
       <div class="topic-card">
-        <div class="topic-card-head">Группа тем</div>
-        <div class="topic-form-row">
-          <div class="topic-field"><label>Название</label>
-            <input class="topic-control" id="g_title" value="${esc(branch.title)}"></div>
-          <div class="topic-field topic-field-check">
-            <label class="topic-check">
+        <div class="topic-card-head">
+          <span class="topic-head-name">
+            Группа тем
+            <label class="topic-check topic-head-check">
               <input type="checkbox" id="g_is_enabled" ${branch.is_enabled ? 'checked' : ''}>
               Включена
             </label>
-          </div>
+          </span>
+          <span class="topic-head-actions">
+            <button type="button" class="btn-branch btn-topic-primary" id="g_save">Сохранить</button>
+            <button type="button" class="btn-branch btn-topic-danger topic-trash"
+                    id="g_delete" title="Удалить группу" aria-label="Удалить группу">🗑</button>
+          </span>
         </div>
+        <div class="topic-field"><label>Название</label>
+          <input class="topic-control" id="g_title" value="${esc(branch.title)}"></div>
         <div class="topic-hint" style="margin-top:4px">
           Пороги живут <b>у темы</b>, а не здесь: у каждой свои метки и свои вопросы,
           и судится она независимо от соседей.
@@ -336,9 +341,7 @@ function groupCardRender(detail) {
           молча. Одна и та же группа в соседних шагах может идти разными путями.
         </div>
         <div class="topic-actions">
-          <button type="button" class="btn-branch btn-topic-primary" id="g_save">Сохранить</button>
           <button type="button" class="btn-branch" id="g_topic_new">+ Тема</button>
-          <button type="button" class="btn-branch btn-topic-danger" id="g_delete">Удалить группу</button>
         </div>
       </div>`;
 
