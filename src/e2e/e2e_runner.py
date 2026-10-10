@@ -38,10 +38,15 @@ E2E_CASE_DIR = '/app/tests_e2e' if os.path.isdir('/app/tests_e2e') else 'tests_e
 # падал `ConnectError: All connection attempts failed`, записывая `error` в
 # каждую строку. Имя сервиса разрешается из обоих.
 #
-# ⚠ На проде с Blue-Green правильный адрес другой — `http://caddy:8090`: прямое
-# имя контейнера переживает только чётное число выкладок (`deploy.md`). Задаётся
-# переменной `E2E_PANEL_URL`, здесь только умолчание для одноконтейнерной
-# установки.
+# ⚠⚠ На проде с Blue-Green нужен ПУБЛИЧНЫЙ адрес установки
+# (`https://<домен>`), а не имя контейнера: имя указывает на один слот, и после
+# выкладки в зелёный проверялся бы синий — то есть не то, что видит человек.
+# Задаётся переменной `E2E_PANEL_URL`.
+#
+# ⚠⚠ `http://caddy:8090` для этого НЕ годится, хотя туда ходят кронджобы. Тот
+# порт намеренно отвечает только на `/cronjob`, а на всё прочее — 404
+# (`docker/caddy/Caddyfile`): с ним каждый случай писал бы `error`. Проверено на
+# проде до того, как это успело сработать.
 E2E_PANEL_BASE = 'http://uvicorn:8000'
 
 
@@ -57,6 +62,12 @@ async def e2e_runner_all(folder: str = '', base: str = '') -> dict:
         dict: `run_uuid`, `tests`, `failed`, `errored`.
     """
     base = base or config_get('E2E_PANEL_URL') or E2E_PANEL_BASE
+    # ⚠⚠ Учётка своя, а не `ADMIN_*`. Та — личность загрузочного администратора
+    # (`panel_user.py` заводит его на пустой таблице), и занимать её автоматикой
+    # нельзя. Пусто — останется прежнее поведение: вход под `ADMIN_*`, как на
+    # машине разработчика, где служебной учётки заводить незачем.
+    user = config_get('E2E_PANEL_USER', '')
+    password = config_get('E2E_PANEL_PASSWORD', '')
     cases = tests_e2e_case_list(folder or E2E_CASE_DIR)
     run_uuid = e2e_run_uuid()
     shots = e2e_shot_dir(run_uuid)
@@ -65,7 +76,8 @@ async def e2e_runner_all(folder: str = '', base: str = '') -> dict:
     tests = failed = errored = 0
     for case in cases:
         for width in case['widths']:
-            result = await e2e_runner_one(case, width, shots, base)
+            result = await e2e_runner_one(case, width, shots, base,
+                                          user=user, password=password)
             await e2e_runner_write(run_uuid, result)
 
             tests += 1
@@ -79,13 +91,14 @@ async def e2e_runner_all(folder: str = '', base: str = '') -> dict:
             'failed': failed, 'errored': errored}
 
 
-async def e2e_runner_one(case: dict, width: int, shots: str, base: str) -> dict:
+async def e2e_runner_one(case: dict, width: int, shots: str, base: str,
+                         user: str = '', password: str = '') -> dict:
     """Один случай в одной ширине — в отдельном потоке; см. шапку модуля."""
     names = (e2e_shot_name(case['name'], width, marked=False),
              e2e_shot_name(case['name'], width, marked=True))
     try:
         return await asyncio.to_thread(tests_e2e_run_case, case, width,
-                                       shots, base, names)
+                                       shots, base, names, '', user, password)
     except Exception as err:
         # Сюда прилетает только то, что каркас не поймал сам: сбой потока,
         # отмена. Строку всё равно пишем — молчащий тест хуже красного.
