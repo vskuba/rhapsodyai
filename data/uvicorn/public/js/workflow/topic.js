@@ -104,8 +104,16 @@ function topicsOf(branchId) {
 }
 
 function groupCurrent() {
-    const id = topicState.picked.kind === 'branch' ? topicState.picked.id
-        : (topicCurrent() || {}).topic_group_id;
+    // ⚠⚠ У НОВОЙ темы номера ещё нет, и спросить её о группе нельзя: в списке
+    // её не существует. Группу помнит сам выбор (`picked.groupId`) — её кладёт
+    // тот, кто нажал «+ Тема», и только она отвечает, куда тему заводить.
+    //
+    // Пока этого поля не было, заведение падало на ровном месте: `groupCurrent()`
+    // отдавал `null`, а `topicSave` читал у него `id` — «can't access property
+    // "id", branch is null». Поймано на проде человеком.
+    const picked = topicState.picked;
+    const id = picked.kind === 'branch' ? picked.id
+        : (topicCurrent() || {}).topic_group_id ?? picked.groupId;
     return topicState.branches.find(b => String(b.id) === String(id)) || null;
 }
 
@@ -265,19 +273,17 @@ function treeRender() {
         row.onclick = () => pick('topic', Number(row.dataset.topic));
     });
     list.querySelectorAll('[data-add]').forEach(row => {
-        row.onclick = () => {
-            topicState.picked = {kind: 'topic', id: null};
-            treeRender();
-            detailRender();
-        };
+        // ⚠ Группа берётся из самой строки: «+ Тема» стоит у конкретной группы,
+        // и у новой темы это единственный ответ на вопрос «куда заводим».
+        row.onclick = () => pick('topic', null, Number(row.dataset.add));
     });
 
     const pages = Math.ceil(topicState.branches.length / PAGE_SIZE);
     document.getElementById('groupPageLabel').textContent = `${topicState.page + 1} / ${pages}`;
 }
 
-function pick(kind, id) {
-    topicState.picked = {kind, id};
+function pick(kind, id, groupId = null) {
+    topicState.picked = {kind, id, groupId};
     treeRender();
     detailRender();
 }
@@ -338,7 +344,8 @@ function groupCardRender(detail) {
 
     document.getElementById('g_save').onclick = groupSave;
     document.getElementById('g_delete').onclick = groupDelete;
-    document.getElementById('g_topic_new').onclick = () => pick('topic', null);
+    document.getElementById('g_topic_new').onclick =
+        () => pick('topic', null, branch.id);
 }
 
 function topicCardRender(detail) {
