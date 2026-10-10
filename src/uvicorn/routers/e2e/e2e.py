@@ -10,14 +10,58 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 from src.e2e.e2e import e2e_row_get, e2e_run_list, e2e_run_rows
+from src.e2e.e2e_case import e2e_case_enable, e2e_case_list
+from src.e2e.e2e_runner import E2E_CASE_DIR
 from src.e2e.e2e_shot import e2e_shot_path
 from src.worker.e2e_worker import e2e_worker_enqueue, e2e_worker_running
 
 router = APIRouter(prefix='/api/e2e', tags=['e2e'])
+
+
+class E2eCaseEnableIn(BaseModel):
+    """Тело переключателя случая."""
+    enabled: bool
+
+
+@router.get('/case', include_in_schema=False)
+async def e2e_case_list_route(user=Depends(AuthChecker([AuthPermission.E2E_VIEW]))):
+    """Случаи установки с признаком «включён».
+
+    Returns:
+        dict: `result` — список: `file`, `name`, `description`, `page`,
+        `widths`, `areas`, `checks`, `enabled`.
+
+    ⚠ Список берётся из файлов `tests_e2e/`, а не из таблицы результатов:
+    случай, который ещё ни разу не гоняли, тоже обязан быть виден — иначе его
+    нечем включить.
+    """
+    return {'result': await e2e_case_list(E2E_CASE_DIR)}
+
+
+@router.put('/case/{case_file}/enabled', include_in_schema=False)
+async def e2e_case_enable_route(case_file: str, body: E2eCaseEnableIn,
+                                user=Depends(AuthChecker([AuthPermission.E2E_RUN]))):
+    """Включить или выключить случай.
+
+    ⚠ Право `e2e:run`, а не `e2e:view`: выключенный случай молча перестаёт
+    проверяться, и узнают об этом не сразу — по ненайденной поломке. Это
+    действие, а не чтение.
+
+    ⚠⚠ Имя случая ищется среди файлов и не берётся из адреса как есть: иначе в
+    таблицу уехала бы любая присланная строка, а список на странице
+    молча оброс бы выдуманными именами.
+    """
+    known = {one['file']: one['name'] for one in await e2e_case_list(E2E_CASE_DIR)}
+    if case_file not in known:
+        raise HTTPException(status_code=404, detail='Случая с таким файлом нет')
+
+    enabled = await e2e_case_enable(case_file, body.enabled, known[case_file])
+    return {'result': {'file': case_file, 'enabled': enabled}}
 
 
 @router.get('/run', include_in_schema=False)

@@ -20,7 +20,7 @@ import os
 
 from config.config import config_get
 from logging_.logging_ import logger_exception, logger_info
-from tests_e2e.tests_e2e_case import tests_e2e_case_list
+from src.e2e.e2e_case import e2e_case_runnable
 from tests_e2e.tests_e2e_run import tests_e2e_run_case
 
 from src.e2e.e2e import e2e_row_write, e2e_run_uuid, e2e_trim
@@ -68,10 +68,15 @@ async def e2e_runner_all(folder: str = '', base: str = '') -> dict:
     # машине разработчика, где служебной учётки заводить незачем.
     user = config_get('E2E_PANEL_USER', '')
     password = config_get('E2E_PANEL_PASSWORD', '')
-    cases = tests_e2e_case_list(folder or E2E_CASE_DIR)
+
+    # ⚠ Выключенные случаи сюда не попадают вовсе — ни строкой, ни `error`.
+    # Пропущенный тест обязан выглядеть как отсутствующий, а не как сорвавшийся:
+    # иначе выключатель сам становится источником красного в отчёте.
+    cases, skipped = await e2e_case_runnable(folder or E2E_CASE_DIR)
     run_uuid = e2e_run_uuid()
     shots = e2e_shot_dir(run_uuid)
-    logger_info(f'🧪 E2E прогон {run_uuid}: случаев {len(cases)}')
+    logger_info(f'🧪 E2E прогон {run_uuid}: случаев {len(cases)}'
+                + (f', выключено {len(skipped)}' if skipped else ''))
 
     tests = failed = errored = 0
     for case in cases:
@@ -87,8 +92,8 @@ async def e2e_runner_all(folder: str = '', base: str = '') -> dict:
     await e2e_trim()
     logger_info(f'🧪 E2E прогон {run_uuid}: тестов {tests}, '
                 f'провалов {failed}, сорвалось {errored}')
-    return {'run_uuid': run_uuid, 'tests': tests,
-            'failed': failed, 'errored': errored}
+    return {'run_uuid': run_uuid, 'tests': tests, 'failed': failed,
+            'errored': errored, 'skipped': len(skipped)}
 
 
 async def e2e_runner_one(case: dict, width: int, shots: str, base: str,

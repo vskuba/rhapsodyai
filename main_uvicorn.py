@@ -58,7 +58,7 @@ MAIN_UVICORN_SEED_RUNTIME = (
     'project_design_prototype_widget', 'project_planning_document',
     'project_task_attempt', 'project_task_depend', 'project_task_metric',
     'project_task_plan_revision', 'session', 'team_llm_lock', 'team_shell_lock',
-    'test_e2e', 'tool', 'tool_group')
+    'test_e2e', 'test_e2e_case', 'tool', 'tool_group')
 from src.journal.journal_handler import journal_handler_install
 from src.journal.journal_mysql import (journal_mysql_flush_forever,
                                        journal_mysql_watch_start)

@@ -15,6 +15,13 @@
         min-height: 0;
     }
 
+    /* ⚠ На вкладке «Тесты» колонка прогонов прячется. Она — выбор прогона, а
+       показывать ей там нечего: щелчок менял бы скрытую панель, то есть не
+       делал бы ничего. Ручка без действия хуже отсутствующей. */
+    .e2e-page.cases .e2e-runs {
+        display: none;
+    }
+
     /* ===================== Левая колонка: прогоны ===================== */
     .e2e-runs {
         flex: 0 0 240px;
@@ -141,6 +148,122 @@
         text-align: center;
         color: #a0aec0;
         font-size: 13px;
+    }
+
+    /* ===================== Подвкладки страницы =====================
+       Разметка и имена классов те же, что на /admin/journal и /admin/llm:
+       страницы админки переключаются одинаково. */
+    .page-tabs {
+        display: flex;
+        border-bottom: 2px solid #e2e8f0;
+        padding: 0 16px;
+        background: #fff;
+        flex-shrink: 0;
+    }
+
+    .page-tab {
+        padding: 9px 18px;
+        font-size: 13px;
+        font-weight: 600;
+        color: #718096;
+        cursor: pointer;
+        border: none;
+        background: none;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -2px;
+    }
+
+    .page-tab.active {
+        color: #2c3e50;
+        border-bottom-color: #3498db;
+    }
+
+    .tab-panel {
+        display: none;
+        flex: 1;
+        min-height: 0;
+        flex-direction: column;
+    }
+
+    .tab-panel.active {
+        display: flex;
+    }
+
+    /* ===================== Список случаев ===================== */
+    .e2e-case {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+        padding: 12px 14px;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        margin-bottom: 10px;
+        background: #fff;
+    }
+
+    /* Выключенный случай гаснет весь: взгляд не должен спотыкаться о него,
+       когда ищешь, что сегодня красное. */
+    .e2e-case.off {
+        background: #fafafa;
+        color: #a0aec0;
+    }
+
+    .e2e-case.off .e2e-case-name {
+        color: #a0aec0;
+    }
+
+    .e2e-case-body {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .e2e-case-name {
+        font-size: 14px;
+        font-weight: 700;
+        color: #2d3748;
+    }
+
+    .e2e-case-meta {
+        margin-top: 2px;
+        font-size: 11px;
+        font-family: monospace;
+        color: #a0aec0;
+    }
+
+    .e2e-case-desc {
+        margin-top: 5px;
+        font-size: 12px;
+        line-height: 1.45;
+        color: #718096;
+        max-width: 90ch;
+    }
+
+    .e2e-switch {
+        flex-shrink: 0;
+        width: 86px;
+        padding: 4px 0;
+        font-size: 11px;
+        font-weight: 600;
+        border-radius: 10px;
+        border: 1px solid transparent;
+        cursor: pointer;
+    }
+
+    .e2e-switch.on {
+        background: #c6f6d5;
+        color: #22543d;
+        border-color: #9ae6b4;
+    }
+
+    .e2e-switch.off {
+        background: #edf2f7;
+        color: #718096;
+        border-color: #e2e8f0;
+    }
+
+    .e2e-switch:disabled {
+        opacity: 0.55;
+        cursor: default;
     }
 
     /* ===================== Карточка теста =====================
@@ -443,6 +566,15 @@
     </div>
 
     <div class="e2e-main">
+        {# Две подвкладки: «Прогоны» — что уже проверено, «Тесты» — что вообще
+           стережётся и чем это включают. Случай, который ещё ни разу не
+           гоняли, виден только во второй: иначе его нечем было бы включить. #}
+        <div class="page-tabs" id="e2eTabs">
+            <button type="button" class="page-tab active" data-tab="runs">📋 Прогоны</button>
+            <button type="button" class="page-tab" data-tab="cases">🧪 Тесты</button>
+        </div>
+
+        <div class="tab-panel active" id="tab-runs">
         <div class="e2e-tools">
             <button type="button" class="e2e-btn" id="e2eReload"
                     title="Перечитать список прогонов">⟳ Обновить</button>
@@ -457,6 +589,18 @@
 
         <div class="e2e-list" id="e2eList">
             <div class="e2e-empty">Загрузка…</div>
+        </div>
+        </div>
+
+        <div class="tab-panel" id="tab-cases">
+            <div class="e2e-tools">
+                <button type="button" class="e2e-btn" id="e2eCaseReload"
+                        title="Перечитать список случаев">⟳ Обновить</button>
+                <span class="e2e-count" id="e2eCaseCount"></span>
+            </div>
+            <div class="e2e-list" id="e2eCaseList">
+                <div class="e2e-empty">Загрузка…</div>
+            </div>
         </div>
     </div>
 </div>
@@ -478,7 +622,7 @@
 
 {% block scripts %}
 <script type="module">
-    import {getData, postData} from '/static/js/api.js';
+    import {getData, postData, putData} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
 
     const runsEl = document.getElementById('e2eRuns');
@@ -773,10 +917,124 @@
         }
     }
 
+    // ===================== Подвкладка «Тесты» =====================
+
+    const caseListEl = document.getElementById('e2eCaseList');
+    const caseCountEl = document.getElementById('e2eCaseCount');
+
+    function caseSwitch(button, on) {
+        button.className = `e2e-switch ${on ? 'on' : 'off'}`;
+        button.textContent = on ? 'включён' : 'выключен';
+        const card = button.closest('.e2e-case');
+        if (card) card.classList.toggle('off', !on);
+    }
+
+    async function caseToggle(button, one) {
+        const want = !button.classList.contains('on');
+        button.disabled = true;
+        try {
+            await putData(`/api/e2e/case/${encodeURIComponent(one.file)}/enabled`,
+                          {enabled: want});
+            one.enabled = want;
+            caseSwitch(button, want);
+            showNotification(want ? 'Тест включён' : 'Тест выключен', 'success');
+            caseCount();
+        } catch (err) {
+            showNotification(err.message, 'error');
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    let cases = [];
+
+    function caseCount() {
+        const on = cases.filter(one => one.enabled).length;
+        caseCountEl.textContent = `тестов ${cases.length} · включено ${on}`
+            + (on < cases.length ? ` · выключено ${cases.length - on}` : '');
+    }
+
+    function caseDraw() {
+        caseListEl.replaceChildren();
+        if (!cases.length) {
+            caseListEl.append(el('div', 'e2e-empty',
+                'Случаев нет. Они лежат файлами в tests_e2e/*.yaml.'));
+            return;
+        }
+
+        cases.forEach(one => {
+            const card = el('div', `e2e-case${one.enabled ? '' : ' off'}`);
+
+            const body = el('div', 'e2e-case-body');
+            body.append(el('div', 'e2e-case-name', one.name));
+            body.append(el('div', 'e2e-case-meta',
+                `${one.page} · ${one.file} · ширин ${one.widths.length}`
+                + ` · областей ${one.areas}`
+                + (one.checks ? ` · проверок ${one.checks}` : '')));
+            if (one.description) body.append(el('div', 'e2e-case-desc', one.description));
+            card.append(body);
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            caseSwitch(button, one.enabled);
+            button.onclick = () => caseToggle(button, one);
+            card.append(button);
+
+            caseListEl.append(card);
+        });
+    }
+
+    async function caseLoad() {
+        try {
+            const answer = await getData('/api/e2e/case');
+            cases = answer.result || [];
+            caseCount();
+            caseDraw();
+        } catch (err) {
+            showNotification(err.message, 'error');
+            caseListEl.replaceChildren(el('div', 'e2e-empty', err.message));
+        }
+    }
+
+    document.getElementById('e2eCaseReload').onclick = caseLoad;
+
+    // Переключение подвкладок: панель ищется по `id`, кнопка — по `data-tab`.
+    // ⚠ Спрашивает сервер только открытая: у соседней свои ручки, и дёргать их
+    // впустую на каждом заходе незачем.
+    const E2E_TAB_KEY = 'e2eTab';
+    let casesLoaded = false;
+
+    function tabSwitch(name) {
+        document.querySelector('.e2e-page').classList.toggle('cases', name === 'cases');
+        document.querySelectorAll('.page-tab').forEach(tab => {
+            tab.classList.toggle('active', tab.dataset.tab === name);
+        });
+        document.querySelectorAll('.tab-panel').forEach(panel => {
+            panel.classList.toggle('active', panel.id === `tab-${name}`);
+        });
+        if (name === 'cases' && !casesLoaded) {
+            casesLoaded = true;
+            caseLoad();
+        }
+    }
+
+    document.querySelectorAll('.page-tab').forEach(tab => {
+        tab.onclick = () => {
+            localStorage.setItem(E2E_TAB_KEY, tab.dataset.tab);
+            tabSwitch(tab.dataset.tab);
+        };
+    });
+
     // ⚠ `loadTz()` до первой отрисовки: без него `fmtTz` покажет UTC, а
     // настройка `timezone` сдвигает время на всех страницах админки.
     await loadTz();
     await load();
+
+    // Запомненная подвкладка, если она ещё существует: пункт могли убрать, и
+    // тогда открывается первая — пустая страница хуже забытого выбора.
+    const rememberedTab = localStorage.getItem(E2E_TAB_KEY);
+    const knownTabs = [...document.querySelectorAll('.page-tab')].map(one => one.dataset.tab);
+    tabSwitch(knownTabs.includes(rememberedTab) ? rememberedTab : knownTabs[0]);
 
     // ⚠⚠ Состояние прогона спрашиваем и при заходе, а не только после нажатия.
     // Прогон живёт в очереди, а не во вкладке: его мог завести сосед или ночное
