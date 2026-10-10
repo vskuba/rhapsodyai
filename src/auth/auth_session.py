@@ -13,6 +13,6 @@
 по ключам.
 """
 
-from panel_.panel_auth import PanelUser as AuthSession
+from dashboard.src.panel.panel_auth import PanelUser as AuthSession
 
 __all__ = ['AuthSession']

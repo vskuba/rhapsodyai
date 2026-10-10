@@ -26,12 +26,12 @@ from mysql_.migration.mysql_migration_up import mysql_migration_up
 from mysql_.mysql_ import mysql_pool_get, mysql_pool_close
 from mysql_.mysql_seed import mysql_seed_up
 from queue_.queue_ import queue_init
-from panel_.panel_backup_api import panel_backup_api_router
-from panel_.panel_static import panel_static_files
-from panel_.panel_template import panel_template_env
-from panel_.panel_user_api import panel_user_api_router
-from panel_.panel_seed_api import panel_seed_api_router
-from panel_.panel_setting_api import panel_setting_api_router
+from dashboard.src.panel.panel_backup_api import panel_backup_api_router
+from dashboard.src.panel.panel_static import panel_static_files
+from dashboard.src.panel.panel_template import panel_template_env
+from dashboard.src.panel.panel_user_api import panel_user_api_router
+from dashboard.src.panel.panel_seed_api import panel_seed_api_router
+from dashboard.src.panel.panel_setting_api import panel_setting_api_router
 from redis_.redis_queue import redis_queue_init
 from src.ai.framework.agent.ai_framework_manager import AiFrameworkAgentManager
 from src.ai.ai_workflow_trace import ai_workflow_trace_runs_stale_close

@@ -4,7 +4,7 @@ import bcrypt
 from fastapi import APIRouter, Request, HTTPException
 from event_.event_ import event_emit
 from mysql_.mysql_ import mysql_get_db_async
-from panel_.panel_auth import panel_auth_user_check
+from dashboard.src.panel.panel_auth import panel_auth_user_check
 from setting_.setting_ import setting_get, setting_set
 from i18n_.i18n_ import i18n_languages_parse
 from src.tool.setting.setting_ import setting_value_get

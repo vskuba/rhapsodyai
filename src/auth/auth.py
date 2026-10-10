@@ -31,11 +31,11 @@
 from fastapi import HTTPException, Request, status
 
 from auth_.auth_primitive import auth_token_of
-from panel_.panel_access import panel_access_use
-from panel_.panel_auth import (PanelUser, panel_auth_need,
+from dashboard.src.panel.panel_access import panel_access_use
+from dashboard.src.panel.panel_auth import (PanelUser, panel_auth_need,
                                panel_auth_required as auth_get_current_user,
                                panel_auth_token_user)
-from panel_.panel_store import panel_store_use
+from dashboard.src.panel.panel_store import panel_store_use
 
 from src.auth.auth_access import AuthAccess
 from src.auth.auth_permission import AuthPermission

@@ -641,8 +641,8 @@ class TestBackupOrder:
         (`backup_<метка>.sql.gz`) оба порядка совпадают, и проверки ниже это
         подтверждают.
         """
-        from panel_.panel_backup_api import PANEL_BACKUP_EXT
-        from panel_.panel_file import panel_file_list
+        from dashboard.src.panel.panel_backup_api import PANEL_BACKUP_EXT
+        from dashboard.src.panel.panel_file import panel_file_list
 
         return [f['name'] for f in panel_file_list(path, PANEL_BACKUP_EXT)]
 

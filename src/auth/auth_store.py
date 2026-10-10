@@ -24,7 +24,7 @@
 """
 
 from mysql_.mysql_ import mysql_get_db_async
-from panel_.panel_store import PanelUserStoreColumn
+from dashboard.src.panel.panel_store import PanelUserStoreColumn
 
 from src.auth.auth_role import AuthRole
 

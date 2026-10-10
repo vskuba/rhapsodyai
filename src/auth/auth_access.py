@@ -20,7 +20,7 @@
 отвечающий скелету на три вопроса его языком.
 """
 
-from panel_.panel_access import PANEL_ACCESS_ALL_FIELDS, PanelAccess
+from dashboard.src.panel.panel_access import PANEL_ACCESS_ALL_FIELDS, PanelAccess
 
 from src.auth.auth_field_policy import (ALL_FIELDS,
                                         auth_field_policy_fields_allowed)
