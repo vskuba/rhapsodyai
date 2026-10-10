@@ -706,7 +706,11 @@
     .tree-add:hover { background: #eef4fb; }
     .tree-add-text { font-size: 12px; font-weight: 500; }
 
+    /* ⚠ Шапка — ряд: слева чья это тема, справа действия над ней. Подпись
+       мелкая и заглавными, кнопки свой размер держат сами (`.btn-branch`). */
     .topic-card-head {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; flex-wrap: wrap;
         font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
         color: #8a8a8a; margin-bottom: 14px;
     }
@@ -728,7 +732,98 @@
         flex: 1; overflow-y: auto; max-height: 600px; padding: 16px 20px;
         min-width: 0; border: 1px solid #e3e3e3; border-left: none; border-radius: 0 6px 6px 0;
     }
-    .topic-card { max-width: 820px; }
+    /* ⚠ Потолка ширины у карточки больше нет. Он стоял под ОДНУ колонку —
+       длинное поле ввода во всю панель читается тяжело. С двумя колонками
+       тот же потолок оставлял справа пустое поле, а правила ужимал вдвое:
+       метки переносились на три ряда там, где хватало одного. Ширину теперь
+       держит само деление на колонки. */
+    .topic-card { width: 100%; }
+
+    /* ── Карточка темы: две колонки ───────────────────────────────────────
+       Слева — то, что человек ПИШЕТ (название, код, инструкция), справа —
+       то, чем тема ОТБИРАЕТСЯ (метки, пороги, вопросы). Деление по занятию,
+       а не по размеру: инструкцию правят текстом и подолгу, правила —
+       короткими касаниями, и мешать их в одну колонку значит заставлять
+       глаз прыгать. */
+
+    /* Шапка карточки: слева — чья это тема, справа — что с ней сделать.
+       Действия стоят наверху, у самой формы: внизу их загораживала длинная
+       инструкция, и до «Сохранить» приходилось крутить страницу. */
+    .topic-head-actions { display: flex; align-items: center; gap: 8px; }
+
+    /* ⚠ Флаг стоит в шапке, рядом с «чья это тема»: «включена» — свойство
+       самой темы, а не поле формы, и в ряду с названием он отбирал у того
+       половину ширины. Регистр у шапки заглавный — флагу возвращаем обычный. */
+    .topic-head-check {
+        margin-left: 10px; text-transform: none; letter-spacing: 0;
+        font-size: 12px; color: #4a5568;
+    }
+
+    /* ⚠ Корзинка — КВАДРАТНАЯ и со словом в подсказке. Значок без подписи
+       опознаётся по форме, и растянутая кнопка читается как «ещё одно
+       действие», а не как «удалить». */
+    .topic-trash {
+        width: 32px; height: 29px; padding: 0; line-height: 1;
+        font-size: 14px; display: inline-flex;
+        align-items: center; justify-content: center;
+    }
+
+    /* ⚠ Подсказка под парой полей: своего поля у неё нет, и без отступа
+       она прилипает к следующей подписи — читается как её часть. */
+    .topic-hint-row { margin: -6px 0 12px; }
+
+    .topic-cols {
+        display: grid; grid-template-columns: 1fr 1fr; gap: 18px;
+        align-items: stretch;
+    }
+
+    /* ⚠ `min-width: 0` обязателен: без него длинная строка внутри (чипсы
+       меток, текст вопроса) раздвигает колонку сверх доли, и вторая
+       схлопывается. У grid-элемента `min-width` по умолчанию `auto`. */
+    .topic-col { display: flex; flex-direction: column; min-width: 0; }
+
+    /* Инструкция забирает остаток высоты: справа высоту диктуют метки,
+       пороги и вопросы, и левая колонка тянется за ними. */
+    .topic-field-grow { display: flex; flex-direction: column; flex: 1 1 auto; }
+
+    /* ⚠ `min-height: 0` у растущего поля обязателен: внутри него textarea со
+       своей `min-height`, и без обнуления flex-элемент не ужимается ниже
+       содержимого — колонка перерастает соседнюю, и карточка едет вниз. */
+    .topic-field-grow { min-height: 0; }
+    .topic-field-grow textarea.instr-area { flex: 1 1 auto; min-height: 220px; }
+
+    /* Флаг «Включена» стоит в одной строке с названием и обязан держаться его
+       базовой линии, а не верха блока: у названия сверху подпись. */
+    .topic-col-main .topic-field-check { flex: 0 0 auto; align-self: flex-end;
+                                         padding-bottom: 7px; }
+
+    /* ⚠ Узкий экран: колонки встают одна под другой. Две по 1fr на 1000px
+       дают поле меток шириной в три чипса — это хуже, чем длинная форма. */
+    @media (max-width: 1280px) {
+        /* Шапка карточки: слева — чья это тема, справа — что с ней сделать.
+       Действия стоят наверху, у самой формы: внизу их загораживала длинная
+       инструкция, и до «Сохранить» приходилось крутить страницу. */
+    .topic-head-actions { display: flex; align-items: center; gap: 8px; }
+
+    /* ⚠ Флаг стоит в шапке, рядом с «чья это тема»: «включена» — свойство
+       самой темы, а не поле формы, и в ряду с названием он отбирал у того
+       половину ширины. Регистр у шапки заглавный — флагу возвращаем обычный. */
+    .topic-head-check {
+        margin-left: 10px; text-transform: none; letter-spacing: 0;
+        font-size: 12px; color: #4a5568;
+    }
+
+    /* ⚠ Корзинка — КВАДРАТНАЯ и со словом в подсказке. Значок без подписи
+       опознаётся по форме, и растянутая кнопка читается как «ещё одно
+       действие», а не как «удалить». */
+    .topic-trash {
+        width: 32px; height: 29px; padding: 0; line-height: 1;
+        font-size: 14px; display: inline-flex;
+        align-items: center; justify-content: center;
+    }
+
+    .topic-cols { grid-template-columns: 1fr; }
+    }
 
     .topic-form-row { display: flex; gap: 12px; align-items: flex-start; }
     .topic-form-row > .topic-field { flex: 1; }

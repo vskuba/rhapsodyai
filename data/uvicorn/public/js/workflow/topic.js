@@ -359,76 +359,86 @@ function topicCardRender(detail) {
     detail.innerHTML = `
       <div class="topic-card">
         <div class="topic-card-head">
-          <span class="topic-crumb">${esc((branch || {}).title || '')}</span>
-          ${isNew ? 'новая тема' : 'тема'}
-        </div>
-        <div class="topic-form-row">
-          <div class="topic-field"><label>Название</label>
-            <input class="topic-control" id="t_title" value="${esc(topic.title)}"></div>
-          <div class="topic-field"><label>Код</label>
-            <input class="topic-control" id="t_name" value="${esc(topic.name)}">
-            <div class="topic-hint">Под ним тема видна в журнале прогона
-                 и приезжает агенту переменной <code>%topic_name%</code>.</div></div>
-          <div class="topic-field topic-field-check">
-            <label class="topic-check">
+          <span class="topic-head-name">
+            <span class="topic-crumb">${esc((branch || {}).title || '')}</span>
+            ${isNew ? 'новая тема' : 'тема'}
+            <label class="topic-check topic-head-check">
               <input type="checkbox" id="t_is_enabled" ${topic.is_enabled ? 'checked' : ''}>
               Включена
             </label>
-          </div>
+          </span>
+          <span class="topic-head-actions">
+            <button type="button" class="btn-branch btn-topic-primary" id="t_save">Сохранить тему</button>
+            ${isNew ? '' : '<button type="button" class="btn-branch btn-topic-danger topic-trash"'
+                           + ' id="t_delete" title="Удалить тему" aria-label="Удалить тему">🗑</button>'}
+          </span>
         </div>
-        <div class="topic-field">
-          <div class="tag-head">
-            <label>Метки <span class="tag-counter" id="t_tags_count"></span></label>
-            <div class="tag-langs" id="t_tags_langs"></div>
+        <div class="topic-cols">
+          <div class="topic-col topic-col-main">
+            <div class="topic-form-row">
+              <div class="topic-field"><label>Название</label>
+                <input class="topic-control" id="t_title" value="${esc(topic.title)}"></div>
+              <div class="topic-field"><label>Код</label>
+                <input class="topic-control" id="t_name" value="${esc(topic.name)}"></div>
+            </div>
+            <div class="topic-hint topic-hint-row">Код: под ним тема видна в журнале
+                 прогона и приезжает агенту переменной
+                 <code>%topic_action_name%</code>.</div>
+            <div class="topic-field topic-field-grow">
+              <div class="instr-head">
+                <label>Инструкция</label>
+                <span class="instr-big" id="t_instructions_big"></span>
+              </div>
+              <textarea class="topic-control instr-area" id="t_instructions"
+                        placeholder="Что делать, когда тема поднята: как отвечать, куда вести разговор, чего нельзя"
+                        >${esc(topic.instructions)}</textarea>
+              <div class="topic-hint">Весь текст уезжает агенту переменной
+                   <code>%topic_action_instructions%</code> — и в генерацию ответа, и к судье.</div>
+            </div>
           </div>
-          <div class="tag-editor" id="t_tags_box">
-            <input class="tag-input" id="t_tags_input" placeholder="добавить метку и Enter…">
+          <div class="topic-col topic-col-rules">
+            <div class="topic-field">
+              <div class="tag-head">
+                <label>Метки <span class="tag-counter" id="t_tags_count"></span></label>
+                <div class="tag-langs" id="t_tags_langs"></div>
+              </div>
+              <div class="tag-editor" id="t_tags_box">
+                <input class="tag-input" id="t_tags_input" placeholder="добавить метку и Enter…">
+              </div>
+              <div class="topic-hint">Ищутся в тексте разговора <b>словом целиком</b>, поэтому
+                   метка — короткое слово, которое человек вправду пишет (<code>photo</code>,
+                   <code>send</code>), и каждая форма своя: <code>photo</code> не найдёт
+                   <code>photos</code>. Точность даёт не метка, а вопрос ниже.</div>
+            </div>
+            <div class="topic-form-row">
+              <div class="topic-field">
+                <label>Минимум разных меток</label>
+                <input class="topic-control" id="t_tags_qty_accept" type="number" min="1" max="20"
+                       value="${Number(topic.tags_qty_accept) || 1}">
+                <div class="topic-hint">Сколько <b>разных</b> меток нашлось — тогда тему
+                     проверяют вопросами. Повтор одной метки считается за одну.</div>
+              </div>
+              <div class="topic-field">
+                <label>Минимум ответов «yes»</label>
+                <input class="topic-control" id="t_questions_qty_yes_accept" type="number" min="1" max="20"
+                       value="${Number(topic.questions_qty_yes_accept) || 1}">
+                <div class="topic-hint">Сколько ответов «yes» означают, что тема поднята.
+                     Вопросов нет — хватает одних меток.</div>
+              </div>
+            </div>
+            <div class="topic-field">
+              <div class="tag-head">
+                <label>Вопросы <span class="tag-counter" id="t_questions_count"></span></label>
+                <div class="tag-langs" id="t_questions_langs"></div>
+              </div>
+              <div id="t_questions_box"></div>
+              <button type="button" class="btn-branch" id="t_question_add">+ Вопрос</button>
+              <div class="topic-hint">Ответ на вопрос — только «yes» или «no», и спрашивают
+                   о том, что в тексте вправду написано. ⚠ Вопрос обязан проверять <b>ту же</b>
+                   тему, что и метки: метка ловит слово, вопрос — смысл за ним. Список пуст —
+                   модель не зовут вовсе.</div>
+            </div>
           </div>
-          <div class="topic-hint">Ищутся в тексте разговора <b>словом целиком</b>, поэтому
-               метка — короткое слово, которое человек вправду пишет (<code>photo</code>,
-               <code>send</code>), и каждая форма своя: <code>photo</code> не найдёт
-               <code>photos</code>. Точность даёт не метка, а вопрос ниже.</div>
-        </div>
-        <div class="topic-form-row">
-          <div class="topic-field">
-            <label>Минимум разных меток</label>
-            <input class="topic-control" id="t_tags_qty_accept" type="number" min="1" max="20"
-                   value="${Number(topic.tags_qty_accept) || 1}">
-            <div class="topic-hint">Сколько <b>разных</b> меток нашлось — тогда тему
-                 проверяют вопросами. Повтор одной метки считается за одну.</div>
-          </div>
-          <div class="topic-field">
-            <label>Минимум ответов «yes»</label>
-            <input class="topic-control" id="t_questions_qty_yes_accept" type="number" min="1" max="20"
-                   value="${Number(topic.questions_qty_yes_accept) || 1}">
-            <div class="topic-hint">Сколько ответов «yes» означают, что тема поднята.
-                 Вопросов нет — хватает одних меток.</div>
-          </div>
-        </div>
-        <div class="topic-field">
-          <div class="tag-head">
-            <label>Вопросы <span class="tag-counter" id="t_questions_count"></span></label>
-          </div>
-          <div id="t_questions_box"></div>
-          <button type="button" class="btn-branch" id="t_question_add">+ Вопрос</button>
-          <div class="topic-hint">Ответ на вопрос — только «yes» или «no», и спрашивают
-               о том, что в тексте вправду написано. Метки решают, стоит ли спрашивать;
-               вопросы — поднята ли тема. Список пуст — модель не зовут вовсе.</div>
-        </div>
-        <div class="topic-field">
-          <div class="instr-head">
-            <label>Инструкция</label>
-            <span class="instr-big" id="t_instructions_big"></span>
-          </div>
-          <textarea class="topic-control instr-area" id="t_instructions"
-                    placeholder="Что делать, когда тема поднята: как отвечать, куда вести разговор, чего нельзя"
-                    >${esc(topic.instructions)}</textarea>
-          <div class="topic-hint">Весь текст уезжает агенту переменной
-               <code>%topic_instructions%</code> — и в генерацию ответа, и к судье.</div>
-        </div>
-        <div class="topic-actions">
-          <button type="button" class="btn-branch btn-topic-primary" id="t_save">Сохранить тему</button>
-          ${isNew ? '' : '<button type="button" class="btn-branch btn-topic-danger" id="t_delete">Удалить тему</button>'}
         </div>
       </div>`;
 
@@ -491,16 +501,35 @@ function tagNormalize(raw) {
  * ⚠ Перевод не сохраняется сам: человек смотрит на него и жмёт «Сохранить
  * тему». Промахнулся языком — ушёл с темы, и ничего не случилось.
  */
-async function tagsTranslate(lang, button) {
-    if (!topicState.tags.length) {
-        showNotification('Меток нет', 'error');
-        return;
+/**
+ * Перевести список строк целиком — либо все, либо ни одной.
+ *
+ * ⚠⚠ Общая часть для меток и вопросов, и держать её надо в одном месте.
+ * Отличия у них всего два — приведение после перевода и схлопывание
+ * повторов, — а одинакового много: определение исходного языка, отказ от
+ * перевода «на тот же язык», параллельные запросы, занятая кнопка и правило
+ * «не перевелась одна — не трогаем ничего».
+ *
+ * ⚠ Частичный перевод хуже отказа: половина меток на английском, половина на
+ * русском — это тема, которая не ловится ни на одном языке, и человек видит
+ * зелёное «переведено».
+ *
+ * @param {string[]} items что переводим.
+ * @param {object} lang язык из `TAG_LANGS`.
+ * @param {HTMLElement} button кнопка-флаг: её занимаем на время работы.
+ * @param {object} words слова для сообщений: `{empty, already, done}`.
+ * @returns {Promise<string[]|null>} переведённое либо `null` — делать нечего.
+ */
+async function listTranslate(items, lang, button, words) {
+    if (!items.length) {
+        showNotification(words.empty, 'error');
+        return null;
     }
 
-    const source = textTranslateGuess(topicState.tags.join(' '));
+    const source = textTranslateGuess(items.join(' '));
     if (source === lang.code) {
-        showNotification(`Метки и так на ${lang.word}`, 'info');
-        return;
+        showNotification(`${words.already} ${lang.word}`, 'info');
+        return null;
     }
 
     const was = button.textContent;
@@ -508,42 +537,92 @@ async function tagsTranslate(lang, button) {
     button.textContent = '…';
 
     try {
-        const done = await Promise.all(topicState.tags.map(async (tag) => {
+        const done = await Promise.all(items.map(async (item) => {
             const answer = await postData('/translate', {
-                text: tag,
+                text: item,
                 language_from: source,
                 language_to: lang.code,
             });
-            return tagNormalize(answer.result || '');
+            return String(answer.result || '').trim();
         }));
 
-        const lost = topicState.tags.filter((tag, index) => !done[index]);
-        if (lost.length) {
+        const lostAt = done.findIndex(one => !one);
+        if (lostAt >= 0) {
             showNotification(
-                `Не перевелось: «${lost[0]}» — метки оставлены как были`, 'error');
-            return;
+                `Не перевелось: «${items[lostAt]}» — оставлено как было`, 'error');
+            return null;
         }
-
-        // Перевод мог свести две метки в одну — повтор не держим
-        const kept = [];
-        done.forEach(tag => {
-            if (!kept.includes(tag)) kept.push(tag);
-        });
-        topicState.tags = kept;
-        tagsEditorRender();
-
-        showNotification(
-            `Метки на ${lang.word}. Не забудьте «Сохранить тему»`, 'success');
+        return done;
     } catch (e) {
         showNotification(`Не перевелось: ${e.message}`, 'error');
+        return null;
     } finally {
         button.disabled = false;
         button.textContent = was;
     }
 }
 
+async function tagsTranslate(lang, button) {
+    const done = await listTranslate(topicState.tags, lang, button, {
+        empty: 'Меток нет',
+        already: 'Метки и так на',
+    });
+    if (!done) return;
+
+    // ⚠ Приведение и схлопывание — ТОЛЬКО у меток: это множество, и перевод
+    // вправду может свести две в одну («письмо» и «письма» → «letter»).
+    // У вопросов так нельзя: два одинаковых вопроса — ошибка человека, и
+    // молча убрать один значит скрыть её.
+    const kept = [];
+    done.map(tagNormalize).forEach(tag => {
+        if (tag && !kept.includes(tag)) kept.push(tag);
+    });
+    topicState.tags = kept;
+    tagsEditorRender();
+
+    showNotification(`Метки на ${lang.word}. Не забудьте «Сохранить тему»`, 'success');
+}
+
+/**
+ * Перевести вопросы темы на выбранный язык.
+ *
+ * ⚠ Переводятся и выключенные: выключатель — про «не спрашивать сейчас», а не
+ * про «это черновик». Оставь их на прежнем языке, и включённый назавтра вопрос
+ * придёт в промпт чужой речью.
+ */
+async function questionsTranslate(lang, button) {
+    const texts = topicState.questions.map(one => one.question.trim());
+    const done = await listTranslate(texts.filter(Boolean), lang, button, {
+        empty: 'Вопросов нет',
+        already: 'Вопросы и так на',
+    });
+    if (!done) return;
+
+    let at = 0;
+    topicState.questions.forEach(one => {
+        if (one.question.trim()) one.question = done[at++];
+    });
+    questionsEditorRender();
+
+    showNotification(`Вопросы на ${lang.word}. Не забудьте «Сохранить тему»`, 'success');
+}
+
 function tagsLangsRender() {
-    const host = document.getElementById('t_tags_langs');
+    langsRender('t_tags_langs', 'перевести все метки на', tagsTranslate);
+}
+
+function questionsLangsRender() {
+    langsRender('t_questions_langs', 'перевести все вопросы на', questionsTranslate);
+}
+
+/**
+ * Ряд флагов-переводчиков в указанный контейнер.
+ *
+ * ⚠ Один код на метки и вопросы: ряды одинаковы до последнего класса, и две
+ * копии разошлись бы на первой правке подсказки или порядка языков.
+ */
+function langsRender(hostId, hint, translate) {
+    const host = document.getElementById(hostId);
     if (!host) return;
 
     host.innerHTML = '';
@@ -552,8 +631,8 @@ function tagsLangsRender() {
         button.type = 'button';
         button.className = 'tag-lang';
         button.textContent = lang.flag;
-        button.title = `перевести все метки на ${lang.word}`;
-        button.onclick = () => tagsTranslate(lang, button);
+        button.title = `${hint} ${lang.word}`;
+        button.onclick = () => translate(lang, button);
         host.appendChild(button);
     });
 }
@@ -572,6 +651,7 @@ function questionsEditorInit(questions) {
         question: String(item.question || ''),
         is_enabled: Number(item.is_enabled ?? 1) ? 1 : 0,
     }));
+    questionsLangsRender();
     questionsEditorRender();
 
     const add = document.getElementById('t_question_add');
