@@ -664,7 +664,8 @@ app.include_router(journal_api_router(view=AuthPermission.JOURNAL_VIEW,
 # `e2e:*` это предметная область установки, и в общий модуль они не уезжают.
 # Поэтому роутер собирается фабрикой, а права приходят доводом.
 app.include_router(e2e_api_router(view=AuthPermission.E2E_VIEW,
-                                  run=AuthPermission.E2E_RUN),
+                                  run=AuthPermission.E2E_RUN,
+                                  drop=AuthPermission.E2E_DELETE),
                    include_in_schema=False)
 # ⚠ Страница Cronicle общая (submodule `dashboard`), права — наши.
 app.include_router(cronicle_page_api_router(view=AuthPermission.CRONICLE_VIEW,

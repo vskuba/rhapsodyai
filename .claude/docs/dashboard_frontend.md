@@ -70,16 +70,29 @@ Gatus, OpenSearch) — это `localhost:PORT`, работающие при по
 | `agent_group_tree.js` | `buildGroupTree`, `renderGroupTree` | Дерево групп с раскрытием в localStorage |
 | `lang_switcher.js` | `i18nTextResolve`, `userLanguageGet`, `nodeLanguagesGet`, `langSwitcherCreate` | Мультиязычные поля |
 | `user_access_token.js` | `loadUserTokens`, `deleteToken`, `initTokenGeneration` | Access-токены (кабинет, пользователи) |
-| `tz.js` | `window.loadTz()`, `window.fmtTz(value, withSeconds)` | Не модуль, а глобали; подключён в `base.html` |
-| `sidebar_resizer.js` | `initSidebarResizer(...)` (глобальная) | Тянущаяся ширина сайдбара, ширина в localStorage |
+| `tz.js` | `window.loadTz()`, `window.fmtTz(value, withSeconds)` | ⚠ Файл живёт в каркасе (`dashboard/js/`), а не здесь; не модуль, а глобали. `base.html` подключает его всем страницам, общие шаблоны каркаса — ещё и себе сами |
+| `sidebar_resizer.js` | `initSidebarResizer`, `initSidebarResizerRight`, `initRowResizer` (глобальные) | ⚠ Файл живёт в каркасе (`dashboard/js/`), а не здесь. Тянущийся размер панели, позиция в localStorage, двойной клик — сброс |
 
 `api.js` вытягивает текст ошибки из тела ответа (`detail`, затем `message`), а при
 не-JSON теле оставляет HTTP-статус — поэтому `err.message` в `catch` уже пригоден для
 `showNotification`.
 
-**`tz.js` — частая ловушка.** Скрипт подключён везде, но `fmtTz` отдаёт UTC, пока не
-вызван `loadTz()`. Его зовут `backup.html`, `seed.html`, `session.html`; страницы, где
-времена выглядят «сдвинутыми», просто забыли этот вызов при инициализации.
+**`tz.js` — частая ловушка, и ловушек две.**
+
+Первая: скрипт подключён везде, но `fmtTz` отдаёт UTC, пока не вызван `loadTz()`. Его
+зовут `backup.html`, `seed.html`, `session.html`; страницы, где времена выглядят
+«сдвинутыми», просто забыли этот вызов при инициализации.
+
+⚠⚠ Вторая больнее и стоила сломанной страницы у соседа. Файл лежит **в каркасе**
+(`dashboard/js/tz.js`), а подключал его раньше только `base.html` **этого** проекта —
+то есть общий код каркаса молча рассчитывал на глобаль, которой у соседней панели
+нет. У DatingAi страница «Тесты → E2E» из-за этого не работала вовсе:
+`ReferenceError: loadTz is not defined`, вёрстка при этом рисовалась, и обе колонки
+навсегда оставались в «Загрузка…» — ни отказа, ни записи в журнале.
+
+Отсюда правило: **общий шаблон каркаса, который зовёт `loadTz`/`fmtTz`, подключает
+`tz.js` сам**, строкой перед своим модулем, и на `base.html` проекта не надеется.
+Двойное подключение безвредно — скрипт идемпотентен.
 
 Многостраничные модули:
 

@@ -25,10 +25,10 @@ steps:
 areas:
   - name: Вкладка Error
     selector: '.status-tab[data-status="error"]'
-    rules: [видна, не_вылезла]
+    rules: [visible, inside]
   - name: Лента запусков
     selector: '#runsList'
-    rules: [видна, не_вылезла]
+    rules: [visible, inside]
 
 checks:
   # ⚠⚠ Имя говорит «на первой странице», и это не оговорка, а честность числа.
