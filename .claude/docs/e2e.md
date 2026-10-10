@@ -296,14 +296,14 @@ steps:
 |------|-----|
 | `tests_e2e/*.yaml` | случаи этой установки: имя, описание, страница, ширины, шаги, области, проверки |
 | `py_modules/tests_e2e/` | общий каркас прогона — во всех проектах один: `_case` (чтение YAML), `_probe` (зонд и кадр), `_rule` (вердикты), `_shot` (рамки), `_run` (случай × ширина) |
-| `src/e2e/e2e_runner.py` | прогон всех случаев установки; браузер — в `asyncio.to_thread` |
+| `dashboard/src/page/e2e/e2e_run.py` | прогон всех случаев установки; браузер — в `asyncio.to_thread` |
 | `src/cronjob/e2e_run.py` | точка входа Cronicle, раз в сутки |
-| `src/worker/e2e_worker.py` | прогон по кнопке: очередь `default`, single-flight |
-| `src/e2e/e2e.py` | таблица `test_e2e`: запись, чтение, чистка по числу прогонов |
-| `src/e2e/e2e_case.py` | случаи с выключателем: таблица `test_e2e_case`, отбор для прогона |
-| `src/e2e/e2e_shot.py` | кадры на диске: пути, раздача, уборка |
-| `src/uvicorn/routers/e2e/e2e.py` | `/api/e2e/*`: прогоны, строки, кадр |
-| `data/uvicorn/template/admin/e2e.html` | страница |
+| `dashboard/src/page/e2e/e2e_worker.py` | прогон по кнопке: очередь `default`, single-flight |
+| `dashboard/src/page/e2e/e2e_store.py` | таблица `test_e2e`: запись, чтение, чистка по числу прогонов |
+| `dashboard/src/page/e2e/e2e_case.py` | случаи с выключателем: таблица `test_e2e_case`, отбор для прогона |
+| `dashboard/src/page/e2e/e2e_shot.py` | кадры на диске: пути, раздача, уборка |
+| `dashboard/src/page/e2e/e2e_api.py` | `/api/e2e/*`: прогоны, строки, кадр |
+| `dashboard/template/admin/e2e.html` | страница |
 | `migrations/20261009124416_test_e2e.sql` | таблица |
 
 Права: `e2e:view` — чтение (есть у всех не-админских ролей, как `journal:view`),

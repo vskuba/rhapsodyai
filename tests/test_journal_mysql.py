@@ -12,7 +12,7 @@
 * выключатель — настройка `journal_mysql_enabled`, и работает она без
   перезапуска: сверку зовёт каждый такт сброса.
 
-⚠ Тестовые строки заводятся с источником `pytest`, а не из `JOURNAL_SOURCES`:
+⚠ Тестовые строки заводятся с источником `pytest`, а не из `JOURNAL_STORE_SOURCES`:
 сюита ходит в общую базу установки, и чистка «по всему журналу» снесла бы живые
 счётчики. Та же дисциплина, что в `test_journal.py`.
 """
@@ -242,7 +242,7 @@ class TestFlushAccumulates:
 
     async def test_counters_add_up_across_batches(self, client, counted):
         """Числа копятся между сбросами: пачка приносит своё «за последние полминуты»."""
-        from src.journal.journal_mysql import journal_mysql_flush
+        from dashboard.src.page.journal.journal_mysql import journal_mysql_flush
 
         query = f'SELECT id FROM {JOURNAL_MYSQL_TEST_MARK} WHERE a = %s'
 
@@ -269,7 +269,7 @@ class TestFlushAccumulates:
         попадала бы в следующую пачку, и та никогда бы не опустела.
         """
         from mysql_.mysql_watch import mysql_watch_drain
-        from src.journal.journal_mysql import journal_mysql_flush
+        from dashboard.src.page.journal.journal_mysql import journal_mysql_flush
 
         _shape(f'SELECT id FROM {JOURNAL_MYSQL_TEST_MARK} WHERE a = %s', (1,))
         await journal_mysql_flush()
@@ -282,7 +282,7 @@ class TestAnswersAreNotStored:
 
     async def test_row_carries_no_result_field(self, client, counted):
         """Ни одного поля с данными строк — единственное, что знаем, это их число."""
-        from src.journal.journal_mysql import journal_mysql_flush
+        from dashboard.src.page.journal.journal_mysql import journal_mysql_flush
 
         _shape(f'SELECT secret_column FROM {JOURNAL_MYSQL_TEST_MARK}', None, ms=5.0, rows=42)
         await journal_mysql_flush()
@@ -305,7 +305,7 @@ class TestListHandle:
         Имя колонки для сортировки не должно приезжать из запроса. Неизвестный
         ключ молча превращается в умолчание, а не в кусок SQL.
         """
-        from src.journal.journal_mysql import JOURNAL_MYSQL_ORDER
+        from dashboard.src.page.journal.journal_mysql import JOURNAL_MYSQL_ORDER
 
         got = await client.get('/api/journal/mysql',
                                params={'order': 'total_ms; DROP TABLE x'})
@@ -315,7 +315,7 @@ class TestListHandle:
 
     async def test_totals_cover_the_whole_selection(self, client, counted):
         """Итоги считаются по отбору целиком: страница показывает лишь верхушку."""
-        from src.journal.journal_mysql import journal_mysql_flush
+        from dashboard.src.page.journal.journal_mysql import journal_mysql_flush
 
         for number in range(3):
             _shape(f'SELECT {number} FROM {JOURNAL_MYSQL_TEST_MARK} WHERE a = %s', (1,),
@@ -344,7 +344,7 @@ class TestSettingIsTheSwitch:
     async def setting_restored(self):
         """Вернуть настройке прежнее значение, чем бы тест её ни сделал."""
         from setting_.setting_ import setting_get, setting_set
-        from src.journal.journal_mysql import JOURNAL_MYSQL_SETTING
+        from dashboard.src.page.journal.journal_mysql import JOURNAL_MYSQL_SETTING
 
         was = await setting_get(JOURNAL_MYSQL_SETTING, '1')
         yield
@@ -354,7 +354,7 @@ class TestSettingIsTheSwitch:
         """Снятая настройка гасит счёт — и сверка это замечает без перезапуска."""
         from mysql_.mysql_watch import mysql_watch_drain, mysql_watch_enabled
         from setting_.setting_ import setting_set
-        from src.journal.journal_mysql import (JOURNAL_MYSQL_SETTING,
+        from dashboard.src.page.journal.journal_mysql import (JOURNAL_MYSQL_SETTING,
                                                journal_mysql_watch_start)
 
         await setting_set(JOURNAL_MYSQL_SETTING, '0')
@@ -370,7 +370,7 @@ class TestSettingIsTheSwitch:
         """И возвращает его обратно: такт сброса зовёт ту же сверку по кругу."""
         from mysql_.mysql_watch import mysql_watch_drain
         from setting_.setting_ import setting_set
-        from src.journal.journal_mysql import (JOURNAL_MYSQL_SETTING,
+        from dashboard.src.page.journal.journal_mysql import (JOURNAL_MYSQL_SETTING,
                                                journal_mysql_watch_start)
 
         await setting_set(JOURNAL_MYSQL_SETTING, '0')
@@ -391,7 +391,7 @@ class TestSettingIsTheSwitch:
         что журнал включён.
         """
         from mysql_.mysql_watch import mysql_watch_drain
-        from src.journal.journal_mysql import journal_mysql_enabled
+        from dashboard.src.page.journal.journal_mysql import journal_mysql_enabled
 
         await journal_mysql_enabled()
 

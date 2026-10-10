@@ -30,9 +30,9 @@ supplements) прогоняет пул `rq worker-pool` из контейнер�
 import asyncio
 
 from logging_.logging_ import logger_info, logging_init
-from src.journal.journal_handler import journal_handler_install
-from src.journal.journal_mysql import (journal_mysql_watch_start,
-                                       journal_mysql_watch_stop)
+from dashboard.src.page.journal.journal_install import journal_install_here
+from dashboard.src.page.journal.journal_mysql import (journal_mysql_watch_start,
+                                      journal_mysql_watch_stop)
 from mysql_.mysql_ import mysql_get_db_async, mysql_pool_close
 from ai.ai_thread import ai_thread_framework_run
 from queue_.queue_ import queue_init
@@ -147,7 +147,7 @@ async def _job_async(project_id: int) -> str:
     # Ошибки воркера — в общий журнал установки (страница «Журнал»,
     # /admin/journal): job падает в своём контейнере, и без этого его
     # падения видны только в `docker logs worker_task`.
-    journal_handler_install('worker')
+    journal_install_here('worker')
     # Счёт запросов к базе — подвкладка «MySQL» той же страницы. Сбрасывает
     # его `journal_mysql_watch_stop` перед выходом: процесс короткий.
     await journal_mysql_watch_start('worker')

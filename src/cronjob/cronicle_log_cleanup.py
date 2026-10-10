@@ -23,9 +23,9 @@ import sys
 from cronicle_.cronicle_log import (CRONICLE_LOG_KEEP_DAYS, cronicle_log_prune,
                                     cronicle_log_report, cronicle_log_sizes)
 from logging_.logging_ import logger_info, logging_init
-from src.journal.journal_handler import journal_handler_install
-from src.journal.journal_mysql import (journal_mysql_watch_start,
-                                       journal_mysql_watch_stop)
+from dashboard.src.page.journal.journal_install import journal_install_here
+from dashboard.src.page.journal.journal_mysql import (journal_mysql_watch_start,
+                                      journal_mysql_watch_stop)
 
 from src.telegram_.telegram_notify import telegram_notify_send_owner
 
@@ -35,7 +35,7 @@ async def main():
     # Ошибки кронджоба — в общий журнал установки (страница «Журнал»,
     # /admin/journal): он живёт минуту в отдельном процессе, и его отказ
     # иначе теряется вместе с этим процессом.
-    journal_handler_install('cronjob')
+    journal_install_here('cronjob')
     # Счёт запросов к базе — подвкладка «MySQL» той же страницы. Сбрасывает
     # его `journal_mysql_watch_stop` перед выходом: процесс короткий.
     await journal_mysql_watch_start('cronjob')

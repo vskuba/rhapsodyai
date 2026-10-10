@@ -122,8 +122,8 @@ Cronicle своя галочка, и «ключ работает» не знач
 | Путь | Что |
 |------|-----|
 | `py_modules/cronicle_/cronicle_api.py` | разговор с Cronicle: расписание, включатель, история, «последний удачный сегодня». Общий для проектов |
-| `src/uvicorn/routers/cronicle/cronicle.py` | `/api/cronicle/event`, `/event/{id}/enabled` |
-| `data/uvicorn/template/admin/cronicle.html` | страница |
+| `dashboard/src/page/cronicle/cronicle_page_api.py` | `/api/cronicle/event`, `/event/{id}/enabled` |
+| `dashboard/template/admin/cronicle.html` | страница |
 
 ## 6. ⚠⚠ Грабля не отсюда: копия страницы и пишущие запросы
 

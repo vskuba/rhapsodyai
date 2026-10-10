@@ -40,9 +40,9 @@ from mysql_.mysql_ import mysql_pool_close
 
 from src.ai.ai_workflow_trace import (TRACE_KEEP_DAYS, TRACE_TRIM_BATCH,
                                       TRACE_TRIM_MAX, ai_workflow_trace_trim)
-from src.journal.journal_handler import journal_handler_install
-from src.journal.journal_mysql import (journal_mysql_watch_start,
-                                       journal_mysql_watch_stop)
+from dashboard.src.page.journal.journal_install import journal_install_here
+from dashboard.src.page.journal.journal_mysql import (journal_mysql_watch_start,
+                                      journal_mysql_watch_stop)
 
 
 async def main():
@@ -50,7 +50,7 @@ async def main():
     # Ошибки кронджоба — в общий журнал установки (страница «Журнал»,
     # /admin/journal): он живёт минуту в отдельном процессе, и его отказ
     # иначе теряется вместе с этим процессом.
-    journal_handler_install('cronjob')
+    journal_install_here('cronjob')
     # Счёт запросов к базе — подвкладка «MySQL» той же страницы. Сбрасывает
     # его `journal_mysql_watch_stop` перед выходом: процесс короткий.
     await journal_mysql_watch_start('cronjob')

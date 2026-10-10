@@ -24,15 +24,15 @@ from tests.conftest import BASE_URL
 from tests.constants import TEST_AUTH
 
 from journal_.journal_key import journal_key
-from src.journal.journal import journal_write
-from src.journal.journal_handler import journal_handler_install, journal_handler_remove
+from dashboard.src.page.journal.journal_store import journal_store_write
+from dashboard.src.page.journal.journal_install import journal_install_here, journal_install_remove
 
 pytestmark = pytest.mark.core
 
 # Метка тестовых записей: по ней тесты находят своё.
 JOURNAL_TEST_MARK = 'pytest_journal'
 
-# Источник тестовых записей. Не из `JOURNAL_SOURCES`: так тестовые строки не
+# Источник тестовых записей. Не из `JOURNAL_STORE_SOURCES`: так тестовые строки не
 # смешиваются с настоящими ни в отборе по процессу, ни на глаз.
 JOURNAL_TEST_SOURCE = 'pytest'
 
@@ -83,7 +83,7 @@ class TestJournalWrite:
 
     async def test_written_error_is_visible(self, client: httpx.AsyncClient):
         message = f'{JOURNAL_TEST_MARK}: {uuid.uuid4()}'
-        journal_write(JOURNAL_TEST_SOURCE, message, logger_name='tests')
+        journal_store_write(JOURNAL_TEST_SOURCE, message, logger_name='tests')
 
         result = (await client.get(f'/api/journal?q={JOURNAL_TEST_MARK}')).json()['result']
         found = [row for row in result['rows'] if row['message'] == message]
@@ -96,7 +96,7 @@ class TestJournalWrite:
         """⚠ Главное свойство журнала: зациклившаяся ошибка — строка со счётчиком."""
         message = f'{JOURNAL_TEST_MARK}: повтор {uuid.uuid4()}'
         for _ in range(3):
-            journal_write(JOURNAL_TEST_SOURCE, message, logger_name='tests')
+            journal_store_write(JOURNAL_TEST_SOURCE, message, logger_name='tests')
 
         rows = await _rows(client, message)
 
@@ -106,7 +106,7 @@ class TestJournalWrite:
 
     async def test_deleted_row_disappears(self, client: httpx.AsyncClient):
         message = f'{JOURNAL_TEST_MARK}: на удаление {uuid.uuid4()}'
-        journal_write(JOURNAL_TEST_SOURCE, message, logger_name='tests')
+        journal_store_write(JOURNAL_TEST_SOURCE, message, logger_name='tests')
 
         rows = await _rows(client, message)
         assert len(rows) == 1
@@ -160,11 +160,11 @@ class TestJournalHandler:
     async def test_logged_error_reaches_journal(self, client: httpx.AsyncClient):
         message = f'{JOURNAL_TEST_MARK}: через логгер {uuid.uuid4()}'
 
-        journal_handler_install(JOURNAL_TEST_SOURCE)
+        journal_install_here(JOURNAL_TEST_SOURCE)
         try:
             logging.getLogger('tests.journal').error(message)
         finally:
-            journal_handler_remove()
+            journal_install_remove()
 
         rows = await _rows(client, message)
 
@@ -176,14 +176,14 @@ class TestJournalHandler:
         """Трассировка и место падения — то, ради чего в журнал вообще смотрят."""
         message = f'{JOURNAL_TEST_MARK}: с исключением {uuid.uuid4()}'
 
-        journal_handler_install(JOURNAL_TEST_SOURCE)
+        journal_install_here(JOURNAL_TEST_SOURCE)
         try:
             try:
                 {}['нет такого ключа']
             except KeyError:
                 logging.getLogger('tests.journal').exception(message)
         finally:
-            journal_handler_remove()
+            journal_install_remove()
 
         rows = await _rows(client, message)
 
@@ -195,11 +195,11 @@ class TestJournalHandler:
         """⚠ Ниже ERROR в журнал не попадает: WARNING значит «странно, но работаем»."""
         message = f'{JOURNAL_TEST_MARK}: предупреждение {uuid.uuid4()}'
 
-        journal_handler_install(JOURNAL_TEST_SOURCE)
+        journal_install_here(JOURNAL_TEST_SOURCE)
         try:
             logging.getLogger('tests.journal').warning(message)
         finally:
-            journal_handler_remove()
+            journal_install_remove()
 
         assert not await _rows(client, message)
 
@@ -210,10 +210,10 @@ class TestJournalHandler:
 async def _rows(client: httpx.AsyncClient, message: str) -> list[dict]:
     """Строки журнала по тексту — через ручку, а не напрямую в базу.
 
-    ⚠ Прямой вызов `journal_rows` из теста падает на втором тесте: пул
+    ⚠ Прямой вызов `journal_store_rows` из теста падает на втором тесте: пул
     aiomysql привязан к циклу событий, в котором заведён, а pytest-asyncio даёт
     каждому тесту новый цикл — второй тест получает пул с закрытым циклом.
-    Запись (`journal_write`) этим не страдает: она синхронная, своим
+    Запись (`journal_store_write`) этим не страдает: она синхронная, своим
     соединением.
     """
     params = {'source': JOURNAL_TEST_SOURCE, 'q': message}

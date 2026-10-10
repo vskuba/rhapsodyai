@@ -10,7 +10,7 @@
 | `py_modules/setting_/setting_.py` | `setting_get()` / `setting_set()` / `setting_delete()` — доступ к таблице |
 | `src/uvicorn/routers/setting/setting.py` | REST API настроек + `/api/setting/config` |
 | `src/uvicorn/routers/dashboard.py` | Роут страницы `/admin/setting` |
-| `data/uvicorn/template/admin/setting.html` | Страница настроек |
+| `dashboard/template/admin/setting.html` | Страница настроек |
 | `data/uvicorn/public/js/setting.js` | JS страницы настроек |
 | `data/uvicorn/public/js/telegram_app/config.js` | Клиент `/api/setting/config` для Mini App |
 
@@ -230,7 +230,7 @@ SETTING_UPDATE = "setting:update"
 ⚠ Скоуп только общий. Ячейка ноды здесь бессмысленна: запросы к базе шлёт процесс, а
 не узел LLM.
 
-Механика — `src/journal/journal_mysql.py`, устройство подвкладки — `journal.md`, §8.
+Механика — `dashboard/src/page/journal/journal_mysql.py`, устройство подвкладки — `journal.md`, §8.
 
 ## `gx10_autocompact_limit` — порог автосжатия контекста
 

@@ -28,15 +28,15 @@ import sys
 from logging_.logging_ import logger_info, logging_init
 from mysql_.mysql_ import mysql_pool_close
 
-from src.e2e.e2e_runner import e2e_runner_all
-from src.journal.journal_handler import journal_handler_install
-from src.journal.journal_mysql import (journal_mysql_watch_start,
-                                       journal_mysql_watch_stop)
+from dashboard.src.page.e2e.e2e_run import e2e_run_all
+from dashboard.src.page.journal.journal_install import journal_install_here
+from dashboard.src.page.journal.journal_mysql import (journal_mysql_watch_start,
+                                      journal_mysql_watch_stop)
 
 
 async def main():
     logging_init()
-    journal_handler_install('cronjob')
+    journal_install_here('cronjob')
     await journal_mysql_watch_start('cronjob')
 
     metadata = {}
@@ -46,8 +46,8 @@ async def main():
         except (ValueError, TypeError):
             metadata = {}
 
-    report = await e2e_runner_all(folder=metadata.get('folder') or '',
-                                  base=metadata.get('base') or '')
+    report = await e2e_run_all(folder=metadata.get('folder') or '',
+                                    base=metadata.get('base') or '')
 
     # ⚠ Счёт запросов сбрасываем ДО закрытия пула: сброс ходит в базу тем же
     # пулом, и после закрытия ему не на чем ехать.

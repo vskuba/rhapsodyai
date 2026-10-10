@@ -11,9 +11,9 @@ from ai.ai_thread import ai_thread_framework_run
 from src.ai.framework.agent.ai_framework import AiFrameworkAgent
 from logging_.logging_ import logging_init
 from queue_.queue_ import queue_init
-from src.journal.journal_handler import journal_handler_install
-from src.journal.journal_mysql import (journal_mysql_flush_forever,
-                                       journal_mysql_watch_start)
+from dashboard.src.page.journal.journal_install import journal_install_here
+from dashboard.src.page.journal.journal_mysql import (journal_mysql_flush_forever,
+                                      journal_mysql_watch_start)
 from src.telegram_bot import telegram_bot_init
 from state.state import state_set
 from thread_.thread_ import thread_with_callback
@@ -42,7 +42,7 @@ if __name__ == "__main__":
     # Ошибки бота — в общий журнал установки (страница «Журнал»,
     # /admin/journal): свой контейнер, и без этого его падения видны только
     # в его же `docker logs`.
-    journal_handler_install('telegram')
+    journal_install_here('telegram')
 
     print("Starting telegram bot-only mode...")
 

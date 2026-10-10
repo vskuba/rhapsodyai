@@ -28,6 +28,7 @@ from mysql_.mysql_seed import mysql_seed_up
 from queue_.queue_ import queue_init
 from panel_.panel_backup_api import panel_backup_api_router
 from panel_.panel_static import panel_static_files
+from panel_.panel_template import panel_template_env
 from panel_.panel_user_api import panel_user_api_router
 from panel_.panel_seed_api import panel_seed_api_router
 from panel_.panel_setting_api import panel_setting_api_router
@@ -59,17 +60,16 @@ MAIN_UVICORN_SEED_RUNTIME = (
     'project_task_attempt', 'project_task_depend', 'project_task_metric',
     'project_task_plan_revision', 'session', 'team_llm_lock', 'team_shell_lock',
     'test_e2e', 'test_e2e_case', 'tool', 'tool_group')
-from src.journal.journal_handler import journal_handler_install
-from src.journal.journal_mysql import (journal_mysql_flush_forever,
-                                       journal_mysql_watch_start)
+from dashboard.src.page.journal.journal_install import journal_install_here
+from dashboard.src.page.journal.journal_mysql import (journal_mysql_flush_forever,
+                                      journal_mysql_watch_start)
 from src.event.event_handlers import event_handlers_register
 from src.telegram_.telegram_notify import telegram_notify_bot_setup
 from src.uvicorn.routers.chat import chat
 from src.uvicorn.routers import dashboard
-from src.uvicorn.routers.cronicle import cronicle as cronicle_router
-from src.uvicorn.routers.e2e import e2e as e2e_router
-from src.uvicorn.routers.journal import journal as journal_router
-from src.uvicorn.routers.journal import journal_mysql as journal_mysql_router
+from dashboard.src.page.cronicle.cronicle_page_api import cronicle_page_api_router
+from dashboard.src.page.e2e.e2e_api import e2e_api_router
+from dashboard.src.page.journal.journal_api import journal_api_router
 from src.uvicorn.routers.event import event as event_router
 from src.uvicorn.routers.agent import agent
 from src.uvicorn.routers.auth import auth as auth_router
@@ -146,7 +146,7 @@ async def lifespan(app: FastAPI):
     # (/admin/journal). Ставится рядом с `logging_init`, потому что
     # подвешивается к тем же логгерам; порядок важен — до него ошибки видны
     # только в `docker logs`.
-    journal_handler_install('uvicorn')
+    journal_install_here('uvicorn')
     mysql_migration_up()
     mysql_seed_up(MYSQL_SEED_PROBE_TABLE)
     await mysql_pool_get()
@@ -510,7 +510,18 @@ public_static_path = os.path.join(current_dir, config_get('DATA_DIR'), config_ge
 jinja2_template_path = os.path.join(current_dir, config_get('DATA_DIR'), config_get('UVICORN_DIR'), "template")
 
 app.state.agent_manager = AiFrameworkAgentManager()
-app.state.jinja2_template = Jinja2Templates(directory=jinja2_template_path)
+
+# ⚠⚠ Шаблоны ищутся в ДВУХ каталогах: свой первым, общий (`dashboard/template`)
+# следом — тот же договор, что у статики ниже. Пока их было два разных правила,
+# общая страница не могла существовать: разметку в `dashboard` положить можно
+# было, а найти её оттуда нечем.
+#
+# ⚠ Свой каталог первым — это способ отойти от общего вида, не ломая соседей:
+# положил у себя `admin/e2e.html` — отдаётся твой. И поэтому же общая страница
+# может `{% extends "base.html" %}`: возьмётся base ПРОЕКТА, со своим меню.
+app.state.jinja2_template = panel_template_env(
+    jinja2_template_path,
+    shared=os.path.join(current_dir, 'dashboard', 'template'))
 
 # Ссылки на админ-инструменты в шапке открываются в браузере админа, поэтому ведут на его
 # `localhost`: до прод-сервисов он ходит через SSH-туннель (`LocalForward` в
@@ -644,10 +655,21 @@ app.include_router(event_router.router, include_in_schema=False)
 # косметика: у соседа объявлено `DELETE /api/journal/{record_id}` с номером
 # записи числом, и подключись он первым — на `DELETE /api/journal/mysql` FastAPI
 # попытался бы прочитать «mysql» номером и ответил бы 422 вместо чистки.
-app.include_router(journal_mysql_router.router, include_in_schema=False)
-app.include_router(journal_router.router, include_in_schema=False)
-app.include_router(e2e_router.router, include_in_schema=False)
-app.include_router(cronicle_router.router, include_in_schema=False)
+# ⚠ Страница «Журнал» общая (submodule `dashboard`), права — наши: имена
+# `journal:*` это предметная область установки.
+app.include_router(journal_api_router(view=AuthPermission.JOURNAL_VIEW,
+                                           delete=AuthPermission.JOURNAL_DELETE),
+                   include_in_schema=False)
+# ⚠ Страница «Тесты» общая (submodule `dashboard`), а каталог прав — наш: имена
+# `e2e:*` это предметная область установки, и в общий модуль они не уезжают.
+# Поэтому роутер собирается фабрикой, а права приходят доводом.
+app.include_router(e2e_api_router(view=AuthPermission.E2E_VIEW,
+                                  run=AuthPermission.E2E_RUN),
+                   include_in_schema=False)
+# ⚠ Страница Cronicle общая (submodule `dashboard`), права — наши.
+app.include_router(cronicle_page_api_router(view=AuthPermission.CRONICLE_VIEW,
+                                            update=AuthPermission.CRONICLE_UPDATE),
+                   include_in_schema=False)
 app.include_router(panel_seed_api_router(
     runtime_tables=MAIN_UVICORN_SEED_RUNTIME, title='RhapsodyAi',
     view=AuthPermission.SETTING_VIEW, manage=AuthPermission.SETTING_UPDATE),

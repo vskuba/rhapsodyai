@@ -11,9 +11,37 @@
 
 ⚠ **«Журнал» — раздел, а не список ошибок.** Он отвечает на вопрос «что происходило на
 установке», и ошибки — первая его подвкладка, а не весь смысл. Отсюда имена: namespace
-`src/journal/`, таблица `journal`, ручки `/api/journal`, права `journal:*`. Соседняя
+`dashboard/src/page/journal/`, таблица `journal`, ручки `/api/journal`, права `journal:*`. Соседняя
 подвкладка с другим предметом приносит свой модуль `journal_<предмет>.py` и свои ручки —
 общей «дай журнал» нет намеренно: у разных предметов разные поля и отборы.
+
+## 0. ⚠⚠ Страница **общая**: живёт в submodule `dashboard`
+
+Сам журнал — разметка, стили, скрипт, ручки, хранилище и застава логгера — лежит в
+`dashboard/` и подключается проектам как есть. В проекте остаётся предметное: миграция
+таблиц, каталог прав `journal:*`, пункт меню и подключение роутера:
+
+```python
+app.include_router(journal_api_router(view=AuthPermission.JOURNAL_VIEW,
+                                      delete=AuthPermission.JOURNAL_DELETE))
+```
+
+⚠⚠ **Застава `journal_install_here` зовётся из КАЖДОГО процесса** — сервера, бота,
+воркеров, кронджобов. Импортируется она от корня проекта:
+
+```python
+from dashboard.src.page.journal.journal_install import journal_install_here
+```
+
+⚠ Правка `PYTHONPATH` для этого **не нужна** — и это выбор, а не случайность. Сперва
+каталог `dashboard` добавлялся в путь в трёх местах (два `dockerfile` и `pythonpath` в
+`pyproject.toml`), и его `src/` сливался с `src/` проекта в один namespace-пакет: вопрос
+«где лежит `src.что-то`» переставал иметь один ответ, а совпавшее имя файла молча
+перекрывало бы чужой модуль. Имя submodule в пути импорта снимает это целиком.
+
+⚠ Ключ настройки `journal_mysql_enabled` при переезде **не переименовывался**: это строка
+в таблице `setting`, а не имя в коде. Переименуй его — и выключатель перестал бы
+действовать, молча.
 
 ## 1. Зачем он есть
 
@@ -32,15 +60,15 @@
 ```
 любой logger_exception / logging.error   →  корневой логгер
                                          →  JournalHandler (уровень ERROR)
-                                         →  journal_write()  →  таблица journal
+                                         →  journal_store_write()  →  таблица journal
 ```
 
 | Файл | Обязанность |
 |------|-------------|
-| `src/journal/journal.py` | таблица: запись, чтение страницами, отпечаток, чистка |
-| `src/journal/journal_handler.py` | обработчик логгера и его установка в процессе |
-| `src/uvicorn/routers/journal/journal.py` | `/api/journal`: список, удаление, чистка |
-| `data/uvicorn/template/admin/journal.html` | страница «Журнал» и её подвкладки |
+| `dashboard/src/page/journal/journal_store.py` | таблица: запись, чтение страницами, отпечаток, чистка |
+| `dashboard/src/page/journal/journal_install.py` | обработчик логгера и его установка в процессе |
+| `dashboard/src/page/journal/journal_api.py` | `/api/journal`: список, удаление, чистка |
+| `dashboard/template/admin/journal.html` | страница «Журнал» и её подвкладки |
 | `src/uvicorn/routers/dashboard.py` | маршрут `/admin/journal` |
 | `data/uvicorn/template/base.html` | пункт меню «📋 Журнал» (вкладка «Логи», за Opensearch) |
 | `migrations/20260926101937_error_log.sql` | заводит таблицу (под прежним именем `error_log`) |
@@ -55,7 +83,7 @@ ERROR — она в журнале. Отсюда единственное тре
 ## 3. Где обработчик ставится
 
 Обработчик не появляется сам: `logging_init()` живёт в общем слое и про таблицы проекта не
-знает. Каждая точка входа зовёт `journal_handler_install(<источник>)` рядом со своим
+знает. Каждая точка входа зовёт `journal_install_here(<источник>)` рядом со своим
 `logging_init()`.
 
 | Точка входа | Источник |
@@ -71,7 +99,7 @@ ERROR — она в журнале. Отсюда единственное тре
 Новая точка входа, где забыли вызов, не ломается — она просто молчит в журнале.
 
 ⚠ Uvicorn настраивает свой логгер `uvicorn.error` с `propagate = False`: до корня он не
-доходит. Установка проверяет `propagate` у логгеров из `JOURNAL_HANDLER_LOGGERS` и
+доходит. Установка проверяет `propagate` у логгеров из `JOURNAL_INSTALL_LOGGERS` и
 подвешивается только к оторванным — иначе запись задвоилась бы.
 
 ## 4. Строка одна на отпечаток
@@ -101,7 +129,7 @@ ERROR — она в журнале. Отсюда единственное тре
 
 Чистит журнал:
 
-* время — записи старше `JOURNAL_KEEP_DAYS` (30) убираются при показе подвкладки, как
+* время — записи старше `JOURNAL_STORE_KEEP_DAYS` (30) убираются при показе подвкладки, как
   чистится трасса workflow;
 * человек — кнопка «Очистить» (по выбранному процессу либо весь журнал).
 
@@ -114,7 +142,7 @@ ERROR — она в журнале. Отсюда единственное тре
 | DELETE | `/api/journal?source=…` | `journal:delete` | чистка: по процессу либо вся |
 
 Ответ списка: `rows`, `total`, `page`, `pages`, `sources`. **`sources` — подписи процессов
-для человека**, страница своей копии не держит: переименуют процесс в `JOURNAL_SOURCES` —
+для человека**, страница своей копии не держит: переименуют процесс в `JOURNAL_STORE_SOURCES` —
 страница подхватит молча.
 
 Право `journal:view` входит в базовый набор любой не-админской роли: страница соседняя с
@@ -156,9 +184,9 @@ mysql_.execute → mysql_watch_note     (общий слой: счёт в пам
 |------|-------------|
 | `py_modules/mysql_/mysql_watch.py` | счёт в памяти: отпечаток вида запроса, числа, самый долгий случай |
 | `py_modules/mysql_/mysql_.py` | замер вокруг `execute`/`executemany` в обоих курсорах |
-| `src/journal/journal_mysql.py` | таблица: сброс пачкой, чтение страницами, чистка |
-| `src/uvicorn/routers/journal/journal_mysql.py` | `/api/journal/mysql` |
-| `data/uvicorn/template/admin/journal.html` | панель `#tab-mysql` и её скрипт |
+| `dashboard/src/page/journal/journal_mysql.py` | таблица: сброс пачкой, чтение страницами, чистка |
+| `dashboard/src/page/journal/journal_api.py` | `/api/journal/mysql` |
+| `dashboard/template/admin/journal.html` | панель `#tab-mysql` и её скрипт |
 | `migrations/20260929125015_journal_mysql.sql` | заводит таблицу |
 
 Разделение не формальное: счёт запросов нужен любому проекту и потому живёт в общем
@@ -244,13 +272,13 @@ mysql_.execute → mysql_watch_note     (общий слой: счёт в пам
 
 ### Кто считает
 
-Счёт включает своя точка входа, рядом с `journal_handler_install`. Долгоживущий
+Счёт включает своя точка входа, рядом с `journal_install_here`. Долгоживущий
 процесс сбрасывает фоновой задачей (`journal_mysql_flush_forever`), короткий —
 `journal_mysql_watch_stop` перед выходом. Забытая точка входа не ломается, она просто
 молчит в этой подвкладке.
 
 ⚠ В `main_uvicorn` вызов стоит **после** миграций, а не рядом с
-`journal_handler_install`: выключатель живёт в таблице, а на свежей установке её
+`journal_install_here`: выключатель живёт в таблице, а на свежей установке её
 заводят те же миграции. В `main_telegram` — внутри `telegram_main()`, потому что
 читать настройку можно только из работающего цикла событий.
 
@@ -262,8 +290,8 @@ mysql_.execute → mysql_watch_note     (общий слой: счёт в пам
 # живая запись: ошибка из контейнера должна появиться в журнале
 docker exec uvicorn python3 -c "
 from logging_.logging_ import logging_init, logger_exception
-from src.journal.journal_handler import journal_handler_install
-logging_init(); journal_handler_install('cronjob')
+from src.journal.journal_handler import journal_install_here
+logging_init(); journal_install_here('cronjob')
 try: {}['нет']
 except Exception as e: logger_exception(f'проверка журнала: {e}')
 "
