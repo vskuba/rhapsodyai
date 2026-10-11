@@ -646,6 +646,20 @@ def ai_workflow_text_render(source: Any, variables: dict) -> str:
     return rendered if isinstance(rendered, str) else str(rendered)
 
 
+# Шаги, зовущие подпоток. Имя типа шага совпадает с ключом `metadata`, под
+# которым лежит вызов (`{"topic_action": {"workflow_id": 76, ...}}`), поэтому
+# список служит и отбору по типу, и чтению метаданных.
+#
+# ⚠⚠ Список заведён потому, что родов стало два, а знавшие о подпотоках места
+# знали один. Ручка «Вызывается из» отбирала шаги по подстроке
+# `metadata LIKE '%workflow_invoke%'` — и подпоток, который зовёт `topic_action`,
+# отвечал «не используется ни одним workflow» про того, кто звал его прямо
+# сейчас (`dating_talk_intention` #76, шаг #816). Тем же были слепы
+# предупреждение экспорта о чужом подпотоке и сторож неопределённых переменных.
+#
+# ⚠ Появится третий род — правится здесь, и все трое узнают разом.
+WORKFLOW_SUBFLOW_STEP_TYPES = ('workflow_invoke', 'topic_action')
+
 # Ссылки на id шага внутри `metadata` — три вида: число в переходах, строка
 # «на всякий случай» и имя переменной результата. Один проход с подстановкой по
 # словарю: последовательные `.replace` цепляются друг за друга (25 → 26, а
@@ -653,6 +667,14 @@ def ai_workflow_text_render(source: Any, variables: dict) -> str:
 _STEP_REF_NUM_RE = re.compile(r'("step_id"\s*:\s*)(\d+)(\s*[,}\]])')
 _STEP_REF_STR_RE = re.compile(r'("step_id"\s*:\s*")(\d+)(")')
 _STEP_RESULT_RE = re.compile(r'(?<![\d_])_(\d+)(_result)')
+
+# Ссылки шага на чужие записи: номер подпотока и номер группы тем. Число или
+# строка — редактор кладёт `parseInt`, но миграции и переносы между базами
+# приносят значение, однажды прошедшее через `str()`.
+#
+# ⚠ Хвост `[,}]` обязателен обеим: без него номер `7` нашёлся бы внутри `76`.
+_SUBFLOW_REF_RE = re.compile(r'("workflow_id"\s*:\s*"?)(\d+)("?\s*[,}])')
+_TOPIC_GROUP_REF_RE = re.compile(r'("topic_group_id"\s*:\s*"?)(\d+)("?\s*[,}])')
 
 
 def ai_workflow_step_refs_remap(metadata: str, id_map: dict) -> str:
@@ -679,6 +701,81 @@ def ai_workflow_step_refs_remap(metadata: str, id_map: dict) -> str:
     metadata = _STEP_RESULT_RE.sub(
         lambda m: f'_{id_map.get(int(m.group(1)), int(m.group(1)))}{m.group(2)}', metadata)
     return metadata
+
+
+def ai_workflow_subflow_refs_find(metadata: str) -> set:
+    """Номера подпотоков, на которые ссылается `metadata` шага.
+
+    Годится обоим родам вызова (`WORKFLOW_SUBFLOW_STEP_TYPES`): номер лежит под
+    одним и тем же ключом `workflow_id`, различается лишь ключ-обёртка. Кому
+    важен род — отбирает шаги по типу до вызова.
+
+    Returns:
+        set: номера подпотоков (пустое множество, если ссылок нет).
+    """
+    if not metadata:
+        return set()
+
+    return {int(found.group(2)) for found in _SUBFLOW_REF_RE.finditer(metadata)}
+
+
+def ai_workflow_subflow_ref_pattern_sql(workflow_id: int) -> str:
+    """Шаблон MySQL `REGEXP`, которым ту же ссылку ищут **в базе**.
+
+    ## ⚠⚠ Почему шаблон строит этот модуль, а не тот, кто спрашивает базу
+
+    Форма ссылки одна, а движка регулярок два: Python (`\\s`) и MySQL
+    (`[[:space:]]`). Свести их в один шаблон нельзя — синтаксис разный, — и
+    ровно поэтому обе формы обязаны жить у одного владельца: иначе правка
+    формы в Python-поиске молча расходится с запросом к базе.
+
+    ⚠ Почему `REGEXP` по тексту, а не `JSON_EXTRACT`: в таблице есть строки с
+    невалидным JSON (`response_soko`, `response_cashier`, `test`), и
+    `JSON_EXTRACT` в `WHERE` упал бы на них целиком — ответ стал бы отказом
+    вместо списка. Текстовый поиск их просто не находит.
+
+    ⚠ Номер бывает и числом, и строкой (`"workflow_id": "36"`). Движку разницы
+    нет — он приводит к `int` при вызове, — поэтому расхождение ломало бы
+    только показ, то есть молча.
+    """
+    return (r'"workflow_id"[[:space:]]*:[[:space:]]*"?'
+            + str(int(workflow_id)) + r'"?[[:space:]]*[,}]')
+
+
+def ai_workflow_topic_group_refs_find(metadata: str) -> set:
+    """Номера групп тем, на которые ссылается `metadata` шага.
+
+    Знание о **форме** ссылки живёт здесь, рядом с тем, кто её переписывает, —
+    вторая копия шаблона в читающем модуле разошлась бы с этой на первой же
+    правке и молча: ссылка не нашлась — предупреждения нет, а шаг на той
+    стороне не поднимет ни одной темы.
+
+    Returns:
+        set: номера групп (пустое множество, если ссылок нет).
+    """
+    if not metadata:
+        return set()
+
+    return {int(found.group(2)) for found in _TOPIC_GROUP_REF_RE.finditer(metadata)}
+
+
+def ai_workflow_topic_group_refs_remap(metadata: str, id_map: dict) -> str:
+    """Переписать номер группы тем внутри `metadata` шага `topic_action`.
+
+    Отдельной функцией, а не доводом к `ai_workflow_step_refs_remap`: ссылка
+    другая и словарь другой. Шаги перенумеровываются при столкновении с чужими
+    шагами, группы — при столкновении с чужими группами, и смешать эти два
+    словаря значило бы однажды переписать номер группы номером шага.
+
+    Пустой словарь — дословно, как и у соседа: метаданные не трогаются нигде,
+    в том числе в шагах, которые не разбираются как JSON.
+    """
+    if not id_map or not metadata:
+        return metadata
+
+    return _TOPIC_GROUP_REF_RE.sub(
+        lambda m: f'{m.group(1)}{id_map.get(int(m.group(2)), int(m.group(2)))}{m.group(3)}',
+        metadata)
 
 
 # ── детали разбора условия ──

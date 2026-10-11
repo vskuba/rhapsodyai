@@ -28,4 +28,14 @@ class AiFrameworkAgentModel(AiFrameworkModel):
 
         self.companion_session_message_id: int = 0
 
+        # Намерения, накопленные за прогон инструментом `chat_intention_add`:
+        # их забирает ручка `/chat/ask` ключом `intentions`.
+        #
+        # ⚠ Список, а не строка: за один прогон законны несколько намерений, и
+        # побеждать последнему тут нельзя — в отличие от номера обмена выше.
+        #
+        # ⚠ Заводится пустым списком, а не `None`: поле уезжает наружу как
+        # JSON-массив, и `None` уехал бы вместо `[]`.
+        self.chat_intentions: list[str] = []
+
 

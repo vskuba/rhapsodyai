@@ -10,7 +10,7 @@ import json
 
 from json_.json_ import json_from_string
 from mysql_.mysql_ import mysql_get_db_async
-from src.ai.ai_workflow import (WORKFLOW_VARIABLE_NODE_PUBLIC,
+from src.ai.ai_workflow import (WORKFLOW_SUBFLOW_STEP_TYPES, WORKFLOW_VARIABLE_NODE_PUBLIC,
                                ai_workflow_variables_node_get)
 
 # Сколько последних прогонов workflow спросить про имена, которые запускающий
@@ -164,22 +164,29 @@ def _hidden_by_workflow(agent_rows: list, run_rows: list, step_rows: list) -> di
         if isinstance(keys, list):
             hidden.setdefault(one['workflow_id'], []).extend(str(name) for name in keys)
 
-    # Входящие подпрогона: их даёт `inputs_map` родительского шага workflow_invoke.
+    # Входящие подпрогона: их даёт `inputs_map` родительского шага-вызова.
     # ⚠ Ключи карты — имена **внутри ребёнка**, значения — имена у родителя
     # (`{"w_project_id": "planning_project_id"}`), и путать их нельзя: у родителя
     # эти же значения читаются шагом и в его собственном правиле уже учтены.
+    #
+    # ⚠⚠ Родов вызова два (`WORKFLOW_SUBFLOW_STEP_TYPES`), и читать надо оба:
+    # подпоток темы получает карту от шага `topic_action`. Знай мы только
+    # `workflow_invoke`, его входящие считались бы ничем не заданными — и
+    # страница светила бы красным те самые имена, которые приезжают всегда.
     for one in step_rows:
-        invoke = json_from_string(one.get('metadata') or {}).get('workflow_invoke') or {}
-        inputs_map = invoke.get('inputs_map')
-        if not isinstance(inputs_map, dict):
-            continue
-        try:
-            # ⚠ В метаданных id ребёнка бывает строкой — ключи словаря здесь
-            # целые, как их отдаёт база, и '5' с 5 не сойдутся.
-            child_id = int(invoke.get('workflow_id'))
-        except (TypeError, ValueError):
-            continue
-        hidden.setdefault(child_id, []).extend(str(name) for name in inputs_map)
+        metadata = json_from_string(one.get('metadata') or {})
+        for kind in WORKFLOW_SUBFLOW_STEP_TYPES:
+            invoke = metadata.get(kind) or {}
+            inputs_map = invoke.get('inputs_map') if isinstance(invoke, dict) else None
+            if not isinstance(inputs_map, dict):
+                continue
+            try:
+                # ⚠ В метаданных id ребёнка бывает строкой — ключи словаря здесь
+                # целые, как их отдаёт база, и '5' с 5 не сойдутся.
+                child_id = int(invoke.get('workflow_id'))
+            except (TypeError, ValueError):
+                continue
+            hidden.setdefault(child_id, []).extend(str(name) for name in inputs_map)
 
     return hidden
 

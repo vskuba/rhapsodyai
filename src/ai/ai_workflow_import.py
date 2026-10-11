@@ -19,6 +19,12 @@ id**, а не полагается на автоинкремент, и `metadata
 `SET NULL`: импорт снимает привязки агентов и гасит их обратно (агент переживает
 замену своего workflow).
 
+⚠⚠ **Темы ноды — тоже содержимое узла** (группы, темы, вопросы). Их номер
+зашит в `metadata` шага `topic_action` (`topic_group_id`), поэтому к ним
+применяется та же политика, что к шагам: id сохраняются, а при столкновении с
+чужими перенумеровываются все разом, и ссылки переписываются. Секции нет в
+файле (он снят до её появления) — темы принимающей стороны не трогаются вовсе.
+
 Импорт — **одна транзакция**: ошибка на любом шаге откатывает всё, база не
 остаётся наполовину вычищенной (пул `mysql_get_db_async` с autocommit=True —
 транзакцию приходится открывать явно).
@@ -33,7 +39,8 @@ import re
 
 from logging_.logging_ import logger_exception, logger_info
 from mysql_.mysql_ import mysql_get_db_async
-from src.ai.ai_workflow import ai_workflow_step_refs_remap
+from src.ai.ai_workflow import (ai_workflow_step_refs_remap,
+                                ai_workflow_topic_group_refs_remap)
 from src.ai.ai_workflow_export import (
     WORKFLOW_EXPORT_FORMAT,
     WORKFLOW_EXPORT_VERSION,
@@ -73,15 +80,22 @@ class AiWorkflowImportFailedError(AiWorkflowImportError):
 async def ai_workflow_import_apply(data, actor):
     """Заменить workflow ноды, чей это файл. Остальные ноды не трогаются.
 
-    Порядок внутри одной транзакции: снимок привязок агентов → чистка ноды →
-    вставка workflow и шагов **с исходными id** → переменные (по строке на
+    Порядок внутри одной транзакции: снимок привязок агентов → чистка ноды
+    (workflow, а при наличии секции — и группы тем) → вставка workflow и тем
+    **с исходными id** → шаги **с исходными id** → переменные (по строке на
     каждый workflow-владелец) → переменные ноды и их связи → обратная привязка
     агентов. Любая ошибка — откат, база как была.
 
     Совпадения на чужих записях:
     - `id` или имя workflow занято чужим workflow → 409, файл не импортируется;
     - `id` шага занят чужим workflow → все шаги файла получают новые id,
-      ссылки внутри `metadata` переписывает `ai_workflow_step_refs_remap`.
+      ссылки внутри `metadata` переписывает `ai_workflow_step_refs_remap`;
+    - `id` группы тем занят группой чужой ноды → все группы файла получают
+      новые id, ссылки шагов переписывает `ai_workflow_topic_group_refs_remap`.
+
+    ⚠⚠ Темы трогаются **только если файл несёт их секцию**. Файл, снятый до её
+    появления, темы принимающей стороны не чистит: иначе перенос workflow
+    старым файлом стирал бы чужую работу молча.
     """
     payload = _validate_import_payload(data)
 
@@ -98,12 +112,21 @@ async def ai_workflow_import_apply(data, actor):
 
             await _check_collisions(db, payload, workflow_ids, wipe)
             step_mapping = await _assign_step_ids(db, payload, wipe)
+            topic_group_mapping = await _assign_topic_group_ids(
+                db, payload['topic_groups'], target_node_id) if payload['topics_managed'] else {}
 
             agent_bindings = await _snapshot_agent_bindings(db, wipe)
 
             await _wipe_node_workflows(db, wipe)
+            if payload['topics_managed']:
+                await _wipe_node_topics(db, target_node_id)
 
             await _insert_workflows(db, workflows, target_node_id)
+
+            topics_counted = (0, 0, 0)
+            if payload['topics_managed']:
+                topics_counted = await _insert_topics(
+                    db, payload, target_node_id, topic_group_mapping)
 
             variable_id_map = await _insert_variables(
                 db, payload['variables'], payload['variable_links'], set(workflow_ids))
@@ -112,7 +135,8 @@ async def ai_workflow_import_apply(data, actor):
             await _insert_node_variable_links(db, payload['node_variable_links'],
                                               node_variable_id_map, set(workflow_ids))
 
-            steps_inserted = await _insert_steps(db, payload['steps'], step_mapping)
+            steps_inserted = await _insert_steps(db, payload['steps'], step_mapping,
+                                                 topic_group_mapping)
 
             agents_rebound = await _rebind_agents(db, agent_bindings, set(workflow_ids))
 
@@ -135,6 +159,13 @@ async def ai_workflow_import_apply(data, actor):
     if step_mapping:
         notes.append(f'id шагов совпадали с чужими записями — все {len(step_mapping)} '
                      f'шагов файла получили новые id, ссылки внутри шагов переписаны')
+    if topic_group_mapping:
+        notes.append(f'id групп тем совпадали с чужими записями — все '
+                     f'{len(topic_group_mapping)} групп файла получили новые id, '
+                     f'ссылки шагов на них переписаны')
+    if not payload['topics_managed']:
+        notes.append('В файле нет секции тем (он старше её появления) — '
+                     'группы тем принимающей стороны не тронуты')
     if payload['warnings']:
         notes.extend(payload['warnings'])
 
@@ -145,6 +176,9 @@ async def ai_workflow_import_apply(data, actor):
         "steps_imported": steps_inserted,
         "variables_upserted": len(variable_id_map),
         "node_variables_upserted": len(node_variable_id_map),
+        "topic_groups_imported": topics_counted[0],
+        "topics_imported": topics_counted[1],
+        "topic_questions_imported": topics_counted[2],
         "agents_rebound": agents_rebound,
         "notes": notes,
     }
@@ -190,6 +224,24 @@ def _validate_import_payload(data):
     node_variables = _validate_node_variables(data['node_variables'])
     node_variable_links = _validate_node_variable_links(data['node_variable_links'], node_variables, workflows)
 
+    # ⚠⚠ Темы — секции **необязательные**, и это не послабление валидатора.
+    # Формат родился без них, файлы первой версии лежат у людей на дисках, и
+    # версия формата та же: будь секция обязательной, старый файл перестал бы
+    # читаться. Отсюда правило: секции нет — тем в файле нет, и темы
+    # принимающей стороны импорт не трогает вовсе.
+    #
+    # ⚠ Присутствие секции проверяется **по списку**, а не по ключу: `null` или
+    # число в `topic_groups` — испорченный файл, и отвечать на него надо отказом
+    # на границе, а не падением посреди разбора.
+    topics_managed = 'topic_groups' in data
+    for key in ('topic_groups', 'topics', 'topic_questions'):
+        if key in data and not isinstance(data[key], list):
+            raise AiWorkflowImportRejectedError(f'Поле «{key}» должно быть списком')
+
+    topic_groups = _validate_topic_groups(data.get('topic_groups') or [])
+    topics = _validate_topics(data.get('topics') or [], topic_groups)
+    topic_questions = _validate_topic_questions(data.get('topic_questions') or [], topics)
+
     return {
         'node': node,
         'workflows': list(workflows.values()),
@@ -198,6 +250,10 @@ def _validate_import_payload(data):
         'variable_links': variable_links,
         'node_variables': node_variables,
         'node_variable_links': node_variable_links,
+        'topics_managed': topics_managed,
+        'topic_groups': topic_groups,
+        'topics': topics,
+        'topic_questions': topic_questions,
         'warnings': [str(warning) for warning in data.get('warnings') or []] if isinstance(data.get('warnings'), list) else [],
     }
 
@@ -350,6 +406,90 @@ def _validate_node_variables(raw_node_variables):
                                        'description переменной ноды', max_length=200),
         })
     return node_variables
+
+
+def _validate_topic_groups(raw_groups):
+    """Группы тем: уникальные id и код внутри файла, поля по ширине схемы.
+
+    Код (`name`) правке не подлежит нигде в проекте — по нему группу находят
+    сиды и миграции, — поэтому здесь он обязателен: группа без кода на
+    принимающей стороне окажется безымянной и неотличимой от соседней.
+    """
+    groups, seen_ids, seen_names = [], set(), set()
+    for raw in raw_groups:
+        group_id = _positive_id(raw.get('id'), 'группа тем')
+        if group_id in seen_ids:
+            raise AiWorkflowImportRejectedError(f'В файле две группы тем с id {group_id}')
+        seen_ids.add(group_id)
+        name = _check_text(ai_workflow_export_strip(raw.get('name')), 'код группы тем',
+                           max_length=64, required=True)
+        if name in seen_names:
+            raise AiWorkflowImportRejectedError(f'В файле две группы тем с кодом «{name}»')
+        seen_names.add(name)
+        groups.append({
+            'id': group_id,
+            'name': name,
+            'title': _check_text(ai_workflow_export_strip(raw.get('title')) or '',
+                                 'название группы тем', max_length=255),
+            'description': raw.get('description'),
+            'is_enabled': 1 if _int_or(raw.get('is_enabled'), 1) else 0,
+            'position': _int_or(raw.get('position'), 0),
+        })
+    return groups
+
+
+def _validate_topics(raw_topics, topic_groups):
+    """Темы: ссылка только на группу из файла, пороги — числа."""
+    group_ids = {group['id'] for group in topic_groups}
+    topics, seen_ids = [], set()
+    for raw in raw_topics:
+        topic_id = _positive_id(raw.get('id'), 'тема')
+        if topic_id in seen_ids:
+            raise AiWorkflowImportRejectedError(f'В файле две темы с id {topic_id}')
+        seen_ids.add(topic_id)
+        if raw.get('topic_group_id') not in group_ids:
+            raise AiWorkflowImportRejectedError(
+                f'Тема {topic_id} ссылается на группу вне файла')
+        topics.append({
+            'id': topic_id,
+            'topic_group_id': raw['topic_group_id'],
+            'name': _check_text(ai_workflow_export_strip(raw.get('name')), 'код темы',
+                                max_length=64, required=True),
+            'title': _check_text(ai_workflow_export_strip(raw.get('title')) or '',
+                                 'название темы', max_length=255),
+            'tags': raw.get('tags') or '',
+            'tags_qty_accept': _int_or(raw.get('tags_qty_accept'), 1),
+            'questions_qty_yes_accept': _int_or(raw.get('questions_qty_yes_accept'), 1),
+            'instructions': raw.get('instructions'),
+            'is_enabled': 1 if _int_or(raw.get('is_enabled'), 1) else 0,
+            'position': _int_or(raw.get('position'), 0),
+        })
+    return topics
+
+
+def _validate_topic_questions(raw_questions, topics):
+    """Вопросы темы: ссылка только на тему из файла, текст обязателен."""
+    topic_ids = {topic['id'] for topic in topics}
+    questions, seen_ids = [], set()
+    for raw in raw_questions:
+        question_id = _positive_id(raw.get('id'), 'вопрос темы')
+        if question_id in seen_ids:
+            raise AiWorkflowImportRejectedError(f'В файле два вопроса с id {question_id}')
+        seen_ids.add(question_id)
+        if raw.get('topic_id') not in topic_ids:
+            raise AiWorkflowImportRejectedError(
+                f'Вопрос {question_id} ссылается на тему вне файла')
+        text = str(raw.get('question') or '').strip()
+        if not text:
+            raise AiWorkflowImportRejectedError(f'Вопрос {question_id} пуст')
+        questions.append({
+            'id': question_id,
+            'topic_id': raw['topic_id'],
+            'question': text,
+            'is_enabled': 1 if _int_or(raw.get('is_enabled'), 1) else 0,
+            'position': _int_or(raw.get('position'), 0),
+        })
+    return questions
 
 
 def _validate_node_variable_links(raw_links, node_variables, workflows):
@@ -596,11 +736,114 @@ async def _insert_node_variable_links(db, links, node_variable_id_map, workflow_
         )
 
 
-async def _insert_steps(db, steps, step_mapping):
+async def _assign_topic_group_ids(db, topic_groups, target_node_id):
+    """Id групп тем: исходные, если свободны; иначе — всем группам файла новые.
+
+    Политика та же, что у шагов (`_assign_step_ids`), и по той же причине: на
+    номер группы ссылается `metadata` шага `topic_action`, значит номер —
+    часть данных, а не служебная мелочь. Группы заменяемой ноды к этому моменту
+    ещё живы, но будут удалены; опасны только группы **чужих** нод.
+
+    ⚠ Ремап однообразный — либо все новые, либо все старые: так словарь для
+    `ai_workflow_topic_group_refs_remap` остаётся согласованным с файлом.
+    """
+    group_ids = [group['id'] for group in topic_groups]
+    if not group_ids:
+        return {}
+
+    placeholders = ','.join(['%s'] * len(group_ids))
+    await db.execute(
+        f'SELECT `id` FROM `agent_workflow_topic_group` '
+        f'WHERE `id` IN ({placeholders}) AND NOT (`node_id` <=> %s)',
+        tuple(group_ids) + (target_node_id,)
+    )
+    if not (await db.fetchall() or []):
+        return {}
+
+    await db.execute('SELECT COALESCE(MAX(`id`), 0) AS `max_id` '
+                     'FROM `agent_workflow_topic_group` FOR UPDATE')
+    next_id = (await db.fetchone() or {}).get('max_id', 0)
+    mapping = {}
+    for group in topic_groups:
+        next_id += 1
+        mapping[group['id']] = next_id
+    return mapping
+
+
+async def _wipe_node_topics(db, target_node_id):
+    """Группы тем заменяемой ноды: темы и вопросы уносит каскад.
+
+    ⚠ Зовётся только когда файл несёт секцию тем. Старый файл её не несёт — и
+    темы принимающей стороны остаются нетронутыми, иначе импорт чужого файла
+    первой версии стирал бы их молча.
+    """
+    if target_node_id is None:
+        return
+    await db.execute('DELETE FROM `agent_workflow_topic_group` WHERE `node_id` = %s',
+                     (target_node_id,))
+
+
+async def _insert_topics(db, payload, target_node_id, group_mapping):
+    """Группы, темы и вопросы файла — в указанном порядке связей.
+
+    Id групп сохраняются (или берутся из `group_mapping` при столкновении) —
+    на них ссылаются шаги. Id тем и вопросов местные: на них не ссылается
+    никто, кроме родителя, и карта связи строится здесь же.
+
+    Returns:
+        tuple: (сколько групп, сколько тем, сколько вопросов).
+    """
+    if target_node_id is None:
+        # Псевдонода «Вне нод» групп не имеет; пришедшие из файла — мусор.
+        return 0, 0, 0
+
+    for group in payload['topic_groups']:
+        await db.execute(
+            'INSERT INTO `agent_workflow_topic_group` '
+            '(`id`, `node_id`, `name`, `title`, `description`, `is_enabled`, `position`) '
+            'VALUES (%s, %s, %s, %s, %s, %s, %s)',
+            (group_mapping.get(group['id'], group['id']), target_node_id, group['name'],
+             group['title'], group['description'], group['is_enabled'], group['position'])
+        )
+
+    topic_id_map = {}
+    for topic in payload['topics']:
+        group_id = group_mapping.get(topic['topic_group_id'], topic['topic_group_id'])
+        await db.execute(
+            'INSERT INTO `agent_workflow_topic` '
+            '(`topic_group_id`, `name`, `title`, `tags`, `tags_qty_accept`, '
+            '`questions_qty_yes_accept`, `instructions`, `is_enabled`, `position`) '
+            'VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)',
+            (group_id, topic['name'], topic['title'], topic['tags'],
+             topic['tags_qty_accept'], topic['questions_qty_yes_accept'],
+             topic['instructions'], topic['is_enabled'], topic['position'])
+        )
+        topic_id_map[topic['id']] = db.lastrowid
+
+    questions = 0
+    for question in payload['topic_questions']:
+        topic_id = topic_id_map.get(question['topic_id'])
+        if topic_id is None:
+            continue
+        await db.execute(
+            'INSERT INTO `agent_workflow_topic_question` '
+            '(`topic_id`, `question`, `is_enabled`, `position`) VALUES (%s, %s, %s, %s)',
+            (topic_id, question['question'], question['is_enabled'], question['position'])
+        )
+        questions += 1
+
+    return len(payload['topic_groups']), len(topic_id_map), questions
+
+
+async def _insert_steps(db, steps, step_mapping, topic_group_mapping=None):
     """Шаги с ремапом ссылок; тип ищется по имени — справочник местные знают свой.
 
-    Ремап — общее знание `ai_workflow_step_refs_remap`; наша политика —
+    Ремап — общее знание (`ai_workflow_step_refs_remap` для шагов,
+    `ai_workflow_topic_group_refs_remap` для групп тем); наша политика —
     переписывать id только при столкновении (пустой словарь → дословно).
+
+    ⚠ Словаря два, и смешивать их нельзя: номер шага и номер группы живут в
+    разных пространствах, а совпасть числом могут запросто.
     """
     if not steps:
         return 0
@@ -614,6 +857,7 @@ async def _insert_steps(db, steps, step_mapping):
                 f'Неизвестный тип шага «{step["type_name"]}» — справочник типов '
                 f'принимающей стороны его не знает')
         metadata = ai_workflow_step_refs_remap(step['metadata'], step_mapping)
+        metadata = ai_workflow_topic_group_refs_remap(metadata, topic_group_mapping or {})
         step_id = step_mapping.get(step['id'], step['id'])
         await db.execute(
             'INSERT INTO `agent_workflow_step` (`id`, `workflow_id`, `type_id`, `title`, `position`, `metadata`) '

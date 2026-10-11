@@ -18,6 +18,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from src.tool.env.env_ import env_is_prod
 from ai.ai_thread import ai_thread_framework_run
+from src.ai.ai_llm import ai_llm_fake_guard_start
 from src.ai.ai_tool import ai_tool_sync
 from src.ai.framework.agent.ai_framework import AiFrameworkAgent
 from config.config import config_get
@@ -141,6 +142,7 @@ SESSION_MAX_AGE = 14400
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logging_init()
+
     # Журнал ошибок установки: всё, что пишется в логи уровнем ERROR, начиная
     # отсюда попадает и в таблицу `journal` — страница «Журнал»
     # (/admin/journal). Ставится рядом с `logging_init`, потому что
@@ -158,6 +160,16 @@ async def lifespan(app: FastAPI):
     # а на свежей установке её заводят те же миграции. Рядом с
     # `journal_handler_install` вызов стоять не может — там базы ещё нет.
     await journal_mysql_watch_start('uvicorn')
+
+    # ⚠⚠ Сторож режима подмены: при `LLM_FAKE` выход к живой модели — отказ с
+    # объяснением, а не тихий запрос. Без переменной не делает ничего, и на
+    # проде её нет. Снимать не надо: живёт столько же, сколько процесс.
+    #
+    # ⚠ Имена моделей установки передаются потому, что адрес сервиса бывает
+    # зависит от модели: у gx10 он свой на каждый размер, и по имени сервиса
+    # его не угадать. Отсюда и место вызова — после пула, базу уже можно
+    # спросить.
+    await ai_llm_fake_guard_start()
 
     print("Starting Uvicorn (Fast-Api) mode...")
 

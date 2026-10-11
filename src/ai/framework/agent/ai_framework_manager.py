@@ -67,6 +67,15 @@ AI_FRAMEWORK_STEP_RETURNS = ('return_response_text', 'return_response_llm')
 # которому его зовут шаги workflow.
 AI_FRAMEWORK_SESSION_TOOL = 'companion_session_add'
 
+# Инструмент пометки намерения: сказанное им слово движок копит в модели, и
+# оттуда его забирает ручка `/chat/ask` (`model.chat_intentions`).
+#
+# ⚠ Связка та же и с той же ценой, что у номера обмена выше: держится на одном
+# строковом имени, и переименуй инструмент — движок промолчит, намерения просто
+# перестанут доезжать. Ошибки не будет: пустой список законен. Поэтому связка
+# под сторожем в `tests/test_chat_intentions.py`.
+AI_FRAMEWORK_INTENTION_TOOL = 'chat_intention_add'
+
 # Реестр живых запусков workflow: run_uuid -> asyncio.Task.
 # Кнопка «Стоп» (/workflow_trace/run/{uuid}/stop) отменяет задачу по run_uuid
 workflow_runs_active: dict[str, asyncio.Task] = {}
@@ -1010,6 +1019,31 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                             model.companion_session_message_id = int(raw_result.get('id') or 0)
                         except (TypeError, ValueError):
                             model.companion_session_message_id = 0
+
+                    # ⚠⚠ Намерение — в модель, тем же приёмом и по тем же
+                    # причинам, что номер обмена выше. Его ждёт ручка
+                    # `/chat/ask`: решения, принятые по ходу разговора, иначе
+                    # остались бы внутри прогона.
+                    #
+                    # ⚠ Два отличия от соседа, и оба намеренные:
+                    #
+                    # 1. **Копит, а не присваивает.** У номера обмена побеждает
+                    #    последний — шага два, и они взаимоисключающие ветки
+                    #    (запись ответа и запись тишины). Здесь за прогон
+                    #    законны несколько намерений, и присваивание оставило бы
+                    #    от них последнее.
+                    # 2. **Отсевает повторы, сохраняя порядок.** Шаг может
+                    #    стоять внутри `repeat`-цикла или подпотока, который
+                    #    зовут по разу на тему (`topic_action` ниже), — без
+                    #    отсева одно намерение приехало бы трижды.
+                    #
+                    # ⚠ Подпоток ничего не требует: ребёнку отдаётся ТОТ ЖЕ
+                    # `model` (`_workflow_child_run`), и намерение с глубины
+                    # лежит в списке родителя.
+                    if tool_name == AI_FRAMEWORK_INTENTION_TOOL and isinstance(raw_result, dict):
+                        intention = str(raw_result.get('intention') or '').strip()
+                        if intention and intention not in model.chat_intentions:
+                            model.chat_intentions.append(intention)
 
                     # Запись выполнения в историю сессии
                     await ai_session_message_add(

@@ -15,9 +15,18 @@
 `metadata` шагов — байт в байт: часть шагов в живой базе не разбирается как
 JSON, а пересборка через `json.dumps` их необратимо изуродует.
 
-⚠ **`workflow_invoke` на чужой workflow не тянет его в файл** — решение
-человека: экспорт строго нода. Ссылка останется битой на принимающей стороне
-до соседнего импорта; в вину не молчит — такие ссылки попадают в `warnings`.
+⚠ **Вызов чужого workflow не тянет его в файл** — решение человека: экспорт
+строго нода. Ссылка останется битой на принимающей стороне до соседнего
+импорта; в вину не молчит — такие ссылки попадают в `warnings`. Родов вызова
+два, `workflow_invoke` и `topic_action`, и оба учтены
+(`WORKFLOW_SUBFLOW_STEP_TYPES`).
+
+⚠⚠ **Темы ноды едут в файл** — группы, темы и вопросы (`topic_groups`,
+`topics`, `topic_questions`). Без них шаг `topic_action` приезжал с номером
+группы, который на той стороне не значит ничего: селектор пуст, тем шаг не
+поднимает, ошибки нет. Секции появились позже первой версии формата, поэтому
+импорт считает их **необязательными**: файл без них — старый, и темы
+принимающей стороны он не трогает (`ai_workflow_import.py`).
 
 Что в файл НЕ едет и почему:
 - `agent_workflow_step_type` — справочник типов, общий на установку; шаги
@@ -30,10 +39,12 @@ JSON, а пересборка через `json.dumps` их необратимо 
 - `browser_workflow*` — отдельная подсистема браузера.
 """
 
-import re
 from datetime import datetime, timezone
 
 from mysql_.mysql_ import mysql_get_db_async
+from src.ai.ai_workflow import (WORKFLOW_SUBFLOW_STEP_TYPES,
+                                ai_workflow_subflow_refs_find,
+                                ai_workflow_topic_group_refs_find)
 
 WORKFLOW_EXPORT_FORMAT = 'rhapsodyai.workflow'
 WORKFLOW_EXPORT_VERSION = 1
@@ -45,10 +56,6 @@ class AiWorkflowExportError(RuntimeError):
 
 class AiWorkflowExportNodeMissingError(AiWorkflowExportError):
     """Ноды с таким id нет на этой инсталляции — экспортировать нечего."""
-
-# Вызов подпотока: `"workflow_id": 6` или `"workflow_id": "6"` (и плейсхолдеры
-# вроде `%test_workflow_id%` — не числа, мимо пробегут).
-_WORKFLOW_EXPORT_INVOKE_RE = re.compile(r'"workflow_id"\s*:\s*"?(\d+)"?')
 
 
 def ai_workflow_export_strip(value):
@@ -77,6 +84,9 @@ async def ai_workflow_export_payload(node_pk):
         'variable_links': [],
         'node_variables': [],
         'node_variable_links': [],
+        'topic_groups': [],
+        'topics': [],
+        'topic_questions': [],
         'warnings': [],
     }
 
@@ -121,6 +131,12 @@ async def ai_workflow_export_payload(node_pk):
         if node_pk is not None:
             payload['node_variables'], payload['node_variable_links'] = \
                 await _workflow_export_fetch_node_variables(db, node_pk, workflow_ids)
+            payload['topic_groups'], payload['topics'], payload['topic_questions'] = \
+                await _workflow_export_fetch_topics(db, node_pk)
+
+        payload['warnings'].extend(
+            _workflow_export_warn_foreign_topic_groups(
+                payload['steps'], {group['id'] for group in payload['topic_groups']}))
 
     return payload
 
@@ -279,18 +295,122 @@ async def _workflow_export_fetch_node_variables(db, node_pk, workflow_ids):
     return variables, links
 
 
+async def _workflow_export_fetch_topics(db, node_pk):
+    """Темы ноды тремя списками: группы, темы, вопросы — с исходными id.
+
+    ⚠ Группы привязаны к **ноде**, не к workflow, — как переменные ноды.
+    Поэтому берутся все группы узла, а не только те, на которые ссылаются шаги:
+    группа без шага законна (её заводят до того, как поставят шаг).
+
+    ⚠⚠ `id` групп в файле обязательны: ими ссылается шаг `topic_action`, и без
+    них перенос даёт шаг с номером, который на той стороне не значит ничего —
+    молча, без единой ошибки. Шапка модуля, `workflow_topic.md` §6a.
+
+    ⚠ У тем и вопросов id служебные: на них не ссылается никто, кроме родителя.
+    Едут всё равно — чтобы связь «вопрос → тема» внутри файла читалась без
+    догадок.
+    """
+    await db.execute(
+        'SELECT `id`, `name`, `title`, `description`, `is_enabled`, `position` '
+        'FROM `agent_workflow_topic_group` WHERE `node_id` = %s ORDER BY `position`, `id`',
+        (node_pk,)
+    )
+    group_rows = await db.fetchall() or []
+    groups = [{
+        'id': row['id'],
+        'name': ai_workflow_export_strip(row['name']),
+        'title': ai_workflow_export_strip(row['title']),
+        'description': row['description'],
+        'is_enabled': row['is_enabled'],
+        'position': row['position'],
+    } for row in group_rows]
+
+    group_ids = [row['id'] for row in group_rows]
+    if not group_ids:
+        return groups, [], []
+
+    placeholders = ','.join(['%s'] * len(group_ids))
+    await db.execute(
+        f'SELECT `id`, `topic_group_id`, `name`, `title`, `tags`, `tags_qty_accept`, '
+        f'`questions_qty_yes_accept`, `instructions`, `is_enabled`, `position` '
+        f'FROM `agent_workflow_topic` WHERE `topic_group_id` IN ({placeholders}) '
+        f'ORDER BY `topic_group_id`, `position`, `id`',
+        tuple(group_ids)
+    )
+    topic_rows = await db.fetchall() or []
+    topics = [{
+        'id': row['id'],
+        'topic_group_id': row['topic_group_id'],
+        'name': ai_workflow_export_strip(row['name']),
+        'title': ai_workflow_export_strip(row['title']),
+        'tags': row['tags'],
+        'tags_qty_accept': row['tags_qty_accept'],
+        'questions_qty_yes_accept': row['questions_qty_yes_accept'],
+        'instructions': row['instructions'],
+        'is_enabled': row['is_enabled'],
+        'position': row['position'],
+    } for row in topic_rows]
+
+    topic_ids = [row['id'] for row in topic_rows]
+    if not topic_ids:
+        return groups, topics, []
+
+    placeholders = ','.join(['%s'] * len(topic_ids))
+    await db.execute(
+        f'SELECT `id`, `topic_id`, `question`, `is_enabled`, `position` '
+        f'FROM `agent_workflow_topic_question` WHERE `topic_id` IN ({placeholders}) '
+        f'ORDER BY `topic_id`, `position`, `id`',
+        tuple(topic_ids)
+    )
+    questions = [{
+        'id': row['id'],
+        'topic_id': row['topic_id'],
+        'question': row['question'],
+        'is_enabled': row['is_enabled'],
+        'position': row['position'],
+    } for row in (await db.fetchall() or [])]
+
+    return groups, topics, questions
+
+
+def _workflow_export_warn_foreign_topic_groups(steps, exported_group_ids):
+    """Шаг ссылается на группу тем, которой в файле нет.
+
+    Бывает законно (узел «Вне нод» групп не имеет вовсе) и незаконно (группу
+    удалили, а шаг остался). В обоих случаях на принимающей стороне шаг не
+    поднимет ни одной темы — и молча, поэтому предупреждение обязательно.
+    """
+    foreign = {}
+    for step in steps:
+        if step.get('type_name') != 'topic_action':
+            continue
+        for target in ai_workflow_topic_group_refs_find(step['metadata'] or ''):
+            if target not in exported_group_ids:
+                foreign[target] = foreign.get(target, 0) + 1
+    return [
+        f'Шаг темы ссылается на группу вне файла (id {target}, в {count} шаг(ах)) — '
+        f'на принимающей стороне он не поднимет ни одной темы'
+        for target, count in sorted(foreign.items())
+    ]
+
+
 def _workflow_export_warn_foreign_invokes(steps, exported_workflow_ids):
-    """Вызовы подпотоков на workflow вне узла: файл их несёт, но не содержит."""
+    """Вызовы подпотоков на workflow вне узла: файл их несёт, но не содержит.
+
+    ⚠⚠ Отбор идёт по **типу шага**, а не по подстроке `workflow_invoke` в
+    тексте метаданных. Родов вызова два (`WORKFLOW_SUBFLOW_STEP_TYPES`), и
+    подстрока знала один: подпоток, который зовёт `topic_action`, уезжал из узла
+    молча — предупреждения не было, а ссылка на принимающей стороне оставалась
+    битой.
+    """
     foreign = {}
     for step in steps:
         metadata = step['metadata'] or ''
-        if 'workflow_invoke' not in metadata:
+        if step.get('type_name') not in WORKFLOW_SUBFLOW_STEP_TYPES:
             continue
-        for match in _WORKFLOW_EXPORT_INVOKE_RE.finditer(metadata):
-            target = int(match.group(1))
+        for target in ai_workflow_subflow_refs_find(metadata):
             if target not in exported_workflow_ids:
-                foreign.setdefault(target, 0)
-                foreign[target] += 1
+                foreign[target] = foreign.get(target, 0) + 1
     return [
         f'Workflow вне узла вызывается как подпоток (id {target}) в {count} шаг(ах) — '
         f'он не в файле; на принимающей стороне ссылка останется битой'

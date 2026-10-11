@@ -756,7 +756,182 @@ async def llm_calls():
     return _calls
 
 
+# ── Сверка примет шагов с базой ──────────────────────────────────────────────
+
+# Заголовки шагов workflow и его подпотоков, по имени workflow. Собираются раз
+# на процесс: за прогон их спрашивают по разу на каждый тестовый модуль.
+STEP_TITLES_CACHE: dict = {}
+
+# Имена констант, которые сверкой **не** проверяются. Сюда попадает то, что по
+# форме похоже на примету шага, но шагом не является.
+#
+# ⚠ Список пустой и пусть таким остаётся: исключение здесь означает «эта
+# константа может разойтись с базой молча», то есть ровно ту беду, от которой
+# сверка и заведена. Заводя новое, напиши рядом, почему шага с таким именем в
+# базе быть не может.
+STEP_NAMES_SKIPPED: tuple = ()
+
+
+@pytest.fixture(scope='module', autouse=True)
+def step_names_match(request):
+    """Приметы шагов (`STEP_*`) сверяются с базой **до** прогона модуля.
+
+    ## ⚠⚠ Зачем, и какой ценой узнано
+
+    Примета шага — его заголовок, и живёт он **в базе**, а не в коде: человек
+    переименовывает шаг на странице, и ни один grep этого не покажет. Тест с
+    отставшей константой не говорит «шага нет» — он говорит «тема не
+    сработала», «ветка не сработала», то есть врёт про предмет проверки.
+
+    Случалось дважды, и оба раза по минутам прогона на пустом месте:
+
+    | когда | было | стало |
+    |---|---|---|
+    | ~09.2026 | «Ветка: письма и фото» | «Темы общения» |
+    | 11.10.2026 | «Темы общения» | «Ветка тем» |
+
+    Теперь расхождение — отказ за секунду, до первого обращения к агенту, и в
+    тексте сказано, на что заменить.
+
+    ⚠ Сверяются шаги workflow **и всех его подпотоков**: часть примет
+    (`fact_collection_add_companion`) живёт в подпотоке, а не в корне.
+
+    ⚠ База недоступна или workflow не заведён — сверка молчит. Её дело ловить
+    расхождение, а не дублировать отказы окружения: тест и так не пройдёт, и
+    скажет об этом понятнее.
+    """
+    package = str(getattr(request.module, '__name__', '')).rsplit('.', 1)[0]
+    conftest = sys.modules.get(f'{package}.conftest')
+
+    if not conftest:
+        return
+
+    # ⚠ Имя workflow берётся из **имени папки** — это правило раскладки (шапка
+    # файла), и держится оно само: папку зовут системным именем workflow.
+    # `WORKFLOW_NAME` перекрывает его, если папка почему-то названа иначе; в
+    # четырёх папках из пяти такой константы нет вовсе.
+    workflow = (str(getattr(conftest, 'WORKFLOW_NAME', '') or '').strip()
+                or package.rsplit('.', 1)[-1])
+
+    if not workflow:
+        return
+
+    titles = _step_titles(workflow)
+    if not titles:
+        return
+
+    missing = {name: value for name, value in vars(conftest).items()
+               if name.startswith('STEP_') and name not in STEP_NAMES_SKIPPED
+               and isinstance(value, str) and value and value not in titles}
+
+    if not missing:
+        return
+
+    pytest.fail(
+        'приметы шагов разошлись с базой — шаг переименовали на странице, а '
+        'константу не поправили:\n'
+        + '\n'.join(f'  {name} = {value!r} — такого шага нет '
+                    f'в «{workflow}» и его подпотоках\n'
+                    f'      похожее в базе: {_closest(value, titles) or "ничего"}'
+                    for name, value in sorted(missing.items()))
+        + f'\n\n⚠ Заголовки живут в базе. Посмотреть, как шаг зовётся сейчас:\n'
+          f"      SELECT title FROM agent_workflow_step s\n"
+          f"        JOIN agent_workflow w ON w.id = s.workflow_id\n"
+          f"       WHERE w.name = '{workflow}' ORDER BY s.position",
+        pytrace=False)
+
+
 # ── Приватное ────────────────────────────────────────────────────────────────
+
+
+def _step_titles(workflow: str) -> set:
+    """Заголовки шагов workflow и всех его подпотоков. Пусто — спросить не вышло.
+
+    ⚠ Обход вглубь: подпоток зовут два рода шагов, и номер у обоих лежит под
+    ключом `workflow_id` (`WORKFLOW_SUBFLOW_STEP_TYPES`). Знай мы только
+    корень, половина примет (`fact_collection_add_companion`) считалась бы
+    отставшей.
+    """
+    if workflow in STEP_TITLES_CACHE:
+        return STEP_TITLES_CACHE[workflow]
+
+    try:
+        # ⚠ `src.ai`, а не `ai`: namespace `ai` есть и в общем слое, и в
+        # проекте. Список родов вызова — проектный, и короткий импорт молча
+        # привёл бы в чужой модуль (`ImportError`, съеденный `except` ниже).
+        from src.ai.ai_workflow import (WORKFLOW_SUBFLOW_STEP_TYPES,
+                                        ai_workflow_subflow_refs_find)
+        from mysql_.mysql_query import mysql_query_run
+
+        got = mysql_query_run(
+            'SELECT id FROM agent_workflow WHERE name = %s LIMIT 1', (workflow,))
+        rows = got.get('rows') or []
+        if not rows:
+            return set()
+
+        titles, seen, queue = set(), set(), [int(rows[0]['id'])]
+        while queue:
+            current = queue.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+
+            got = mysql_query_run(
+                'SELECT s.title, t.name AS step_type, s.metadata '
+                '  FROM agent_workflow_step s'
+                '  LEFT JOIN agent_workflow_step_type t ON t.id = s.type_id'
+                ' WHERE s.workflow_id = %s', (current,))
+
+            for row in got.get('rows') or []:
+                titles.add(str(row['title'] or '').strip())
+
+                if str(row['step_type'] or '') not in WORKFLOW_SUBFLOW_STEP_TYPES:
+                    continue
+
+                queue.extend(ai_workflow_subflow_refs_find(row['metadata'] or ''))
+    except Exception as error:
+        # ⚠⚠ Не роняем, но и **не молчим**. Сверка — помощник, и её отказ на
+        # недоступной базе не должен прятать настоящую причину красного. Но
+        # полное молчание однажды уже скрыло ошибку в ней самой: короткий
+        # импорт `ai.ai_workflow` вместо `src.ai.ai_workflow` привёл в чужой
+        # namespace, сверка «не нашла базу» и пропустила отставшую константу —
+        # тест упал по-старому, через полторы минуты.
+        print(f'⚠ сверка примет шагов пропущена ({workflow}): '
+              f'{type(error).__name__}: {error}')
+
+        return set()
+
+    STEP_TITLES_CACHE[workflow] = titles
+
+    return titles
+
+
+def _closest(value: str, titles) -> str:
+    """Похожие заголовки из базы — чтобы не идти за новым именем руками.
+
+    ## ⚠ Два способа, и второй важнее
+
+    Сперва похожесть строк (`difflib`), затем **общее слово**. Одного первого
+    мало: на живом случае «Темы общения» → «Ветка тем» он предложил три чужих
+    заголовка и не предложил верный, хотя слово «тем» стоит в обоих. Человек по
+    такой подсказке идёт в базу руками — то есть она не работает.
+
+    ⚠ Слова сравниваются по корню в **три** буквы: «темы» и «тем» — формы
+    одного слова, и на четырёх буквах они уже расходятся. Проверено на том же
+    живом случае: с четырьмя верный заголовок в подсказку не попадал.
+    """
+    import difflib
+
+    found = list(difflib.get_close_matches(value, sorted(titles), n=3, cutoff=0.4))
+
+    roots = {one[:3].lower() for one in str(value).split() if len(one) > 2}
+    for title in sorted(titles):
+        if title in found:
+            continue
+        if roots & {one[:3].lower() for one in title.split() if len(one) > 2}:
+            found.append(title)
+
+    return ', '.join(repr(one) for one in found[:4])
 
 
 def _rule(item) -> dict:

@@ -241,7 +241,17 @@ async def chat_ask_ai(
         # «Тишину», и доставлять нечего.
         message_id = framework_model.companion_session_message_id
 
-        return {"result": result_text, "message_id": message_id}
+        # ⚠⚠ Намерения прогона — тем же полем модели, что номер обмена, и по
+        # тем же причинам (движок копит их по ответу `chat_intention_add`).
+        #
+        # ⚠ Ключ отдаётся ВСЕГДА, пустым списком в том числе. Принимающая
+        # сторона обычно сворачивает «пусто» и «ключа нет» в одно, и пропажа
+        # стала бы неотличима от штатной тишины — ровно так поломка номера
+        # обмена прожила шесть дней незамеченной.
+        intentions = framework_model.chat_intentions
+
+        return {"result": result_text, "message_id": message_id,
+                "intentions": intentions}
     except asyncio.TimeoutError:
         # Пытаемся отменить future, чтобы не висела в памяти
         future.cancel()

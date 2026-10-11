@@ -38,7 +38,11 @@ from src.tool.companion import companion_session
 pytestmark = pytest.mark.core
 
 # Ключи, которые ручка `/chat/ask` обязана отдать при любом исходе прогона.
-CHAT_ASK_KEYS = {'result', 'message_id'}
+#
+# ⚠ Набор общий, а не про номер обмена: `intentions` доезжает тем же приёмом —
+# полем модели, которое движок копит по ответу инструмента
+# (`tests/test_chat_intentions.py`), — и пропадает так же тихо.
+CHAT_ASK_KEYS = {'result', 'message_id', 'intentions'}
 
 
 def _chat_ask_returns() -> list:
@@ -111,7 +115,7 @@ def test_the_model_starts_with_no_number():
     assert isinstance(model.companion_session_message_id, int)
 
 
-def test_the_handler_always_answers_with_both_keys():
+def test_the_handler_always_answers_with_the_contract_keys():
     """⚠⚠ `message_id` отдаётся **всегда**, а не только когда он непустой.
 
     Сторож стоит здесь, у отдающей стороны, потому что принимающая его не

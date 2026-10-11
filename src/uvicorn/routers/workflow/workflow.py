@@ -3,7 +3,8 @@ import re
 from fastapi import APIRouter, Request, Depends, HTTPException
 
 from mysql_.mysql_ import mysql_get_db_async
-from src.ai.ai_workflow import (WORKFLOW_VARIABLE_NODE_PUBLIC,
+from src.ai.ai_workflow import (WORKFLOW_SUBFLOW_STEP_TYPES, WORKFLOW_VARIABLE_NODE_PUBLIC,
+                               ai_workflow_subflow_ref_pattern_sql,
                                ai_workflow_variables_node_get, ai_workflow_step_refs_remap)
 from src.ai.ai_workflow_history import (HISTORY_ACTION_CREATE,
                                         HISTORY_ACTION_DELETE,
@@ -544,43 +545,43 @@ async def workflow_parents(
         workflow_id: int,
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_VIEW]))
 ):
-    """Кто зовёт этот подпоток шагом `workflow_invoke`.
+    """Кто зовёт этот подпоток — шагом `workflow_invoke` или `topic_action`.
 
-    ## ⚠⚠ Номер бывает и числом, и строкой — искать надо оба
+    ## ⚠⚠ Родов вызова два, а отбор знал один
 
-    Четыре шаблона `LIKE` искали только **число** (`"workflow_id":36,`), а в базе
-    встречается и строка (`"workflow_id": "36"`). Страница подпотока честно отвечала
-    «не используется ни одним workflow» про тот, который вызывается прямо сейчас, —
-    и проверить это было нечем, кроме как открыть родителя глазами.
+    Шаги отбирались подстрокой `metadata LIKE '%workflow_invoke%'`, и подпоток,
+    который зовёт `topic_action` (тема уходит в него со своими вопросами),
+    отвечал «не используется ни одним workflow» про того, кто звал его прямо
+    сейчас. Замерено на `dating_talk_intention` (#76) и шаге #816 «Ветка
+    намерений» в `dating_talk`.
 
-    ⚠ Движку разницы нет: он приводит значение к `int` при вызове
-    (`ai_framework_manager`). Поэтому беда и жила — ломался только показ.
+    ⚠ Ответ «не используется» законен для только что заведённого подпотока —
+    поэтому ложный от настоящего ничем не отличался. По нему же человек решает,
+    можно ли подпоток удалить.
 
-    ⚠⚠ Строку пишет не редактор: его виджет кладёт `parseInt(...)`. Строки приходят
-    из миграций и из переносов между базами, где значение однажды прошло через
-    `str()`. Значит «починить того, кто пишет» — не решение: писавших много, и
-    новый появится завтра. Читаем оба вида.
+    ⚠ Теперь отбор идёт по **типу шага** (колонка справочника), а не по
+    подстроке в тексте метаданных: слово `topic_action`, попавшее в чужой
+    промпт, больше не притворится вызовом. Список родов — один на проект,
+    `WORKFLOW_SUBFLOW_STEP_TYPES`.
 
-    ## ⚠ Почему `REGEXP` по тексту, а не `JSON_EXTRACT`
-
-    В таблице есть строки с **невалидным JSON** (пять на сегодня: `response_soko`,
-    `response_cashier`, `test`). `JSON_EXTRACT` в `WHERE` упал бы на них целиком —
-    и ответ стал бы отказом вместо списка. Текстовый поиск их просто не находит.
-
-    ⚠ Хвост `"?[[:space:]]*[,}]` обязателен: без него номер `74` нашёлся бы внутри
-    `740`, и подпоток показал бы чужих родителей.
+    ⚠⚠ Шаблон поиска ссылки строит **домен**
+    (`ai_workflow_subflow_ref_pattern_sql`), а не этот запрос: форма ссылки одна
+    на проект, и собранный здесь второй раз молча разошёлся бы с тем, которым её
+    ищут в Python. Там же записано, почему `REGEXP`, а не `JSON_EXTRACT`, и
+    почему номер читается и числом, и строкой.
     """
-    pattern = (r'"workflow_id"[[:space:]]*:[[:space:]]*"?'
-               + str(int(workflow_id)) + r'"?[[:space:]]*[,}]')
+    pattern = ai_workflow_subflow_ref_pattern_sql(workflow_id)
+    kinds = ','.join(['%s'] * len(WORKFLOW_SUBFLOW_STEP_TYPES))
 
     async with mysql_get_db_async() as db:
         await db.execute(
             "SELECT DISTINCT w.id, w.name, w.title "
             "FROM agent_workflow_step s "
             "JOIN agent_workflow w ON w.id = s.workflow_id "
-            "WHERE s.metadata LIKE '%%workflow_invoke%%' "
+            "JOIN agent_workflow_step_type t ON t.id = s.type_id "
+            f"WHERE t.name IN ({kinds}) "
             "  AND s.metadata REGEXP %s",
-            (pattern,)
+            tuple(WORKFLOW_SUBFLOW_STEP_TYPES) + (pattern,)
         )
         rows = await db.fetchall()
 

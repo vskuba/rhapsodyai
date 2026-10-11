@@ -334,6 +334,7 @@ workflow не перетирают друг друга. Вложенные `dict
 | Папка | Группа | Примеры |
 |-------|--------|---------|
 | `agent/` | `Agent` | `agent_.py`, `agent_workflow_.py` |
+| `chat/` | `Chat` | `chat_intention_add` — пометка намерения в ответ `/chat/ask` (`chat.md` §1.3) |
 | `claude_/`, `claude_shell/` | `Claude_`, `Claude_shell` | `claude_shell_call` (`claude_shell.md`) |
 | `companion/`, `counter/`, `datetime_/`, `session/`, `setting/` | по папке | служебные |
 | `design/`, `project/design/` | `Design` | блоки, страницы, виджеты, wireframe |
