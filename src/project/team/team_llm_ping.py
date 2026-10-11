@@ -61,8 +61,7 @@ from datetime import datetime
 
 import httpx
 
-from ai.provider.ai_provider_registry import (ai_provider_registry_get,
-                                              ai_provider_registry_live_allowed)
+from ai.provider.ai_provider_registry import ai_provider_registry_get
 from datetime_.datetime_ import datetime_utc_now
 from logging_.logging_ import logger_info
 from setting_.setting_ import setting_get, setting_set
@@ -194,14 +193,8 @@ async def team_llm_ping_one(name: str) -> dict:
     try:
         timeout = httpx.Timeout(TEAM_LLM_PING_TIMEOUT,
                                 connect=TEAM_LLM_PING_CONNECT_TIMEOUT)
-        # ⚠⚠ Единственное место в проекте, которому разрешено идти к живой
-        # модели при включённой подмене (`LLM_FAKE`). Предмет пинга в том и
-        # состоит, чтобы узнать, жив ли **настоящий** сервис: уведи его на
-        # подмену — он начнёт отвечать «все живы» всегда, то есть врать именно
-        # в том, ради чего заведён. Сторож — `ai_provider_registry`.
-        with ai_provider_registry_live_allowed():
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.post(url, headers=headers, json=payload)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(url, headers=headers, json=payload)
         ping['ms'] = int((time.monotonic() - started) * 1000)
         ping['http_status'] = str(response.status_code)
         if response.is_success:

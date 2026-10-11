@@ -391,42 +391,6 @@ async def ai_llm_request_log(
     except Exception as e:
         logger_info(f"⚠️ Не удалось записать llm_request (llm_id={llm_id}): {e}")
 
-async def ai_llm_fake_guard_start():
-    """Поставить сторож подмены, назвав ему модели этой установки.
-
-    Тонкая обёртка над `ai_provider_registry_fake_guard_start`: сам сторож —
-    общий слой, а **какие модели тут заведены** знает только проект (таблица
-    `llm`). Зовут из `lifespan`, после пула соединений.
-
-    ⚠ Имена нужны затем, что адрес сервиса бывает зависит от модели: у gx10 он
-    свой на каждый размер (`GX10_SMALL_API_URL`), и общего `GX10_API_URL` нет
-    вовсе. Без имён сторож прикрыл бы всё, кроме главного — той самой модели, к
-    которой ходили тесты, пока подмена была не подключена.
-
-    ⚠⚠ Без `LLM_FAKE` выходим **до** похода в базу: на проде переменной нет, и
-    лишний запрос на старте там не нужен никому. Сам сторож тоже проверяет
-    выключатель — здесь проверка не дублирует его, а экономит запрос.
-    """
-    from ai.provider.ai_provider_fake import ai_provider_fake_on
-    from ai.provider.ai_provider_registry import ai_provider_registry_fake_guard_start
-
-    if not ai_provider_fake_on():
-        return
-
-    names = []
-    try:
-        async with mysql_get_db_async() as db:
-            await db.execute('SELECT `name` FROM `llm`')
-            names = [str(row['name'] or '').strip() for row in (await db.fetchall() or [])]
-    except Exception as e:
-        # ⚠ Сбой чтения моделей не вправе ронять старт: сторож встанет на то,
-        # что знает по именам сервисов, и скажет об этом.
-        logger_info(f'⚠️ Сторож подмены: модели не прочитаны ({e}) — '
-                    f'прикрыты только сервисы с общим адресом')
-
-    ai_provider_registry_fake_guard_start(names)
-
-
 def _ai_llm_comfyui_workflow(prompt: str, seed: int, width: int, height: int) -> dict:
     unet  = config_get('GX10_COMFYUI_UNET')  or 'flux1-dev-fp8.safetensors'
     clip1 = config_get('GX10_COMFYUI_CLIP1') or 'clip_l.safetensors'
