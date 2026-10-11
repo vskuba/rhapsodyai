@@ -16,11 +16,29 @@ router = APIRouter()
 
 @router.get("/tool/list")
 async def tool_list(request: Request, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.TOOL_VIEW]))):
+    """Все инструменты установки — по алфавиту: сперва группа, внутри имя.
+
+    ## ⚠⚠ Порядок задаёт запрос, а не тот, кто показывает
+
+    Без `ORDER BY` база отдаёт строки как ей удобно, и список в селекте шага
+    `tool_invoke` выстраивался случайно: `Weather`, `List`, `Claude_`,
+    `Datetime_`, … Человек, заведший инструмент в новой группе, не находил его
+    глазами и решал, что выкладка не довезла, — так и случилось с `Chat` после
+    деплоя 11.10.2026, хотя инструмент в реестре был.
+
+    ⚠ Сортировка здесь, а не на фронтенде: потребителей у списка несколько, и
+    каждый сортировал бы по-своему (или забывал бы вовсе).
+
+    ⚠ Безымянная группа уходит **вниз** (`tg.name IS NULL` первым ключом): в
+    MySQL `NULL` при `ASC` идёт первым, и инструменты без группы возглавили бы
+    список.
+    """
     async with db:
         sql = """
             SELECT t.*, tg.name as group_name
             FROM tool t
             LEFT JOIN tool_group tg ON t.group_id = tg.id
+            ORDER BY tg.name IS NULL, tg.name, t.name
         """
         await db.execute(sql)
         return {"result": await db.fetchall()}

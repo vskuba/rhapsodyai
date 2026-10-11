@@ -305,10 +305,20 @@ export function renderCustomStepFields(step, metadata) {
             mappingContainer.className = 'tool-mapping-block';
             mappingContainer.style = "display: flex; flex-direction: column; gap: 10px; margin-top: 5px;";
 
-            // Группировка инструментов по optgroup
+            // Группировка инструментов по optgroup.
+            //
+            // Порядок задаёт ручка `/tool/list` (`ORDER BY` по группе и имени),
+            // здесь он только сохраняется: у объекта со строковыми ключами
+            // перебор идёт в порядке вставки.
+            //
+            // ⚠⚠ Имя группы — **всегда строка**, и подстановка номера здесь была
+            // бы не мелочью: числовой ключ объекта JS всплывает в начало
+            // перебора независимо от того, как его вставляли, и безымянная
+            // группа возглавила бы список вопреки сортировке сервера.
             const groups = {};
             state.allAvailableTools.forEach(t => {
-                const groupName = t.group_name || t.group_id || 'Без группы';
+                const groupName = t.group_name
+                    || (t.group_id ? `Группа ${t.group_id}` : 'Без группы');
                 if (!groups[groupName]) groups[groupName] = [];
                 groups[groupName].push(t);
             });
