@@ -33,6 +33,8 @@ pytestmark = pytest.mark.core
 
 INDEX = './data/uvicorn/public/js/workflow/variable-undefined.js'
 STATE = './data/uvicorn/public/js/workflow/state.js'
+ROADS = './data/uvicorn/public/js/workflow/topic-roads.js'
+MAIN = './data/uvicorn/public/js/workflow/main.js'
 
 # Идентификатор workflow, открытого «в редакторе»: для заглушки это значение
 # `document.getElementById('workflowId').value`, его и зовёт модуль в вызовы.
@@ -57,6 +59,17 @@ RAW = {'9': {'steps': [STEP_900], 'registryNames': [], 'hiddenNames': []}}
 RAW_STALE_6 = {EDITOR_ID: {'steps': [STEP_900], 'registryNames': [], 'hiddenNames': []}}
 
 REGISTRY = json.dumps([{'id': 901, 'name': 'girl_name'}], ensure_ascii=False)
+
+# Подпоток-дорога: его шаг читает значение, которое кладёт шаг `topic_action`
+# родителя. В реестре такого имени нет и не будет — записи для него не заводят
+# (`variable-group.js`, `VAR_TOPIC_ACTION`), и без реестра дорог правило зовёт
+# его дыркой. Сырьё — того же вида, что отдаёт ручка индекса.
+STEP_ROAD = {'id': 910, 'position': 910,
+             'metadata': json.dumps({'agent_invoke': {
+                 'agent_id': 1, 'prompt': 'делай %topic_action_instructions%'}},
+                 ensure_ascii=False)}
+
+RAW_ROAD = {'9': {'steps': [STEP_ROAD], 'registryNames': [], 'hiddenNames': []}}
 
 # Шаги редакторской формы прямо в JS-теле тестов: их зовёт и стейт-адаптер,
 # и заглушка сети — одним и тем же текстом, без второго «того же шага» на свете.
@@ -230,6 +243,89 @@ _out = {asked: _fetches.length,
             f'сброс не пересчитал открытого workflow: {out}'
 
 
+class TestTheRoadRegistryIsReadyBeforeTheList:
+    """⚠⚠ Красный «!» у подпотока-дороги на холодной перезагрузке — и ни на чём.
+
+    Поломка, с которой класс заведён, выглядела так: открыть workflow, нажать
+    «обновить» — и два подпотока в левой колонке загораются «!». Ткнуть в любой
+    из них — значок гаснет, и внутри честно ничего не сломано.
+
+    Виноват был не сторож, а **порядок**. Сторож снимает красный с `topic_action_*`
+    у того, кто кому-то дорога, и спрашивает об этом реестр дорог. Реестр читался
+    по ноде и только при открытии workflow — то есть ПОСЛЕ того, как левая
+    колонка уже отрисована. Ткнул в подпоток — кэш сторожа по нему сбрасывался,
+    пересчёт шёл с готовым реестром, значок гас. Значок говорил не про поломку, а
+    про то, во что успели ткнуть.
+
+    Отсюда два требования, и оба проверяются ниже: реестр **один на страницу и
+    без ноды**, и читается он **до** первой отрисовки списка.
+    """
+
+    def test_the_road_names_are_quiet_only_after_the_registry_is_read(self):
+        """⚠⚠ Тот же workflow, то же сырьё — ответ меняет только реестр дорог.
+
+        Проба нарочно двусторонняя: сперва холодный ответ (реестр не прочитан —
+        имя горит), потом прочитанный (имя молчит). Проверь мы одну сторону,
+        тест был бы зелёным и на правиле «никогда не кричать на `topic_action_*`»,
+        а оно сняло бы красный и с того, кто ничья не дорога.
+        """
+        out = _run(_script('''
+globalThis.fetch = async (url) => {
+    _fetches.push(String(url));
+    const path = String(url).split('?')[0];
+    if (path === '/workflow_topic/road/list') {
+        return {ok: true, status: 200, json: async () => ({result: ['9']})};
+    }
+    return {ok: true, status: 200, json: async () => _fetched};
+};
+const {topicRoadsLoad} = await import('__ROADS__');
+const {invalidateUndefinedIndexAll} = await import('__INDEX__');
+
+await ensureUndefinedIndex();
+const cold = workflowUndefinedEntriesSync('9');
+
+await topicRoadsLoad();
+invalidateUndefinedIndexAll();
+const warm = workflowUndefinedEntriesSync('9');
+
+await topicRoadsLoad();
+
+_out = {cold: cold ? [...cold.keys()] : null,
+        warm: warm ? [...warm.keys()] : null,
+        urls: [..._fetches]};
+''', fetched=RAW_ROAD))
+
+        assert out['cold'] == ['topic_action_instructions'], \
+            f'проба не ловит кричащее имя — проверять нечего: {out["cold"]}'
+        assert out['warm'] == [], \
+            f'реестр дорог прочитан, а красный с живого имени не снят: {out["warm"]}'
+
+        roads = [one for one in out['urls'] if one.startswith('/workflow_topic/road/list')]
+
+        assert roads == ['/workflow_topic/road/list'], \
+            f'реестр дорог просят не одним GET на всю страницу: {roads}'
+
+    def test_the_page_reads_the_registry_before_it_draws_the_list(self):
+        """⚠⚠ Реестр — в той же пачке, что и сырьё индекса, и до отрисовки.
+
+        Это и есть вся починка. Сторож, кэш и правило к поломке отношения не
+        имели: они считали верно по тому, что знали, — а не знали они дорог,
+        потому что их читали позже. Проверка смотрит на текст точки входа: кто
+        бы ни правил `initWorkflowManager`, перенести чтение обратно за
+        отрисовку списка молча не выйдет.
+        """
+        source = open(MAIN, encoding='utf-8').read()
+
+        head, _, tail = source.partition('renderWorkflowList(workflows, nodes)')
+
+        assert tail, 'в точке входа больше нет отрисовки списка — проверка ослепла'
+        assert 'topicRoadsLoad()' in head, \
+            'реестр дорог читают после отрисовки списка: подпоток-дорога снова ' \
+            'получит «!» на холодной перезагрузке'
+        assert 'ensureUndefinedIndex()' in head, \
+            'сырьё индекса читают после отрисовки списка'
+
+
 @pytest.fixture(autouse=True)
 async def db_pool_release():
     """Закрыть пул MySQL после теста: он привязан к циклу, а цикл у каждого теста свой.
@@ -346,7 +442,7 @@ def _script(body: str, fetched: object = None, **tokens: str) -> str:
 
     payload = {'result': {'workflows': RAW if fetched is None else fetched}}
     script = (script.replace('__EDITOR__', EDITOR_ID).replace('__INDEX__', INDEX)
-              .replace('__STATE__', STATE)
+              .replace('__STATE__', STATE).replace('__ROADS__', ROADS)
               .replace('__FETCHED__', json.dumps(payload, ensure_ascii=False)))
 
     for token, value in tokens.items():

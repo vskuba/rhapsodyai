@@ -440,6 +440,31 @@ class TestBranchRoadList:
         # с числом из головы — иначе пустой ответ сошёл бы за верный.
         assert result == sorted(set(result), key=result.index), 'повторы в ответе'
 
+    async def test_without_a_node_the_whole_install_answers(self, client: httpx.AsyncClient):
+        """⚠⚠ Без `node_id` — дороги всей установки, и ответ по ноде в них весь.
+
+        Спрашивающий держит список **всех** workflow сразу: левая колонка
+        страницы Workflow листается каруселью нод. Пока ручку звали по ноде,
+        реестр на странице перетирался при каждом открытии workflow — и
+        подпоток-дорога соседней ноды оставался без ответа, то есть с красным
+        «!» на живых `topic_action_*`.
+        """
+        every = await client.get("/workflow_topic/road/list")
+
+        assert every.status_code == 200, every.text
+
+        result = every.json()["result"]
+
+        assert isinstance(result, list)
+        assert result == sorted(set(result), key=result.index), 'повторы в ответе'
+
+        # ⚠ Сверка с ответом по ноде, а не с числом из головы: пустой ответ не
+        # должен сойти за верный, а данные на установке меняются.
+        one_node = await client.get(f"/workflow_topic/road/list?node_id={TEST_NODE_ID}")
+
+        assert set(one_node.json()["result"]) <= set(result), \
+            'ответ по ноде не целиком внутри общего — отбор потерял дороги'
+
     async def test_unknown_node_is_empty(self, client: httpx.AsyncClient):
         """Нода без шагов `branch` — пустой список, а не отказ."""
         roads = await client.get("/workflow_topic/road/list?node_id=2147483647")

@@ -262,13 +262,24 @@ async def workflow_topic_group_list(
 
 @router.get("/workflow_topic/road/list")
 async def workflow_topic_road_list(
-        node_id: int,
+        node_id: int | None = None,
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_TOPIC_VIEW]))
 ):
-    """Подпотоки, которые кто-то из шагов `branch` этой ноды зовёт своей дорогой.
+    """Подпотоки, которые кто-то из шагов `branch` зовёт своей дорогой.
+
+    Args:
+        node_id: ограничить ответ одной нодой; без него — вся установка.
 
     Returns:
         dict: `result` — номера workflow строками, без повторов.
+
+    ## ⚠⚠ Без `node_id` — не «на всякий случай», а потому что вопрос не про ноду
+
+    Спрашивающий держит список **всех** workflow сразу: левая колонка страницы
+    Workflow листается каруселью нод, и дорога соседней ноды нужна ей ровно так
+    же, как дорога открытой. Пока ручку звали по ноде, реестр на странице
+    перетирался при каждом открытии workflow — и подпоток чужой ноды оставался
+    без ответа, то есть с красным «!» на живых `topic_action_*`.
 
     ## ⚠⚠ Зачем ручка, если дорога лежит в метаданных шага
 
@@ -293,10 +304,15 @@ async def workflow_topic_road_list(
           FROM `agent_workflow_step` s
           JOIN `agent_workflow` w ON w.`id` = s.`workflow_id`
           JOIN `agent_workflow_step_type` t ON t.`id` = s.`type_id`
-         WHERE w.`node_id` = %s AND t.`name` IN ('branch', 'topic_action')
+         WHERE t.`name` IN ('branch', 'topic_action')
     """
+    params = ()
+    if node_id is not None:
+        sql += " AND w.`node_id` = %s"
+        params = (node_id,)
+
     async with mysql_get_db_async() as db:
-        await db.execute(sql, (node_id,))
+        await db.execute(sql, params)
         rows = list(await db.fetchall() or [])
 
     roads = []

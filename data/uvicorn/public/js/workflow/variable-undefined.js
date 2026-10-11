@@ -83,6 +83,19 @@ export function invalidateUndefinedIndex(workflowId) {
 }
 
 /**
+ * Сброс вычисления **всем** workflow сразу + весть подписчикам.
+ *
+ * ⚠⚠ Нужен там, где изменилось не содержимое workflow, а ответ на вопрос о нём
+ * со стороны: дорога шага `topic_action` правится в ОДНОМ workflow, а снимает
+ * красный с `topic_action_*` у ДРУГОГО — у того подпотока, на который она
+ * указала. Поимённый сброс тут промахивается мимо цели по устройству.
+ */
+export function invalidateUndefinedIndexAll() {
+    _computed.clear();
+    _notify();
+}
+
+/**
  * Неопределённые переменные workflow: вычисление с кэшем.
  *
  * Args:

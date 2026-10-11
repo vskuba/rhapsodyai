@@ -8,12 +8,12 @@ import {parseMetadata, activateTab, savedTab, editorWorkflowId} from './utils.js
 import {initGraphMode, openWorkflowGraph} from './graph.js';
 import {openWorkflowHistory} from './history.js';
 import {openWorkflowTopic} from './topic.js';
-import {topicRoadsLoad} from './topic-roads.js';
+import {topicRoadsLoad, topicRoadsReload} from './topic-roads.js';
 import {loadWorkflowVariables, saveInputVariables, initVariablesHandlers} from './variables.js';
 import {loadWorkflowSteps, loadAvailableStepTypes, collectTransitions} from './steps.js';
 import {buildGroupTree, renderGroupTree} from '../agent_group_tree.js';
-import {ensureUndefinedIndex, workflowUndefinedEntriesSync,
-    onUndefinedIndexChange, invalidateUndefinedIndex} from './variable-undefined.js';
+import {ensureUndefinedIndex, workflowUndefinedEntriesSync, onUndefinedIndexChange,
+    invalidateUndefinedIndex, invalidateUndefinedIndexAll} from './variable-undefined.js';
 
 // Инициализация режима Graph (mermaid)
 initGraphMode();
@@ -106,6 +106,12 @@ async function initWorkflowManager() {
             // брать его быстрым чтением). Строки списка читают кэш синхронно,
             // потому загрузка — до отрисовки списка.
             ensureUndefinedIndex(),
+            // ⚠⚠ Реестр дорог — здесь же, по тому же доводу и на том же месте.
+            // Без него сторож «Undefined» считает живые `topic_action_*`
+            // подпотока-дороги незаведёнными и вешает ему красный «!» — до
+            // первого тычка в него. Значок, который врёт на холодной
+            // перезагрузке, обесценивает себя и там, где он прав.
+            topicRoadsLoad(),
         ]);
 
         state.allAvailableTools = toolsRes.result || toolsRes || [];
@@ -420,10 +426,13 @@ async function fillWorkflowForm(workflow) {
     document.getElementById('description').value = workflow.description || '';
     document.getElementById('subflow').checked = !!workflow.subflow;
 
-    // ⚠⚠ Реестр веток — ДО переменных: по нему решается, показывать ли группу
+    // ⚠⚠ Реестр дорог — ДО переменных: по нему решается, показывать ли группу
     // «Branch переменные». Спроси мы его после, список успел бы отрисоваться
     // без неё, и человек увидел бы семь `topic_*` красными в «Undefined».
-    await topicRoadsLoad(workflow.node_id);
+    // ⚠ Зов без ноды и почти всегда даром: реестр читают один раз за страницу,
+    // на инициализации. Оставлен заставой — открыть workflow можно и по
+    // deep-link, не дождавшись инициализации.
+    await topicRoadsLoad();
 
     if (workflow.id) {
         await loadWorkflowVariables(workflow.id);
@@ -562,6 +571,16 @@ workflowForm.onsubmit = async (e) => {
                         showNotification(`Ошибка сохранения шага: ${stepErr.message}`, 'error');
                         return; // Прерываем операцию, если шаг не сохранился
                     }
+
+                    // ⚠⚠ Дорога шага `topic_action` лежит в этих самых метаданных,
+                    // а снимает красный она с ЧУЖОГО workflow — с подпотока, на
+                    // который указала. Поэтому реестр дорог перечитывается, а кэш
+                    // сторожа сбрасывается **всем**: поимённый сброс (строкой ниже,
+                    // по `id`) промахнулся бы мимо цели по устройству.
+                    // ⚠ Вне `try` выше намеренно: отказ этой пары — не отказ
+                    // сохранения, и прерывать им запись workflow нечем.
+                    await topicRoadsReload();
+                    invalidateUndefinedIndexAll();
                 }
             }
 

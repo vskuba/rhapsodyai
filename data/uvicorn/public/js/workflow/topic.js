@@ -32,7 +32,7 @@ import {postData} from '../api.js';
 import {showNotification} from '/static/js/notification.js';
 import {textModalIcon} from './text-modal.js';
 import {textTranslateGuess} from './text-translate.js';
-import {topicRoadsLoad} from './topic-roads.js';
+import {topicRoadsReload} from './topic-roads.js';
 
 const PAGE_SIZE = 20;
 
@@ -181,7 +181,9 @@ export async function openWorkflowTopic(node) {
     };
 
     await treeLoad();
-    await topicRoadsLoad(topicState.nodeId);
+    // ⚠ Перечитываем, а не просто ждём: вкладку открывают после правки шагов, а
+    // дорога лежит на шаге. Реестр с прошлой отрисовки был бы от прежних дорог.
+    await topicRoadsReload();
     detailRender();
 }
 

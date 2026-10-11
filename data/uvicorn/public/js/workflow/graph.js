@@ -306,11 +306,9 @@ export async function openWorkflowGraph() {
         return;
     }
 
-    // ⚠ Реестр веток читается ДО обхода подпотоков: без него шаг `branch` не
+    // ⚠ Реестр дорог читается ДО обхода подпотоков: без него шаг `branch` не
     // знает, какой подпоток за ним стоит, и граф нарисовал бы его пустым.
-    const graphWorkflow = (state.allWorkflows || [])
-        .find(w => String(w.id) === String(workflowId));
-    await topicRoadsLoad(graphWorkflow && graphWorkflow.node_id);
+    await topicRoadsLoad();
 
     // Fetch all sub-workflow steps recursively
     const subflowStepsMap = await _fetchAllSubflowSteps(state.allCurrentStepsData);
