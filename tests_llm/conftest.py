@@ -239,6 +239,14 @@ class Talk:
     # какому агенту и что искали. Без этого «маршрут: пусто» одинаково звучит и
     # для «прогона нет», и для «он есть, но мы его не узнали».
     missing: str = ''
+    # Ключи ответа ручки **помимо текста** — они не из трассы, их кладёт сама
+    # `/chat/ask` полем модели прогона.
+    #
+    # ⚠ `message_id` — номер записанного обмена (0 — агент промолчал).
+    # ⚠ `intentions` — метки намерений, накопленные за прогон инструментом
+    # `chat_intention_add`. Пустой кортеж законен: намерений могло не быть.
+    message_id: int = 0
+    intentions: tuple = ()
 
     def went_through(self, step: str) -> bool:
         """Встретился ли шаг на маршруте — в главном прогоне или в подпрогоне.
@@ -511,10 +519,18 @@ async def ask(client, agent_of, llm_answers, llm_plan):
                 continue
 
             if answer.status_code == 200:
+                body = answer.json()
                 got = await _trace_read(client, agent_id, asked)
-                got.text = str(answer.json().get('result') or '')
+                got.text = str(body.get('result') or '')
                 got.session = session
                 got.attempts = attempt
+                # ⚠⚠ Ответ ручки несёт не только текст. `message_id` и
+                # `intentions` в трассе не лежат — их кладёт в ответ сама
+                # ручка, полем модели прогона. Не возьми мы их здесь, ни один
+                # тест не смог бы проверить контракт: `Talk` собирается из
+                # трассы, и ключа там нет вовсе.
+                got.message_id = int(body.get('message_id') or 0)
+                got.intentions = tuple(body.get('intentions') or ())
 
                 return got
 

@@ -48,6 +48,12 @@ STEP_DICE = 'Жребий'
 # общения») и «Ветка намерений» (группа «Намерения»). Здесь — первый: тесты
 # ниже проверяют дорогу темы с метками фото, а она его.
 STEP_BRANCH = 'Ветка тем'
+
+# Второй шаг темы — намерения (группа «Намерения», подпоток
+# `dating_talk_intention`). Он стоит **после** ответа и судьи: намерение
+# снимают с уже сочинённой реплики, а не до неё.
+STEP_INTENTION = 'Ветка намерений'
+
 STEP_FACTS_TAGS = 'qdrant_fact_search_girl_tags'
 STEP_FACTS_PLAIN = 'qdrant_fact_search_girl'
 STEP_ANSWER = 'Ответ'
@@ -323,8 +329,16 @@ ANSWER_PHOTO_KNOWN = {
     # нечисловое слева уводит сравнение в строковое: «zz-…» лексикографически
     # больше «1», и тема поднималась бы ВСЕГДА — тест зеленел бы на пустом
     # месте. Два «yes» означают «тема фото поднята», чего эти заходы и ждут.
-    'topic_answers': '1: yes, 2: yes, 3: no',
-    'topic_answers_yes_qty': '2',
+    #
+    # ⚠⚠⚠ Имена — в ЕДИНСТВЕННОМ числе, как их просит шаг «Вопросы темы»
+    # (`llm_to_json_variable`: `topic_answer`, `topic_answer_yes_qty`). Здесь
+    # стояло множественное (`topic_answers`, `topic_answers_yes_qty`), и порог
+    # сравнивался с пустотой: тема не поднималась **никогда**, шаг «Инструкции:
+    # накопить» в маршрут не попадал, выход подпотока не доезжал. Красное при
+    # этом говорило «выход не доехал» — то есть указывало на карту, с которой
+    # всё было в порядке.
+    'topic_answer': '1: yes, 2: yes, 3: no',
+    'topic_answer_yes_qty': '2',
 }
 
 # Workflow подпотока темы и заголовки его шагов, у которых спрашиваются ключи.
@@ -342,6 +356,16 @@ ANSWER_PHOTO_KNOWN = {
 # (`workflow_topic.md`, §6.3).
 BRANCH_WORKFLOW_NAME = 'dating_talk_topic'
 BRANCH_STEP_TITLES = ('Вопросы темы',)
+
+# То же для подпотока намерений — он второй, со своей группой тем. Шаг с
+# моделью в нём тоже один: вопросы. Инструмент (`chat_intention_add`) и сверка
+# порога модели не спрашивают.
+#
+# ⚠ Пара «workflow + шаг» сверяется с базой фикстурой `step_names_match`
+# (`tests_llm/conftest.py`) — ровно затем, чтобы не повторилось протухание
+# имён, описанное выше.
+INTENTION_WORKFLOW_NAME = 'dating_talk_intention'
+INTENTION_STEP_TITLES = ('Вопросы намерений',)
 
 
 # Факты, «выделенные» разбором из реплики собеседника. ⚠ Формат — то, что
@@ -630,6 +654,12 @@ def photo_answer(**values) -> dict:
 
     for title in BRANCH_STEP_TITLES:
         answer.update(step_answer(title, workflow=BRANCH_WORKFLOW_NAME))
+
+    # ⚠ Подпоток намерений заход проходит **тоже**: его шаг темы стоит после
+    # судьи, и без заданного ответа заход оборвался бы на нём. Красное при
+    # этом сказало бы «агент не ответил», а не «намерениям нечем отвечать».
+    for title in INTENTION_STEP_TITLES:
+        answer.update(step_answer(title, workflow=INTENTION_WORKFLOW_NAME))
 
     answer.update(step_answer(JUDGE_STEP_TITLE, JUDGE_DEFAULT))
     answer.update({name: str(value) for name, value in ANSWER_PHOTO_KNOWN.items()})
