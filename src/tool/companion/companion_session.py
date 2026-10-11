@@ -252,7 +252,9 @@ async def companion_session_history(owner_unique_id: str,
                                     companion_unique_id: str,
                                     kind: str = 'chat',
                                     limit: int = 0,
-                                    companion_message_at_least: int = 1) -> str:
+                                    companion_message_at_least: int = 1,
+                                    since: str = '',
+                                    until: str = '') -> str:
     """Последние обмены пары строками промпта. Пусто — разговора не было.
 
     Args:
@@ -263,9 +265,37 @@ async def companion_session_history(owner_unique_id: str,
         companion_message_at_least: сколько реплик **собеседника** должно быть в
             ленте, чтобы её вообще отдавать. Меньше — пустая строка. Ноль или
             отрицательное — порога нет, отдаём что есть.
+        since: брать только то, что **позже** этой отметки (`ГГГГ-ММ-ДД ЧЧ:ММ:СС`,
+            UTC). Пусто — без нижней границы.
+        until: брать только то, что **не позже** этой отметки. Пусто — без
+            верхней границы.
 
     Returns:
         str: строки «[дд.мм чч:мм] она|он: текст», старое сверху.
+
+    ## ⚠⚠ Зачем границы: лента, разрезанная надвое
+
+    Намерение разговора («она обещала фото») ищется по тексту истории, а история
+    накапливается — та же реплика поднимает ту же тему на каждом ответе. Отличает
+    новое обещание от старого только **время**: оно сказано позже прошлого
+    намерения.
+
+    Поэтому промпт получает **обе** половины: «до намерений» (`until=отметка`) и
+    «свежую» (`since=отметка`). Модель видит разговор целиком — без этого
+    короткое «а можешь ещё раз?» непонятно вовсе, — но ищет новое только во
+    второй половине.
+
+    ⚠ Границы **не пересекаются**: `since` строго больше, `until` включительно.
+    Одна и та же строка в обе половины не попадёт, иначе модель приняла бы её за
+    повтор.
+
+    ⚠ Отметка сверяется с тем же временем, по которому лента упорядочена
+    (`question_at`, у нашей реплики — `answer_at`). Сортируй мы по одному, а режь
+    по другому — половины разошлись бы с порядком строк.
+
+    ⚠⚠ Граница стоит **до предела** (`LIMIT`), а не после: отсеки мы после
+    выборки, «последние двадцать» считались бы до среза, и свежая половина
+    выходила бы тем короче, чем длиннее разговор.
 
     ## Что видит агент
 
@@ -318,7 +348,7 @@ async def companion_session_history(owner_unique_id: str,
         channel = COMPANION_SESSION_KINDS[0]
 
     rows = await companion_session_rows(owner_unique_id, companion_unique_id,
-                                        channel, limit)
+                                        channel, limit, since=since, until=until)
 
     # ⚠ Порог приходит из workflow-переменной, то есть строкой: «3», а бывает и
     # пустая строка. Движок приводит по аннотации, но инструмент зовут и из кода
@@ -346,11 +376,22 @@ async def companion_session_history(owner_unique_id: str,
 async def companion_session_rows(owner_unique_id: str,
                                  companion_unique_id: str,
                                  kind: str = 'chat',
-                                 limit: int = 0) -> list[dict]:
+                                 limit: int = 0,
+                                 since: str = '',
+                                 until: str = '') -> list[dict]:
     """Те же обмены, но строками базы — для страниц и проверок.
 
     Отдельно от текста, потому что вопросы разные: промпту нужна одна строка, а
     тому, кто считает или показывает, — поля.
+
+    Args:
+        since: брать только позже этой отметки (строго); пусто — без границы.
+        until: брать только не позже этой отметки; пусто — без границы.
+
+    ⚠ Границы сверяются с тем же временем, по которому идёт сортировка
+    (`COALESCE(question_at, answer_at)`): режь мы по одному полю, а упорядочивай
+    по другому — половины разговора разошлись бы с его порядком. Зачем половины
+    — `companion_session_history`.
 
     ⚠ **Берём последние, а отдаём по возрастанию.** `ORDER BY … DESC LIMIT`
     отбирает хвост разговора, `reversed` возвращает ему естественный порядок. Без
@@ -376,6 +417,23 @@ async def companion_session_rows(owner_unique_id: str,
 
     take = int(limit or 0) or COMPANION_SESSION_LIMIT
     take = max(1, min(take, COMPANION_SESSION_LIMIT_MAX))
+
+    # ⚠ Границы собираются в условие ДО `LIMIT` — иначе предел отсчитывался бы
+    # от всего разговора, и срезанная половина выходила бы короче заказанного.
+    #
+    # ⚠⚠ `since` строго больше, `until` включительно: так строка на самой
+    # отметке достаётся ровно одной половине. Будь обе включительными, обмен, на
+    # котором нашли прошлое намерение, попал бы и в «свежее» — и модель сочла бы
+    # его новым обещанием.
+    edges, args_edges = '', []
+
+    if str(since or '').strip():
+        edges += ' AND COALESCE(s.`question_at`, s.`answer_at`) > %s'
+        args_edges.append(str(since).strip())
+
+    if str(until or '').strip():
+        edges += ' AND COALESCE(s.`question_at`, s.`answer_at`) <= %s'
+        args_edges.append(str(until).strip())
 
     try:
         async with mysql_get_db_async() as db:
@@ -413,12 +471,13 @@ async def companion_session_rows(owner_unique_id: str,
                 "   AND (s.`question` <> ''"
                 '        OR (s.`delivered_at` IS NOT NULL'
                 '            AND s.`answer_deleted_at` IS NULL))'
+                + edges +
                 # ⚠ По времени, а не по `id`: перенесённые обмены ложатся в базу
                 # позже, чем стоят в разговоре.
                 ' ORDER BY COALESCE(s.`question_at`, s.`answer_at`) DESC,'
                 '          s.`id` DESC'
                 ' LIMIT %s',
-                (owner_key, companion_key, channel, take))
+                (owner_key, companion_key, channel, *args_edges, take))
             rows = await db.fetchall()
     except Exception:
         return []
