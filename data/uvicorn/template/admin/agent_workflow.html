@@ -641,6 +641,21 @@
     /* ── Группы тем и темы (вкладка Topic & Action) ───────────────────────── */
     #workflowTopic { padding: 12px 0; }
 
+    /* Полоса переноса темы файлом: подпись слева, две кнопки справа.
+     *
+     * ⚠ Кнопки стоят НАД деревом, а не в его шапке рядом с «+ Группа»: они про
+     * всю ноду целиком, а шапка дерева — про то, что в нём лежит. Та же пара
+     * «Экспорт / Импорт» над списком workflow стоит ровно так же. */
+    .topic-toolbar {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; flex-wrap: wrap; margin-bottom: 10px;
+        padding: 6px 12px; background: #fffdf8; border: 1px solid #f0dfc0;
+        border-radius: 6px;
+    }
+    .topic-toolbar-hint { font-size: 12px; color: #8a6d3b; }
+    .topic-toolbar-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .topic-toolbar-actions .btn-sidebar-action { padding: 6px 12px; }
+
     .topic-body { display: flex; gap: 0; min-height: 420px; background: #fff; }
 
     .topic-sidebar {
@@ -660,7 +675,7 @@
     .tree-branch { border-bottom: 1px solid #ececec; }
 
     .topic-row {
-        padding: 10px 12px; cursor: pointer;
+        padding: 4px 12px; cursor: pointer;
         display: flex; align-items: center; gap: 8px;
     }
     .topic-row:hover { background: #f0f4f8; }
@@ -668,7 +683,7 @@
 
     .topic-row-main { flex: 1; min-width: 0; }
     .topic-row-title { font-weight: 600; font-size: 13px; }
-    .topic-row-name { color: #8a8a8a; font-size: 11px; font-family: monospace; }
+    .topic-row-name { color: #187e95; font-size: 11px; font-family: monospace; }
     .topic-row-count { color: #666; font-size: 11px; white-space: nowrap; }
 
     /* ── Темы дочерними узлами: локти рисуются границами ──────────────────── */
@@ -677,7 +692,7 @@
        стрелками `‹ ›` у пагинации. Границы рисуются всегда. */
     .tree-child {
         position: relative;
-        padding: 7px 12px 7px 34px;
+        padding: 7px 12px 1px 34px;
         cursor: pointer;
         display: flex; align-items: center; gap: 8px;
         font-size: 12px;
@@ -701,6 +716,31 @@
 
     .tree-child-main { flex: 1; min-width: 0; }
     .tree-child-title { font-weight: 500; font-size: 12px; }
+
+    /* ── Перетаскивание тем ──────────────────────────────────────────────── */
+    /* ⚠ Хват — подсказка глазу, а не ручка: тащится вся строка (`draggable` на
+       ней), как у шагов workflow. Бледный, пока на строку не навели: тринадцать
+       одинаковых «☰» в дереве читались бы как столбец, а не как подсказка. */
+    /* ⚠ Без сдвига влево: отступ строки (34px) кончается ровно там, где
+       кончается горизонталь локтя (27px), и подтянутый хват ложился бы прямо
+       на неё — на кадре выходила решётка поверх линии.
+
+       ⚠⚠ Виден только под курсором, и это найдено кадром, а не рассуждением:
+       на пробе из двух тем постоянный хват выглядел подсказкой, а на живой
+       группе из одиннадцати одиннадцать «☰» встали **вторым стволом** рядом с
+       линией дерева. Место под него держится всегда (`opacity`, не `display`):
+       иначе строка дёргалась бы на каждом наведении. */
+    .topic-grip {
+        color: #9aa7b4; font-size: 11px; cursor: grab;
+        flex-shrink: 0; line-height: 1;
+        opacity: 0; transition: opacity .12s;
+    }
+    .tree-child:hover .topic-grip,
+    .tree-child.dragging .topic-grip { opacity: 1; }
+    .tree-child.dragging { opacity: .45; }
+    /* Группа, над которой сейчас держат строку: видно, куда она упадёт —
+       в том числе когда группа пуста и вставать не перед чем. */
+    .tree-branch.drag-over { background: #f3f8ff; outline: 1px dashed #93b7e0; }
 
     .tree-add { color: #2f6fb0; }
     .tree-add:hover { background: #eef4fb; }

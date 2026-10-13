@@ -100,9 +100,53 @@ export function editorWorkflowId() {
     return document.getElementById('workflowId')?.value || '';
 }
 
-// Позиция вставки при drag-and-drop шагов
-export function getDragAfterElement(container, y) {
-    const draggableElements = [...container.querySelectorAll('.step-item-block:not(.dragging)')];
+/**
+ * Метка времени для имени файла — в UTC.
+ *
+ * ⚠ Имя файла пересылают между машинами, и местный пояс в нём только путает:
+ * два снимка одного часа с разных установок выглядели бы разными.
+ *
+ * @returns {string} `2026-10-13_11:22:33`.
+ */
+export function fileStamp() {
+    return new Date().toISOString().replace('T', '_').slice(0, 19);
+}
+
+/**
+ * Отдать объект человеку файлом: Blob, щелчок по ссылке, освобождение ссылки.
+ *
+ * ⚠ Живёт здесь, а не у того, кто первым это написал (`main.js`, экспорт
+ * workflow): кнопок «скачать файлом» на странице уже две — узел и темы, — и
+ * вторая копия этих восьми строк разошлась бы с первой на первой же правке
+ * (тип содержимого, отступ в JSON, забытый `revokeObjectURL`).
+ *
+ * @param {object} payload что сохраняем.
+ * @param {string} name имя файла.
+ */
+export function fileDownloadJson(payload, name) {
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type: 'application/json'});
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = name;
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
+
+/**
+ * Перед кем встанет перетаскиваемое: ближайший сосед, чья середина ниже курсора.
+ *
+ * ⚠ Отбор доводом, а умолчание — шаги: тащат на этой странице и шаги, и темы
+ * дерева «Topic & Action». Арифметика у них одна до знака, и вторая копия
+ * разошлась бы с этой молча — перетаскивание просто стало бы «мазать» на
+ * границе элементов.
+ *
+ * @param {HTMLElement} container где ищем соседей.
+ * @param {number} y курсор по вертикали (`clientY`).
+ * @param {string} selector кого считать соседом; перетаскиваемый исключается
+ *     самим селектором (`:not(.dragging)`).
+ */
+export function getDragAfterElement(container, y, selector = '.step-item-block:not(.dragging)') {
+    const draggableElements = [...container.querySelectorAll(selector)];
     return draggableElements.reduce((closest, child) => {
         const box = child.getBoundingClientRect();
         const offset = y - box.top - box.height / 2;

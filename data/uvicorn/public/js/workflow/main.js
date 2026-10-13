@@ -4,7 +4,8 @@
 import {getData, putData, postData, deleteData} from '../api.js';
 import {showNotification} from '/static/js/notification.js';
 import {state} from './state.js';
-import {parseMetadata, activateTab, savedTab, editorWorkflowId} from './utils.js';
+import {parseMetadata, activateTab, savedTab, editorWorkflowId,
+    fileStamp, fileDownloadJson} from './utils.js';
 import {initGraphMode, openWorkflowGraph} from './graph.js';
 import {openWorkflowHistory} from './history.js';
 import {openWorkflowTopic} from './topic.js';
@@ -677,11 +678,6 @@ function currentNodeParam(node) {
     return node.id === 'none' ? 'none' : String(node.id);
 }
 
-function fileStamp() {
-    // Метка в UTC: имя файла пересылают между машинами, местный пояс в нём только путает.
-    return new Date().toISOString().replace('T', '_').slice(0, 19);
-}
-
 if (exportWorkflowsBtn) {
     exportWorkflowsBtn.onclick = async () => {
         const node = currentCarouselNode();
@@ -693,12 +689,9 @@ if (exportWorkflowsBtn) {
         try {
             const res = await getData(`/workflow/export?node_id=${encodeURIComponent(currentNodeParam(node))}`);
             const payload = res.result;
-            const blob = new Blob([JSON.stringify(payload, null, 2)], {type: 'application/json'});
-            const link = document.createElement('a');
-            link.href = URL.createObjectURL(blob);
-            link.download = `workflow_export_${(payload.node ? payload.node.name : 'vne_nod').replace(/\s+/g, '_')}_${fileStamp()}.json`;
-            link.click();
-            URL.revokeObjectURL(link.href);
+            fileDownloadJson(payload, `workflow_export_`
+                + `${(payload.node ? payload.node.name : 'vne_nod').replace(/\s+/g, '_')}`
+                + `_${fileStamp()}.json`);
             let message = `Экспортировано workflow: ${payload.workflows.length}, шагов: ${payload.steps.length}`;
             if (payload.warnings.length) message += ` — предупреждений: ${payload.warnings.length}`;
             showNotification(message, payload.warnings.length ? 'warning' : 'success');

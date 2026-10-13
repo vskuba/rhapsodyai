@@ -132,7 +132,7 @@ async def ai_workflow_export_payload(node_pk):
             payload['node_variables'], payload['node_variable_links'] = \
                 await _workflow_export_fetch_node_variables(db, node_pk, workflow_ids)
             payload['topic_groups'], payload['topics'], payload['topic_questions'] = \
-                await _workflow_export_fetch_topics(db, node_pk)
+                await ai_workflow_export_topics_fetch(db, node_pk)
 
         payload['warnings'].extend(
             _workflow_export_warn_foreign_topic_groups(
@@ -186,6 +186,89 @@ def ai_workflow_export_variables_merge(variables_rows, link_rows):
             seen_pairs.add(key)
             merged.append({'variable_id': variable_id, 'workflow_id': row['workflow_id']})
     return variables, merged
+
+
+async def ai_workflow_export_topics_fetch(db, node_pk):
+    """Темы ноды тремя списками: группы, темы, вопросы — с исходными id.
+
+    ⚠⚠ Публичная, и это не «на будущее»: ровно эти три списка составляют и файл
+    тем (`ai_workflow_topic_export.py`, кнопки вкладки «Topic & Action»). Снять
+    их там вторым запросом значило бы завести второй ответ на вопрос «что такое
+    темы ноды в файле» — и разойтись с этим на первой же новой колонке, молча.
+
+    ⚠ Группы привязаны к **ноде**, не к workflow, — как переменные ноды.
+    Поэтому берутся все группы узла, а не только те, на которые ссылаются шаги:
+    группа без шага законна (её заводят до того, как поставят шаг).
+
+    ⚠⚠ `id` групп в файле обязательны: ими ссылается шаг `topic_action`, и без
+    них перенос даёт шаг с номером, который на той стороне не значит ничего —
+    молча, без единой ошибки. Шапка модуля, `workflow_topic.md` §6a.
+
+    ⚠ У тем и вопросов id служебные: на них не ссылается никто, кроме родителя.
+    Едут всё равно — чтобы связь «вопрос → тема» внутри файла читалась без
+    догадок.
+    """
+    await db.execute(
+        'SELECT `id`, `name`, `title`, `description`, `is_enabled`, `position` '
+        'FROM `agent_workflow_topic_group` WHERE `node_id` = %s ORDER BY `position`, `id`',
+        (node_pk,)
+    )
+    group_rows = await db.fetchall() or []
+    groups = [{
+        'id': row['id'],
+        'name': ai_workflow_export_strip(row['name']),
+        'title': ai_workflow_export_strip(row['title']),
+        'description': row['description'],
+        'is_enabled': row['is_enabled'],
+        'position': row['position'],
+    } for row in group_rows]
+
+    group_ids = [row['id'] for row in group_rows]
+    if not group_ids:
+        return groups, [], []
+
+    placeholders = ','.join(['%s'] * len(group_ids))
+    await db.execute(
+        f'SELECT `id`, `topic_group_id`, `name`, `title`, `tags`, `tags_qty_accept`, '
+        f'`questions_qty_yes_accept`, `instructions`, `is_enabled`, `position` '
+        f'FROM `agent_workflow_topic` WHERE `topic_group_id` IN ({placeholders}) '
+        f'ORDER BY `topic_group_id`, `position`, `id`',
+        tuple(group_ids)
+    )
+    topic_rows = await db.fetchall() or []
+    topics = [{
+        'id': row['id'],
+        'topic_group_id': row['topic_group_id'],
+        'name': ai_workflow_export_strip(row['name']),
+        'title': ai_workflow_export_strip(row['title']),
+        'tags': row['tags'],
+        'tags_qty_accept': row['tags_qty_accept'],
+        'questions_qty_yes_accept': row['questions_qty_yes_accept'],
+        'instructions': row['instructions'],
+        'is_enabled': row['is_enabled'],
+        'position': row['position'],
+    } for row in topic_rows]
+
+    topic_ids = [row['id'] for row in topic_rows]
+    if not topic_ids:
+        return groups, topics, []
+
+    placeholders = ','.join(['%s'] * len(topic_ids))
+    await db.execute(
+        f'SELECT `id`, `topic_id`, `question`, `is_enabled`, `position` '
+        f'FROM `agent_workflow_topic_question` WHERE `topic_id` IN ({placeholders}) '
+        f'ORDER BY `topic_id`, `position`, `id`',
+        tuple(topic_ids)
+    )
+    questions = [{
+        'id': row['id'],
+        'topic_id': row['topic_id'],
+        'question': row['question'],
+        'is_enabled': row['is_enabled'],
+        'position': row['position'],
+    } for row in (await db.fetchall() or [])]
+
+    return groups, topics, questions
 
 
 async def _workflow_export_fetch_workflows(db, node_pk):
@@ -293,84 +376,6 @@ async def _workflow_export_fetch_node_variables(db, node_pk, workflow_ids):
         links = [{'node_variable_id': row['node_variable_id'], 'workflow_id': row['workflow_id']}
                  for row in (await db.fetchall() or [])]
     return variables, links
-
-
-async def _workflow_export_fetch_topics(db, node_pk):
-    """Темы ноды тремя списками: группы, темы, вопросы — с исходными id.
-
-    ⚠ Группы привязаны к **ноде**, не к workflow, — как переменные ноды.
-    Поэтому берутся все группы узла, а не только те, на которые ссылаются шаги:
-    группа без шага законна (её заводят до того, как поставят шаг).
-
-    ⚠⚠ `id` групп в файле обязательны: ими ссылается шаг `topic_action`, и без
-    них перенос даёт шаг с номером, который на той стороне не значит ничего —
-    молча, без единой ошибки. Шапка модуля, `workflow_topic.md` §6a.
-
-    ⚠ У тем и вопросов id служебные: на них не ссылается никто, кроме родителя.
-    Едут всё равно — чтобы связь «вопрос → тема» внутри файла читалась без
-    догадок.
-    """
-    await db.execute(
-        'SELECT `id`, `name`, `title`, `description`, `is_enabled`, `position` '
-        'FROM `agent_workflow_topic_group` WHERE `node_id` = %s ORDER BY `position`, `id`',
-        (node_pk,)
-    )
-    group_rows = await db.fetchall() or []
-    groups = [{
-        'id': row['id'],
-        'name': ai_workflow_export_strip(row['name']),
-        'title': ai_workflow_export_strip(row['title']),
-        'description': row['description'],
-        'is_enabled': row['is_enabled'],
-        'position': row['position'],
-    } for row in group_rows]
-
-    group_ids = [row['id'] for row in group_rows]
-    if not group_ids:
-        return groups, [], []
-
-    placeholders = ','.join(['%s'] * len(group_ids))
-    await db.execute(
-        f'SELECT `id`, `topic_group_id`, `name`, `title`, `tags`, `tags_qty_accept`, '
-        f'`questions_qty_yes_accept`, `instructions`, `is_enabled`, `position` '
-        f'FROM `agent_workflow_topic` WHERE `topic_group_id` IN ({placeholders}) '
-        f'ORDER BY `topic_group_id`, `position`, `id`',
-        tuple(group_ids)
-    )
-    topic_rows = await db.fetchall() or []
-    topics = [{
-        'id': row['id'],
-        'topic_group_id': row['topic_group_id'],
-        'name': ai_workflow_export_strip(row['name']),
-        'title': ai_workflow_export_strip(row['title']),
-        'tags': row['tags'],
-        'tags_qty_accept': row['tags_qty_accept'],
-        'questions_qty_yes_accept': row['questions_qty_yes_accept'],
-        'instructions': row['instructions'],
-        'is_enabled': row['is_enabled'],
-        'position': row['position'],
-    } for row in topic_rows]
-
-    topic_ids = [row['id'] for row in topic_rows]
-    if not topic_ids:
-        return groups, topics, []
-
-    placeholders = ','.join(['%s'] * len(topic_ids))
-    await db.execute(
-        f'SELECT `id`, `topic_id`, `question`, `is_enabled`, `position` '
-        f'FROM `agent_workflow_topic_question` WHERE `topic_id` IN ({placeholders}) '
-        f'ORDER BY `topic_id`, `position`, `id`',
-        tuple(topic_ids)
-    )
-    questions = [{
-        'id': row['id'],
-        'topic_id': row['topic_id'],
-        'question': row['question'],
-        'is_enabled': row['is_enabled'],
-        'position': row['position'],
-    } for row in (await db.fetchall() or [])]
-
-    return groups, topics, questions
 
 
 def _workflow_export_warn_foreign_topic_groups(steps, exported_group_ids):

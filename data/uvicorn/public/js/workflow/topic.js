@@ -33,6 +33,7 @@ import {showNotification} from '/static/js/notification.js';
 import {textModalIcon} from './text-modal.js';
 import {textTranslateGuess} from './text-translate.js';
 import {topicRoadsReload} from './topic-roads.js';
+import {fileStamp, fileDownloadJson, getDragAfterElement} from './utils.js';
 
 const PAGE_SIZE = 20;
 
@@ -46,6 +47,9 @@ const TAG_LANGS = [
 
 const topicState = {
     nodeId: null,
+    // Имя ноды — для имени файла и для вопроса перед импортом. Оно есть в
+    // карусели, но вкладка про неё не знает: ей ноду приносят доводом.
+    nodeName: null,
     branches: [],
     topicsByBranch: {},
     page: 0,
@@ -147,7 +151,22 @@ export async function openWorkflowTopic(node) {
         topicState.page = 0;
     }
 
+    topicState.nodeName = node.name;
+
     host.innerHTML = `
+      <div class="topic-toolbar">
+        <span class="topic-toolbar-hint">Группы, темы и вопросы ноды
+          <b>${esc(node.name)}</b> — отдельным файлом, без workflow и шагов.</span>
+        <span class="topic-toolbar-actions">
+          <button type="button" class="btn-sidebar-action" id="topicExport"
+                  title="Скачать все группы тем этой ноды одним файлом">Экспорт</button>
+          <button type="button" class="btn-sidebar-action" id="topicImport"
+                  title="Влить темы из файла в эту ноду: совпавшие по коду обновятся, новые заведутся">Импорт</button>
+        </span>
+        <!-- Файл выбирается только этим полем; после чтения оно очищается,
+             чтобы повторный выбор того же файла снова считался onchange. -->
+        <input type="file" id="topicImportFile" accept=".json,application/json" hidden>
+      </div>
       <div class="topic-body">
         <div class="topic-sidebar">
           <div class="topic-sidebar-head">
@@ -167,6 +186,9 @@ export async function openWorkflowTopic(node) {
       </div>`;
 
     document.getElementById('groupNew').onclick = groupNew;
+    document.getElementById('topicExport').onclick = topicsExport;
+    document.getElementById('topicImport').onclick = topicsImportPick;
+    document.getElementById('topicImportFile').onchange = topicsImportRun;
     document.getElementById('groupPagePrev').onclick = () => {
         if (topicState.page > 0) {
             topicState.page -= 1;
@@ -235,9 +257,12 @@ function treeRender() {
             const last = index === topics.length - 1 && !showAdd;
             const isActiveTopic = topicState.picked.kind === 'topic'
                 && String(topicState.picked.id) === String(topic.id);
+            // ⚠ `draggable` на самой строке, а хват (`☰`) — только подсказка
+            // глазу: тащить можно за всю строку, как шаги workflow.
             return `
               <div class="tree-child ${last ? 'is-last' : ''} ${isActiveTopic ? 'is-active' : ''}"
-                   data-topic="${topic.id}">
+                   data-topic="${topic.id}" draggable="true">
+                <span class="topic-grip" title="Перетащите: порядок внутри группы — это порядок инструкций">☰</span>
                 <span class="topic-dot ${topic.is_enabled ? 'is-on' : ''}"></span>
                 <span class="tree-child-main">
                   <span class="tree-child-title">${esc(topic.title)}</span><br>
@@ -254,7 +279,7 @@ function treeRender() {
           </div>` : '';
 
         return `
-          <div class="tree-branch">
+          <div class="tree-branch" data-group="${branch.id}">
             <div class="topic-row ${isActiveBranch ? 'is-active' : ''}" data-branch="${branch.id}">
               <span class="topic-dot ${branch.is_enabled ? 'is-on' : ''}"></span>
               <span class="topic-row-main">
@@ -280,6 +305,8 @@ function treeRender() {
         row.onclick = () => pick('topic', null, Number(row.dataset.add));
     });
 
+    treeDragInit(list);
+
     const pages = Math.ceil(topicState.branches.length / PAGE_SIZE);
     document.getElementById('groupPageLabel').textContent = `${topicState.page + 1} / ${pages}`;
 }
@@ -287,6 +314,126 @@ function treeRender() {
 function pick(kind, id, groupId = null) {
     topicState.picked = {kind, id, groupId};
     treeRender();
+    detailRender();
+}
+
+// ── Перетаскивание тем: между группами и внутри группы ──────────────────────
+//
+// ⚠⚠ Порядок внутри группы — **не вид, а содержимое**: в нём шаг темы отдаёт
+// инструкции накопителю (`ai_workflow_topic_action_topics_raised`, §6.1
+// `workflow_topic.md`). Поэтому перетаскивание сохраняется сразу, как правка, а
+// не копится «до нажатия кнопки».
+//
+// ⚠ Приём тот же, что у шагов workflow (`steps.js`): строка таскается целиком,
+// `dragover` двигает её по дереву живьём, запись уходит на `dragend`. Общий у
+// них и счёт места вставки — `getDragAfterElement`.
+
+function treeDragInit(list) {
+    let dragging = null;
+    let layoutWas = null;
+
+    list.querySelectorAll('.tree-child[data-topic]').forEach(row => {
+        row.addEventListener('dragstart', (event) => {
+            dragging = row;
+            layoutWas = treeLayoutRead(list);
+            row.classList.add('dragging');
+            // ⚠ Без `setData` Firefox не начинает перетаскивание вовсе: там это
+            // условие старта, а не содержимое переноса — читать его некому.
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', String(row.dataset.topic));
+        });
+
+        row.addEventListener('dragend', async () => {
+            row.classList.remove('dragging');
+            list.querySelectorAll('.tree-branch').forEach(
+                branch => branch.classList.remove('drag-over'));
+            const was = layoutWas;
+            dragging = null;
+            layoutWas = null;
+            await topicsReorderSave(was, treeLayoutRead(list));
+        });
+    });
+
+    list.querySelectorAll('.tree-branch').forEach(branch => {
+        branch.addEventListener('dragover', (event) => {
+            if (!dragging) return;
+            // ⚠ `preventDefault` — то самое «сюда можно»: без него курсор
+            // показывает запрет, а `drop` не случается вовсе.
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            branch.classList.add('drag-over');
+
+            const after = getDragAfterElement(branch, event.clientY,
+                '.tree-child[data-topic]:not(.dragging)');
+            // ⚠ «+ Тема» всегда остаётся последней строкой группы: это кнопка,
+            // а не место в списке.
+            const addRow = branch.querySelector('.tree-add');
+            if (after) branch.insertBefore(dragging, after);
+            else if (addRow) branch.insertBefore(dragging, addRow);
+            else branch.appendChild(dragging);
+        });
+
+        branch.addEventListener('dragleave', (event) => {
+            // Переход на дочернюю строку — это не уход из группы
+            if (!branch.contains(event.relatedTarget)) branch.classList.remove('drag-over');
+        });
+
+        branch.addEventListener('drop', (event) => event.preventDefault());
+    });
+}
+
+/** Раскладка дерева как она сейчас: группа → номера тем по порядку. */
+function treeLayoutRead(list) {
+    const layout = {};
+    list.querySelectorAll('.tree-branch').forEach(branch => {
+        layout[branch.dataset.group] = [...branch.querySelectorAll('.tree-child[data-topic]')]
+            .map(row => row.dataset.topic);
+    });
+    return layout;
+}
+
+/**
+ * Записать перестановку — по группам, которые вправду поехали.
+ *
+ * ⚠⚠ Сравнение «было/стало» обязательно: `dragend` случается и когда человек
+ * поднял строку и бросил на месте. Без него каждое такое движение слало бы
+ * запись и перерисовку — и выглядело бы как правка, которой не было.
+ *
+ * ⚠ Шлются **все темы затронутых групп**, а не одна переехавшая: место в
+ * списке у остальных тоже сдвинулось, и порядок можно сообщить только списком.
+ */
+async function topicsReorderSave(was, now) {
+    if (!was) return;
+
+    const moved = Object.keys(now).filter(
+        groupId => JSON.stringify(was[groupId]) !== JSON.stringify(now[groupId]));
+    if (!moved.length) return;
+
+    const positions = [];
+    moved.forEach(groupId => {
+        now[groupId].forEach((topicId, index) => {
+            positions.push({
+                id: Number(topicId),
+                topic_group_id: Number(groupId),
+                position: index + 1,
+            });
+        });
+    });
+
+    try {
+        await topicApi('/workflow_topic/topic/reorder', {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({positions}),
+        });
+    } catch (e) {
+        showNotification(e.message, 'error');
+    }
+
+    // ⚠ Перечитываем в любом случае, и на удаче тоже: дерево после
+    // перетаскивания держит локти, счётчики и «+ Тема» от прежней раскладки, а
+    // на отказе — ещё и порядок, которого в базе нет.
+    await treeLoad();
     detailRender();
 }
 
@@ -931,6 +1078,102 @@ async function topicDelete(topicId) {
         showNotification(`Тема «${title}» удалена`, 'success');
     } catch (e) {
         showNotification(e.message, 'error');
+    }
+}
+
+// ── Перенос файлом ──────────────────────────────────────────────────────────
+//
+// ⚠⚠ Файл тут свой, не узловой. Узловой (кнопки над списком workflow) — это
+// **замена**: он уносит с собой все workflow ноды и все её шаги, и взять из
+// него одни темы нельзя. А переносят их чаще: группа с десятком тем,
+// метками-иглами и вопросами — работа ручная и длинная, и нужна она соседней
+// установке без того, чтобы увозить туда разговор целиком.
+//
+// ⚠⚠ Импорт **сливает по коду** и ничего не удаляет: номер группы зашит в
+// `metadata` шага `topic_action`, и заведи импорт группу заново — шаги остались
+// бы с номером, которого нет. Ни ошибки, ни следа: селектор пуст, тем шаг не
+// поднимает. Устройство — `src/ai/ai_workflow_topic_import.py`.
+
+async function topicsExport() {
+    const button = document.getElementById('topicExport');
+    button.disabled = true;
+    try {
+        const payload = (await topicApi(
+            `/workflow_topic/export?node_id=${topicState.nodeId}`)).result;
+        fileDownloadJson(payload, `workflow_topic_export_`
+            + `${String(topicState.nodeName || 'node').replace(/\s+/g, '_')}`
+            + `_${fileStamp()}.json`);
+        showNotification(
+            `Экспортировано групп: ${payload.topic_groups.length}, `
+            + `тем: ${payload.topics.length}, вопросов: ${payload.topic_questions.length}`,
+            'success');
+    } catch (e) {
+        showNotification(e.message, 'error');
+    } finally {
+        button.disabled = false;
+    }
+}
+
+function topicsImportPick() {
+    document.getElementById('topicImportFile').click();
+}
+
+async function topicsImportRun() {
+    const picker = document.getElementById('topicImportFile');
+    const file = picker.files[0];
+    // Снимаем выбор сразу: повторный выбор того же файла должен снова дать onchange.
+    picker.value = '';
+    if (!file) return;
+
+    let payload;
+    try {
+        payload = JSON.parse(await file.text());
+    } catch (e) {
+        showNotification(`Файл не читается как JSON: ${e.message}`, 'error');
+        return;
+    }
+    // Метку формата и версию проверяет сервер (авторитет) — и отвечает внятным
+    // 400 на чужой файл; третья копия метки здесь была бы не нужна.
+
+    const groups = (payload.topic_groups || []).length;
+    const topics = (payload.topics || []).length;
+    const fileNode = payload.node ? payload.node.name : null;
+    // ⚠ Нода файла показывается до нажатия, а не после: темы вливаются в ту
+    // ноду, что выбрана в карусели, и «не та нода» — единственная ошибка,
+    // которую здесь можно сделать молча.
+    const foreign = fileNode && fileNode !== topicState.nodeName
+        ? `\n\nФайл снят с ноды «${fileNode}».` : '';
+    if (!confirm(`Влить темы из файла в ноду «${topicState.nodeName}»?\n\n`
+            + `В файле: групп ${groups}, тем ${topics}.\n`
+            + `Совпавшие по коду будут обновлены, новые — заведены. `
+            + `Ничего не удаляется.${foreign}`)) return;
+
+    const button = document.getElementById('topicImport');
+    button.disabled = true;
+    try {
+        const result = (await topicApi(
+            `/workflow_topic/import?node_id=${topicState.nodeId}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+            })).result;
+
+        showNotification(
+            `Импорт: групп заведено ${result.groups_created}, обновлено ${result.groups_updated}; `
+            + `тем заведено ${result.topics_created}, обновлено ${result.topics_updated}; `
+            + `вопросов ${result.questions_written}`, 'success');
+        (result.notes || []).forEach(note => showNotification(note, 'warning'));
+
+        // Выбор мог указывать на тему, уехавшую в другую группу, — начинаем с
+        // чистого листа, а не с карточки, которой на прежнем месте уже нет.
+        topicState.picked = {kind: null, id: null};
+        await treeLoad();
+        detailRender();
+    } catch (e) {
+        // Сервер при любой ошибке откатывает транзакцию — база остаётся как была.
+        showNotification(e.message, 'error');
+    } finally {
+        button.disabled = false;
     }
 }
 

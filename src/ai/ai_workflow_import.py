@@ -184,6 +184,53 @@ async def ai_workflow_import_apply(data, actor):
     }
 
 
+def ai_workflow_import_topics_validate(data):
+    """Секции тем файла — разобранные и сверенные с самим файлом.
+
+    Три списка связаны между собой (вопрос ссылается на тему, тема на группу),
+    поэтому и проверяются вместе: порознь каждый из них достоверен, а вместе
+    может противоречить себе.
+
+    ⚠⚠ Секции **необязательные**, и это не послабление валидатора. Формат
+    родился без них, файлы первой версии лежат у людей на дисках, и версия
+    формата та же: будь секция обязательной, старый файл перестал бы читаться.
+    Отсюда правило: секции нет — тем в файле нет, и темы принимающей стороны
+    импорт не трогает вовсе. Отличает их `managed`.
+
+    ⚠ Присутствие секции проверяется **по списку**, а не по ключу: `null` или
+    число в `topic_groups` — испорченный файл, и отвечать на него надо отказом
+    на границе, а не падением посреди разбора.
+
+    ⚠ Публичная, потому что читателей файла с темами два: импорт узла целиком
+    (`_validate_import_payload` ниже) и импорт одних тем на вкладке «Topic &
+    Action» (`ai_workflow_topic_import.py`). Вторая копия этих проверок
+    разошлась бы с первой на первом же новом поле темы — и молча: непроверенное
+    поле не падает, оно просто приезжает не тем.
+
+    Args:
+        data: разобранный JSON файла — своего (`rhapsodyai.workflow_topic`)
+            или узлового (`rhapsodyai.workflow`): секции в обоих одни и те же.
+
+    Returns:
+        dict: `managed` — несёт ли файл секции вообще, и три проверенных списка
+            `topic_groups` / `topics` / `topic_questions`.
+    """
+    for key in ('topic_groups', 'topics', 'topic_questions'):
+        if key in data and not isinstance(data[key], list):
+            raise AiWorkflowImportRejectedError(f'Поле «{key}» должно быть списком')
+
+    topic_groups = _validate_topic_groups(data.get('topic_groups') or [])
+    topics = _validate_topics(data.get('topics') or [], topic_groups)
+    topic_questions = _validate_topic_questions(data.get('topic_questions') or [], topics)
+
+    return {
+        'managed': 'topic_groups' in data,
+        'topic_groups': topic_groups,
+        'topics': topics,
+        'topic_questions': topic_questions,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Импорт: проверка входных данных
 # ---------------------------------------------------------------------------
@@ -224,23 +271,7 @@ def _validate_import_payload(data):
     node_variables = _validate_node_variables(data['node_variables'])
     node_variable_links = _validate_node_variable_links(data['node_variable_links'], node_variables, workflows)
 
-    # ⚠⚠ Темы — секции **необязательные**, и это не послабление валидатора.
-    # Формат родился без них, файлы первой версии лежат у людей на дисках, и
-    # версия формата та же: будь секция обязательной, старый файл перестал бы
-    # читаться. Отсюда правило: секции нет — тем в файле нет, и темы
-    # принимающей стороны импорт не трогает вовсе.
-    #
-    # ⚠ Присутствие секции проверяется **по списку**, а не по ключу: `null` или
-    # число в `topic_groups` — испорченный файл, и отвечать на него надо отказом
-    # на границе, а не падением посреди разбора.
-    topics_managed = 'topic_groups' in data
-    for key in ('topic_groups', 'topics', 'topic_questions'):
-        if key in data and not isinstance(data[key], list):
-            raise AiWorkflowImportRejectedError(f'Поле «{key}» должно быть списком')
-
-    topic_groups = _validate_topic_groups(data.get('topic_groups') or [])
-    topics = _validate_topics(data.get('topics') or [], topic_groups)
-    topic_questions = _validate_topic_questions(data.get('topic_questions') or [], topics)
+    topics = ai_workflow_import_topics_validate(data)
 
     return {
         'node': node,
@@ -250,10 +281,10 @@ def _validate_import_payload(data):
         'variable_links': variable_links,
         'node_variables': node_variables,
         'node_variable_links': node_variable_links,
-        'topics_managed': topics_managed,
-        'topic_groups': topic_groups,
-        'topics': topics,
-        'topic_questions': topic_questions,
+        'topics_managed': topics['managed'],
+        'topic_groups': topics['topic_groups'],
+        'topics': topics['topics'],
+        'topic_questions': topics['topic_questions'],
         'warnings': [str(warning) for warning in data.get('warnings') or []] if isinstance(data.get('warnings'), list) else [],
     }
 

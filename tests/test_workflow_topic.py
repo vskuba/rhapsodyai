@@ -228,6 +228,114 @@ class TestTopicCrud:
         assert row["branch_title"] == 'Договориться'
 
 
+class TestTopicReorder:
+    """Перетаскивание тем: порядок внутри группы и переезд в соседнюю.
+
+    ⚠⚠ Порядок внутри группы — не вид, а содержимое: в нём шаг темы отдаёт
+    инструкции накопителю (`ai_workflow_topic_action_topics_raised`). Поэтому
+    перестановка проверяется по тому, в каком порядке темы читаются обратно, —
+    то есть ровно по тому, что увидит движок.
+    """
+
+    async def test_order_inside_a_group_is_saved(self, client: httpx.AsyncClient):
+        branch = await _branch_make(client, 'ordered')
+        ids = [(await client.post(f"/workflow_topic/{branch['id']}/topic", json={
+            "name": f"test_ord_{n}", "title": f"Тема {n}", "tags": "метка",
+        })).json()["result"]["id"] for n in ('a', 'b', 'c')]
+
+        flipped = [ids[2], ids[0], ids[1]]
+        response = await client.put("/workflow_topic/topic/reorder", json={
+            "positions": [{"id": topic_id, "topic_group_id": branch["id"],
+                           "position": index + 1}
+                          for index, topic_id in enumerate(flipped)]})
+        assert response.status_code == 200, response.text
+        assert response.json()["result"]["moved"] == 3
+
+        listing = await client.get(f"/workflow_topic/{branch['id']}/topic/list")
+        assert [row["id"] for row in listing.json()["result"]] == flipped
+
+    async def test_a_topic_moves_to_another_group(self, client: httpx.AsyncClient):
+        """⚠ Переезд — это смена `topic_group_id` вместе с местом в списке.
+
+        Соседи по новой группе тоже приезжают в раскладке: место в списке
+        сдвинулось и у них.
+        """
+        source = await _branch_make(client, 'move_from')
+        target = await _branch_make(client, 'move_to')
+
+        moving = (await client.post(f"/workflow_topic/{source['id']}/topic", json={
+            "name": "test_mover", "title": "Переезжает", "tags": "метка"})).json()["result"]
+        staying = (await client.post(f"/workflow_topic/{source['id']}/topic", json={
+            "name": "test_stays", "title": "Остаётся", "tags": "метка"})).json()["result"]
+        sitting = (await client.post(f"/workflow_topic/{target['id']}/topic", json={
+            "name": "test_sits", "title": "Сидит", "tags": "метка"})).json()["result"]
+
+        response = await client.put("/workflow_topic/topic/reorder", json={"positions": [
+            {"id": staying["id"], "topic_group_id": source["id"], "position": 1},
+            {"id": moving["id"], "topic_group_id": target["id"], "position": 1},
+            {"id": sitting["id"], "topic_group_id": target["id"], "position": 2},
+        ]})
+        assert response.status_code == 200, response.text
+
+        at_source = (await client.get(
+            f"/workflow_topic/{source['id']}/topic/list")).json()["result"]
+        assert [row["id"] for row in at_source] == [staying["id"]]
+
+        at_target = (await client.get(
+            f"/workflow_topic/{target['id']}/topic/list")).json()["result"]
+        assert [row["id"] for row in at_target] == [moving["id"], sitting["id"]]
+
+    async def test_reorder_path_is_not_eaten_by_the_topic_id_route(
+            self, client: httpx.AsyncClient):
+        """⚠⚠ `/topic/reorder` обязан стоять ВЫШЕ `/topic/{topic_id}`.
+
+        Ниже слово `reorder` попало бы в `topic_id`, и ответом на исправный
+        запрос был бы 422 — молча для того, кто читает только «не 200».
+        """
+        response = await client.put("/workflow_topic/topic/reorder",
+                                    json={"positions": []})
+        assert response.status_code == 200, response.text
+        assert response.json()["result"]["moved"] == 0
+
+    async def test_an_unknown_topic_is_404(self, client: httpx.AsyncClient):
+        branch = await _branch_make(client, 'reorder_404')
+        response = await client.put("/workflow_topic/topic/reorder", json={"positions": [
+            {"id": 99999999, "topic_group_id": branch["id"], "position": 1}]})
+        assert response.status_code == 404, response.text
+
+    async def test_a_cross_node_move_is_refused(self, client: httpx.AsyncClient):
+        """⚠⚠ Код темы уникален в пределах НОДЫ — переезд через границу запрещён.
+
+        Со страницы так не перетащишь (там одна нода на экране), но ручка
+        открыта: пройди такой запрос, и в чужой ноде завёлся бы второй
+        `photo_send` в обход проверки кода.
+        """
+        here = await _branch_make(client, 'cross_here')
+        topic = (await client.post(f"/workflow_topic/{here['id']}/topic", json={
+            "name": "test_cross", "title": "Чужая нода", "tags": "метка"})).json()["result"]
+
+        node = (await client.post("/node", json={
+            "name": f"{TEST_BRANCH_PREFIX}node", "position": 918})).json()["result"]
+        node_id = node["id"] if isinstance(node, dict) else node
+        far = (await client.post("/workflow_topic", json={
+            "node_id": node_id, "name": f"{TEST_BRANCH_PREFIX}far",
+            "title": "Далеко"})).json()["result"]
+
+        try:
+            response = await client.put("/workflow_topic/topic/reorder", json={"positions": [
+                {"id": topic["id"], "topic_group_id": far["id"], "position": 1}]})
+            assert response.status_code == 400, response.text
+            assert 'разных нод' in response.json()["detail"]
+
+            # И тема осталась у себя — отказ до первой записи, а не после
+            assert (await client.get(
+                f"/workflow_topic/{here['id']}/topic/list")).json()["result"][0]["id"] \
+                == topic["id"]
+        finally:
+            await client.delete(f"/workflow_topic/{far['id']}")
+            await client.delete(f"/node/{node_id}")
+
+
 class TestTopicThresholdsAndQuestions:
     """Два порога темы и её вопросы: то, на чём стоит шаг «Тема и действие».
 

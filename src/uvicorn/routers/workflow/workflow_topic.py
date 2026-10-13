@@ -43,6 +43,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from i18n_.i18n_ import i18n_translit_cyr
 from mysql_.mysql_ import mysql_get_db_async
+from src.ai.ai_workflow_import import (AiWorkflowImportConflictError,
+                                       AiWorkflowImportFailedError,
+                                       AiWorkflowImportRejectedError)
+from src.ai.ai_workflow_topic_export import (
+    AiWorkflowTopicExportNodeMissingError, ai_workflow_topic_export_payload)
+from src.ai.ai_workflow_topic_import import ai_workflow_topic_import_apply
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 
@@ -79,6 +85,52 @@ GROUP_COLUMNS = ('title', 'description', 'is_enabled', 'position')
 # места с инструкциями, и промпт читал бы одно, а человек правил другое.
 TOPIC_COLUMNS = ('name', 'title', 'tags', 'tags_qty_accept',
                  'questions_qty_yes_accept', 'instructions', 'is_enabled', 'position')
+
+
+@router.get("/workflow_topic/export")
+async def workflow_topic_export(
+        node_id: int,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_TOPIC_VIEW]))
+):
+    """Темы ноды одним файлом: группы, темы, вопросы.
+
+    ⚠ Здесь только права и статус ошибки; формат файла и что в него едет — в
+    `src/ai/ai_workflow_topic_export.py`, там и правят.
+    """
+    try:
+        payload = await ai_workflow_topic_export_payload(node_id)
+    except AiWorkflowTopicExportNodeMissingError as error:
+        raise HTTPException(status_code=404, detail=str(error))
+    return {"result": payload}
+
+
+@router.post("/workflow_topic/import")
+async def workflow_topic_import(
+        data: dict,
+        node_id: int,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_TOPIC_CREATE,
+                                  AuthPermission.WORKFLOW_TOPIC_UPDATE]))
+):
+    """Влить темы файла в ноду `node_id`, сливая по коду группы и темы.
+
+    ⚠⚠ Нода — **довод запроса**, а не имя из файла: полезное действие здесь
+    «перенести темы отсюда туда», в том числе между нодами одной установки.
+    Имя ноды из файла не выбрасывается — расхождение приезжает в `notes`.
+
+    ⚠ Права — create и update, без delete: импорт тем ничего не удаляет
+    (`ai_workflow_topic_import.py`, шапка). Исключение — вопросы пришедших тем,
+    они переписываются целиком, ровно как при правке темы с формы.
+    """
+    actor = getattr(user, 'username', None) or getattr(user, 'id', None)
+    try:
+        result = await ai_workflow_topic_import_apply(data, node_id, actor)
+    except AiWorkflowImportRejectedError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+    except AiWorkflowImportConflictError as error:
+        raise HTTPException(status_code=409, detail=str(error))
+    except AiWorkflowImportFailedError as error:
+        raise HTTPException(status_code=500, detail=str(error))
+    return {"status": "success", "result": result}
 
 
 @router.get("/workflow_topic/topic/list")
@@ -183,6 +235,47 @@ async def workflow_topic_create(
         await _topic_questions_save(topic_id, body.get('questions'))
 
     return {"result": await _topic_row(topic_id)}
+
+
+@router.put("/workflow_topic/topic/reorder")
+async def workflow_topic_reorder(
+        request: Request,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_TOPIC_UPDATE]))
+):
+    """Разложить темы по группам и порядку — как их перетащили на вкладке.
+
+    Тело: `{"positions": [{"id": 7, "topic_group_id": 3, "position": 1}, …]}`.
+    Приезжают **все темы затронутых групп**, а не одна переехавшая: порядок —
+    свойство списка, и прислать его можно только списком.
+
+    ⚠⚠ Объявлена **выше** `PUT /workflow_topic/topic/{topic_id}`: FastAPI
+    разбирает пути в порядке объявления, и ниже слово `reorder` попало бы в
+    `topic_id` — ответом был бы 422 на исправный запрос.
+
+    ⚠⚠ Порядок внутри группы — **не украшение**: в нём шаг темы отдаёт
+    инструкции накопителю (`ai_workflow_topic_action_topics_raised`). Поэтому
+    перестановка это правка содержимого, а не вида.
+
+    ⚠ Все группы — одной ноды, и той же, что у самих тем. Код темы уникален в
+    пределах ноды (`_topic_name_free`), и переезд в чужую ноду молча завёл бы
+    там второй `photo_send`.
+    """
+    body = await request.json()
+    rows = _reorder_rows_read(body.get('positions'))
+    if not rows:
+        return {"result": {"moved": 0}}
+
+    await _reorder_one_node_check(rows)
+
+    async with mysql_get_db_async() as db:
+        for row in rows:
+            await db.execute(
+                "UPDATE `agent_workflow_topic` SET `topic_group_id` = %s, `position` = %s "
+                "WHERE `id` = %s",
+                (row['topic_group_id'], row['position'], row['id'])
+            )
+
+    return {"result": {"moved": len(rows)}}
 
 
 @router.put("/workflow_topic/topic/{topic_id}")
@@ -504,6 +597,83 @@ async def _topic_questions_save(topic_id: int, questions) -> None:
                    VALUES (%s, %s, %s, %s)""",
                 row
             )
+
+
+def _reorder_rows_read(positions) -> list:
+    """Разобрать присланную раскладку: номер темы, номер группы, место в ней.
+
+    ⚠ Строка без номера темы или группы молча пропускается, а не роняет запрос:
+    список собирает страница обходом DOM, и одна недоразобранная строка не
+    повод отменять перестановку остальных. Непохожее на число — отказ: это уже
+    не «чего-то не хватило», а чужой запрос.
+    """
+    rows, seen = [], set()
+    for item in positions or []:
+        if not isinstance(item, dict):
+            continue
+        if item.get('id') is None or item.get('topic_group_id') is None:
+            continue
+        try:
+            topic_id = int(item['id'])
+            group_id = int(item['topic_group_id'])
+            position = int(item.get('position') or 0)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400,
+                                detail='Раскладка тем: id, topic_group_id и position — числа')
+        if topic_id in seen:
+            raise HTTPException(status_code=400,
+                                detail=f'Тема {topic_id} в раскладке дважды')
+        seen.add(topic_id)
+        rows.append({'id': topic_id, 'topic_group_id': group_id, 'position': position})
+    return rows
+
+
+async def _reorder_one_node_check(rows: list) -> None:
+    """Темы и группы раскладки — одной ноды; иначе отказ до первой записи.
+
+    ⚠⚠ Проверка не формальная. Перетащить тему в группу чужой ноды со страницы
+    нельзя — там одна нода на экране, — но ручка открыта, а код темы уникален в
+    пределах **ноды**. Переезд через границу завёл бы в чужой ноде второй
+    `photo_send` в обход `_topic_name_free`, и узналось бы это из журнала
+    прогона, где две темы под одним кодом.
+    """
+    topic_ids = [row['id'] for row in rows]
+    group_ids = {row['topic_group_id'] for row in rows}
+
+    async with mysql_get_db_async() as db:
+        placeholders = ','.join(['%s'] * len(topic_ids))
+        await db.execute(
+            f"""SELECT t.`id`, g.`node_id`
+                  FROM `agent_workflow_topic` t
+                  JOIN `agent_workflow_topic_group` g ON g.`id` = t.`topic_group_id`
+                 WHERE t.`id` IN ({placeholders})""",
+            tuple(topic_ids)
+        )
+        found = {row['id']: row['node_id'] for row in await db.fetchall() or []}
+
+        placeholders = ','.join(['%s'] * len(group_ids))
+        await db.execute(
+            f"SELECT `id`, `node_id` FROM `agent_workflow_topic_group` "
+            f"WHERE `id` IN ({placeholders})",
+            tuple(group_ids)
+        )
+        groups = {row['id']: row['node_id'] for row in await db.fetchall() or []}
+
+    missing = [topic_id for topic_id in topic_ids if topic_id not in found]
+    if missing:
+        raise HTTPException(status_code=404,
+                            detail=f'Тем нет: {", ".join(str(one) for one in missing)}')
+
+    lost = [group_id for group_id in group_ids if group_id not in groups]
+    if lost:
+        raise HTTPException(status_code=404,
+                            detail=f'Групп тем нет: {", ".join(str(one) for one in lost)}')
+
+    nodes = set(found.values()) | set(groups.values())
+    if len(nodes) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail='Темы и группы раскладки из разных нод — перестановка отменена')
 
 
 async def _topic_name_free(node_id: int, name: str, topic_id: int = 0) -> None:
