@@ -329,22 +329,6 @@ document.getElementById('nodeCarouselNext')?.addEventListener('click', () => {
     renderCarouselNode();
 });
 
-/**
- * Дубликат workflow: сервер копирует строку agent_workflow (title + ' copy'),
- * шаги (с ремапом id в transitions и переменных результатов) и связи переменных
- */
-async function duplicateWorkflow(workflow) {
-    try {
-        const res = await postData(`/workflow/${workflow.id}/duplicate`, {});
-        const newId = res.result?.id;
-        showNotification(`Создан дубликат: ${res.result?.title || workflow.title + ' copy'}`, 'success');
-        await initWorkflowManager();
-        if (newId) openWorkflowById(newId);
-    } catch (e) {
-        showNotification(`Ошибка дублирования: ${e.message}`, 'error');
-    }
-}
-
 async function openWorkflowSteps(workflow, element) {
     setActiveItem(element);
 

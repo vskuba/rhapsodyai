@@ -1315,41 +1315,11 @@
         margin-top: 4px;
     }
 
-    /* Иконки действий: видны при наведении на пункт меню */
-    .edit-icon,
-    .duplicate-icon {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 24px;
-        height: 24px;
-        color: #cccaca;
-        border-radius: 4px; /* Скругление как у инпутов */
-        font-size: 14px;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        border: 1px solid #dfdcdc;
-        opacity: 1;
-    }
-
-    .agent-item:hover .edit-icon,
-    .agent-item:hover .duplicate-icon,
-    .agent-item.active .edit-icon,
-    .agent-item.active .duplicate-icon {
-        opacity: 1;
-        color: #3498db;
-        background: #eef6fc;
-        border: 1px solid #d6eaf8;
-    }
-
-    /* Эффект при наведении на саму иконку */
-    .edit-icon:hover,
-    .duplicate-icon:hover {
-        background: #3498db;
-        color: #fff;
-        transform: scale(1.1);
-        box-shadow: 0 2px 5px rgba(52, 152, 219, 0.3);
-    }
+    /* ⚠ Правила `.edit-icon` и `.duplicate-icon` снесены 13.10.2026 вместе с
+       `duplicateWorkflow`: обе иконки из списка workflow убрали когда-то давно,
+       классы не ставил ни один файл, и правила держали вид того, чего нет.
+       Серверная ручка `POST /workflow/{id}/duplicate` при этом жива и под
+       тестами — дублирование доступно запросом, но не кнопкой. */
 
     /* Скрытие секции шагов в режиме редактирования задачи */
     .hide-steps .prompt-column {
