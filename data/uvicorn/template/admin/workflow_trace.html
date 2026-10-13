@@ -1779,13 +1779,17 @@
         host.style.display = found ? 'flex' : 'none';
         if (!found) return;
 
+        // ⚠ Коротко: сайдбар узкий (316 px), и полная фраза «Поиск по всем:
+        // «photo» — найдено 38 · 18 мс» ломала полосу на две строки — поймано
+        // кадром. Запрос человек и так видит в поле прямо над полосой,
+        // повторять его здесь незачем.
         const said = found.failed
             ? 'поиск не удался'
             : (found.found
-                ? `найдено ${found.found}${found.limited ? ' (первые)' : ''} · ${found.ms} мс`
-                : `ничего не найдено · ${found.ms} мс`);
+                ? `найдено ${found.found}${found.limited ? '+' : ''} · ${found.ms} мс`
+                : `не найдено · ${found.ms} мс`);
 
-        const line = el('span', 'search-all-text', `Поиск по всем: «${found.query}» — ${said}`);
+        const line = el('span', 'search-all-text', `По всем прогонам: ${said}`);
         host.appendChild(line);
 
         // ⚠⚠ Окно поиска по шагам обязано быть названо. Поля прогона (запрос,
@@ -1794,10 +1798,12 @@
         // потолок. Не скажи этого, человек считает поиск полным и делает вывод
         // «такого не было» из того, что до этого места не дошли.
         if (found.steps_window) {
-            line.title = `Шаги искались в последних ${found.steps_window} прогонах; `
-                + 'запрос, ответ и контракт — по всей истории';
-            host.appendChild(el('span', 'search-all-window',
-                `шаги: последние ${found.steps_window}`));
+            const hint = `Запрос «${found.query}». Шаги искались в последних `
+                + `${found.steps_window} прогонах; запрос, ответ и контракт — по всей истории`;
+            line.title = hint;
+            const window_ = el('span', 'search-all-window', `шаги: ${found.steps_window}`);
+            window_.title = hint;
+            host.appendChild(window_);
         }
         const off = el('button', 'search-all-off', '✕');
         off.type = 'button';
@@ -1874,7 +1880,15 @@
         });
 
         // При открытии страницы автоматически показываем последний (верхний) запуск
-        if (!state.activeRunUuid && firstCard) firstCard.click();
+        //
+        // ⚠⚠ При поиске по всем прогонам открываем первый НАЙДЕННЫЙ, даже если
+        // справа уже открыт другой. Поймано кадром: слева «найдено 38», а в поле
+        // поиска красное «не найдено» — счётчик относился к прогону от прошлого
+        // отбора, в котором искомого вправду нет. Два ответа на один запрос в
+        // одном экране, и человек верит худшему.
+        const searchOpened = state.searchAll && firstCard
+            && !runs.some(run => run.run_uuid === state.activeRunUuid);
+        if (searchOpened || (!state.activeRunUuid && firstCard)) firstCard.click();
     }
 
     async function loadRunDetail(runUuid) {
