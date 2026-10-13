@@ -61,6 +61,107 @@
         color: #4a5568;
     }
 
+    /* ── Поиск по шагам открытого прогона ─────────────────────────────────── */
+    /* ⚠ Своя строка без заголовка-колонки: у трёх фильтров слева подпись
+       («НОДА», «WORKFLOW»), а здесь её место занимает значок — поле и так
+       называет себя подсказкой, а узкий сайдбар дорог. */
+    .step-search {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 8px;
+    }
+
+    .step-search-icon {
+        flex: 0 0 auto;
+        font-size: 12px;
+        opacity: .65;
+    }
+
+    .trace-filters .step-search .form-control {
+        flex: 1;
+        min-width: 0;
+        margin-bottom: 0;
+    }
+
+    .step-search-count {
+        flex: 0 0 auto;
+        font-size: 11px;
+        color: #718096;
+        white-space: nowrap;
+    }
+
+    /* Ноль совпадений — тем же красным, что «ошибка» вкладки: пустой список
+       шагов сам по себе не отличить от прогона, в котором их нет */
+    .step-search-count.is-none {
+        color: #c93054;
+        font-weight: 600;
+    }
+
+    .step-search-clear {
+        flex: 0 0 auto;
+        border: none;
+        background: none;
+        cursor: pointer;
+        color: #94a3b8;
+        font-size: 13px;
+        line-height: 1;
+        padding: 0 2px;
+        visibility: hidden;
+    }
+
+    .step-search-clear:hover { color: #334155; }
+    .step-search.is-on .step-search-clear { visibility: visible; }
+
+    /* Листание совпадений внутри открытого прогона. ⚠ Было на Enter — Enter
+       ушёл поиску по всем прогонам: в поле поиска он значит «искать». */
+    .step-search-jump {
+        flex: 0 0 auto;
+        border: none;
+        background: none;
+        cursor: pointer;
+        color: #94a3b8;
+        font-size: 13px;
+        line-height: 1;
+        padding: 0 2px;
+        visibility: hidden;
+    }
+
+    .step-search-jump:hover { color: #334155; }
+    .step-search.is-on .step-search-jump { visibility: visible; }
+
+    /* ── Полоса «ищем по всем прогонам» ───────────────────────────────────── */
+    /* ⚠⚠ Видна, только когда поиск включён, и всегда, когда включён: список под
+       ней показывает подмножество, и отличить его от обычной ленты больше
+       нечем. */
+    .search-all-banner {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 8px;
+        padding: 5px 8px;
+        background: #eef6ff;
+        border: 1px solid #bcd9f5;
+        border-radius: 5px;
+        font-size: 11px;
+        color: #1d4e76;
+    }
+
+    .search-all-text { flex: 1; min-width: 0; }
+
+    .search-all-off {
+        flex: 0 0 auto;
+        border: none;
+        background: none;
+        cursor: pointer;
+        color: #4a7fae;
+        font-size: 12px;
+        line-height: 1;
+        padding: 0 2px;
+    }
+
+    .search-all-off:hover { color: #0f3a5c; }
+
     /* Заголовок и поле — в одну строку: три фильтра занимают три строки */
     .filter-row {
         display: flex;
@@ -264,7 +365,14 @@
         font-size: 13px;
     }
 
-    .row:first-child {
+    /* Шапка прогона — единственный ряд, который идёт строкой: номер, workflow,
+       агент, статус, время.
+       ⚠⚠ Отбор `> .row:first-child`, а не `.row:first-child`: второй ловит
+       первый ряд ЛЮБОГО контейнера. Поймано кадром, когда сводку разделили на
+       две колонки, — «Запрос» и «Request contract» оказались первыми в своих
+       колонках, и подпись встала сбоку от значения вместо того, чтобы стоять
+       над ним. */
+    .run-summary > .row:first-child {
         display: flex;
         flex-direction: row;
         align-items: center;
@@ -280,6 +388,33 @@
         font-size: 11px;
         text-transform: uppercase;
         font-weight: bold;
+    }
+
+    /* ── Две колонки сводки: слева вход/выход workflow, справа контракт вызова ──
+       ⚠ Колонки равные: справа лежит JSON, а он шире текста реплики — отдай
+       левой больше, и контракт пришлось бы читать по складам.
+       ⚠ Ниже 1100px колонки встают друг под друга: при двух колонках на узком
+       экране `pre` с JSON уезжает в горизонтальный скролл. */
+    .contract-cols {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        align-items: start;
+    }
+
+    @media (max-width: 1100px) {
+        .contract-cols { grid-template-columns: 1fr; }
+    }
+
+    .contract-col { min-width: 0; }
+
+    /* Пусто — это ответ, а не прочерк: почему пусто, сказано словами */
+    .contract-empty {
+        margin: 4px 0 0;
+        color: #a0aab4;
+        font-size: 11px;
+        font-style: italic;
+        line-height: 1.4;
     }
 
     .run-summary pre {
@@ -363,6 +498,27 @@
     .step-head .step-transition-mark {
         color: #8e44ad;
         font-size: 11px;
+    }
+
+    /* ── Состояния шага под поиском ───────────────────────────────────────── */
+    /* ⚠ Несовпавшее прячется, а не бледнеет: прогон бывает на 167 шагов, и
+       среди них полтора десятка бледных не найти глазами. Номер шага (#N)
+       остаётся прежним, поэтому порядок не теряется. */
+    .step-row.step-hidden,
+    .child-run.step-hidden { display: none; }
+
+    .step-row.step-match { border-color: #f0c674; }
+    .step-row.step-match > .step-head { background: #fffbea; }
+
+    /* Куда прыгнул Enter — видно рамкой: подсветка совпадений внутри одинакова
+       у всех, и без этого «следующее» неотличимо от «того же самого» */
+    .step-row.step-match-current { border-color: #e8912d; box-shadow: 0 0 0 2px #fde8c8; }
+
+    mark.search-hit {
+        background: #ffe066;
+        color: inherit;
+        padding: 0 1px;
+        border-radius: 2px;
     }
 
     .step-details {
@@ -1000,6 +1156,25 @@
 
             <!-- Фильтры: изменение любого сразу перезагружает список -->
             <div class="trace-filters">
+                <!-- ⚠⚠ Поиск ищет в ОТКРЫТОМ прогоне, а не по списку слева: три
+                     селекта под ним отбирают прогоны, это поле — шаги внутри
+                     одного. Разница названа прямо в подсказке поля: иначе человек
+                     наберёт текст, список не шелохнётся, и поле сочтут сломанным. -->
+                <div class="step-search">
+                    <span class="step-search-icon">🔍</span>
+                    <input type="text" id="stepSearch" class="form-control" autocomplete="off"
+                           placeholder="Поиск: набор — в прогоне, Enter — по всем"
+                           title="Набор фильтрует шаги открытого справа прогона. Enter ищет по ВСЕМ прогонам — в их запросах, ответах, контрактах и шагах, с учётом отбора слева. Esc — очистить">
+                    <span class="step-search-count" id="stepSearchCount"></span>
+                    <button type="button" class="step-search-jump" id="stepSearchJump"
+                            title="К следующему совпадению в открытом прогоне">↓</button>
+                    <button type="button" class="step-search-clear" id="stepSearchClear"
+                            title="Очистить (Esc)">✕</button>
+                </div>
+
+                <!-- Полоса поиска по всем прогонам: видна, только когда он включён -->
+                <div class="search-all-banner" id="searchAllBanner" style="display:none;"></div>
+
                 <div class="filter-row">
                     <label for="filterNode" class="filter-label">Нода</label>
                     <select id="filterNode" class="form-control">
@@ -1059,8 +1234,11 @@
 
     // Справочники нужны разбору переменных прогона: имя tool-переменной строится
     // из имени инструмента и его выходных ключей, имя под-запуска — из имени workflow
+    // ⚠ `searchAll` — поиск по ВСЕМ прогонам (Enter в поле поиска). Пусто —
+    // список живёт обычной жизнью. В `localStorage` не пишется: отбор, молча
+    // переживший перезагрузку, показывал бы ленту, которая выглядит полной.
     const state = {page: 1, totalPages: 1, activeRunUuid: null, stepTypeIcons: {}, activeTab: 'running',
-                  workflows: [], agents: [], tools: []};
+                  workflows: [], agents: [], tools: [], searchAll: ''};
 
     // Смещение часового пояса из настроек (минуты), применяется в fmtDate
     let _tzOffsetMinutes = 0;
@@ -1145,6 +1323,30 @@
         link.href = `/admin/workflow?workflow_id=${workflowId}`;
         link.title = 'Открыть workflow в редакторе';
         return link;
+    }
+
+    /**
+     * Строка контракта вызова: подпись и тело запроса/ответа как есть.
+     *
+     * ⚠⚠ Пусто — говорим ПОЧЕМУ, а не рисуем прочерк. Контракт пишет ручка, и
+     * пустым он бывает по двум законным причинам: прогон начат не через
+     * `/chat/ask` (мини-приложение, блог, повтор со страницы) либо снят раньше,
+     * чем запись появилась. Прочерк в этом месте читался бы как «зовущий
+     * прислал пустоту» — то есть как поломка там, где её нет.
+     */
+    function renderContractRow(title, raw) {
+        const row = el('div', 'row');
+        row.appendChild(el('div', 'label', title));
+
+        const body = prettyJson(raw);
+        if (body) {
+            // `search-in` — контракт ищется наравне с шагами (см. сводку выше)
+            row.appendChild(el('pre', 'search-in', body));
+        } else {
+            row.appendChild(el('div', 'contract-empty',
+                'не записан — прогон начат не через /chat/ask либо снят до появления записи'));
+        }
+        return row;
     }
 
     function prettyJson(raw) {
@@ -1527,6 +1729,12 @@
     async function loadRuns() {
         const params = filterParams(new URLSearchParams({page: state.page, limit: 30}));
         params.set('status', state.activeTab);
+        // ⚠ Поиск по всем прогонам — такой же довод отбора, как нода и статус:
+        // сервер ищет ВНУТРИ выбранного, и это главное, чем держится его цена.
+        if (state.searchAll) {
+            params.set('search', state.searchAll);
+            params.set('limit', '100');
+        }
 
         try {
             const data = await getData(`/workflow_trace/run/list?${params}`);
@@ -1535,12 +1743,49 @@
                 `${data.pagination.current_page} / ${data.pagination.total_pages} (${data.pagination.total_records})`;
             document.getElementById('pagePrev').disabled = state.page <= 1;
             document.getElementById('pageNext').disabled = state.page >= state.totalPages;
+            searchAllBanner(data.search);
             renderRuns(data.result || []);
         } catch (e) {
             console.error('Ошибка загрузки запусков:', e);
             runsList.innerHTML = '';
-            runsList.appendChild(el('div', 'empty-note', 'Ошибка загрузки'));
+            // ⚠ Отказ поиска показываем словами сервера: он один знает, что
+            // именно не вышло — не уложился в срок или не хватило прав.
+            runsList.appendChild(el('div', 'empty-note',
+                state.searchAll ? (e.message || 'Поиск не удался') : 'Ошибка загрузки'));
+            searchAllBanner(state.searchAll ? {query: state.searchAll, failed: true} : null);
         }
+    }
+
+    /**
+     * Полоса над списком: что сейчас ищется по всем прогонам и чем кончилось.
+     *
+     * ⚠⚠ Без неё список молча показывал бы подмножество: человек набрал текст,
+     * нажал Enter, ушёл пить чай — и вернулся к ленте, которая выглядит обычной,
+     * но содержит не все прогоны. Полоса и крестик — единственное, что отличает
+     * «прогонов нет» от «нет среди найденных».
+     */
+    function searchAllBanner(found) {
+        const host = document.getElementById('searchAllBanner');
+        host.innerHTML = '';
+        host.style.display = found ? 'flex' : 'none';
+        if (!found) return;
+
+        const said = found.failed
+            ? 'поиск не удался'
+            : (found.found
+                ? `найдено ${found.found}${found.limited ? ' (первые)' : ''} · ${found.ms} мс`
+                : `ничего не найдено · ${found.ms} мс`);
+
+        host.appendChild(el('span', 'search-all-text', `Поиск по всем: «${found.query}» — ${said}`));
+        const off = el('button', 'search-all-off', '✕');
+        off.type = 'button';
+        off.title = 'Вернуться ко всем прогонам';
+        // ⚠ Снимает поиск ЦЕЛИКОМ, вместе с полем и подсветкой в открытом
+        // прогоне. Сними он одну полосу — поле осталось бы с текстом и
+        // надписью «не найдено» над полной лентой: два состояния на один
+        // видимый элемент, и ни одно не объясняет другое.
+        off.onclick = () => document.getElementById('stepSearchClear').click();
+        host.appendChild(off);
     }
 
     function renderRuns(runs) {
@@ -1708,17 +1953,42 @@
 
         summary.appendChild(headRow);
 
+        // ⚠⚠ Две колонки — два разных вопроса, и путать их нельзя. Слева вход и
+        // выход **workflow** (`prompt_user` / `result`): что увидел движок и чем
+        // кончил. Справа контракт **вызова**: чем прогон позвали по HTTP и что
+        // ушло зовущему. Совпадают они только в простом случае: `question` в
+        // контракте тот же, а вот `variables` запроса в снапшот старта
+        // подмешаны вперемешку с переменными агента и ноды, и `message_id` с
+        // `intentions` из прогона не видны вовсе.
+        const bothCols = el('div', 'contract-cols');
+
+        // ⚠⚠ `search-in` у всех четырёх значений сводки — тот же класс, что у
+        // значений шага. Поиск по открытому прогону обязан смотреть туда же,
+        // куда смотрит поиск по всем прогонам на сервере: он ищет и в полях
+        // прогона тоже. Пока сводка была вне поиска, одно и то же поле давало
+        // два ответа — «нашёл» в списке слева и «не найдено» в открытом
+        // прогоне. Поймано поиском по `session_uuid`: он лежит в контракте и ни
+        // в одном шаге.
+        const ownCol = el('div', 'contract-col');
         const promptRow = el('div', 'row');
         promptRow.appendChild(el('div', 'label', 'Запрос'));
-        const promptPre = el('pre', null, run.prompt_user || '—');
+        const promptPre = el('pre', 'search-in', run.prompt_user || '—');
         promptRow.appendChild(promptPre);
-        summary.appendChild(promptRow);
+        ownCol.appendChild(promptRow);
 
         const resultRow = el('div', 'row');
         const isErrorLike = run.status === 'error' || run.status === 'stopped';
         resultRow.appendChild(el('div', 'label', run.status === 'error' ? 'Ошибка' : run.status === 'stopped' ? 'Остановлен' : 'Ответ'));
-        resultRow.appendChild(el('pre', null, (isErrorLike ? run.error : run.result) || '—'));
-        summary.appendChild(resultRow);
+        resultRow.appendChild(el('pre', 'search-in', (isErrorLike ? run.error : run.result) || '—'));
+        ownCol.appendChild(resultRow);
+
+        const contractCol = el('div', 'contract-col');
+        contractCol.appendChild(renderContractRow('Request contract', run.request_json));
+        contractCol.appendChild(renderContractRow('Response contract', run.response_json));
+
+        bothCols.appendChild(ownCol);
+        bothCols.appendChild(contractCol);
+        summary.appendChild(bothCols);
 
         // Переменные запуска: снапшот старта + всё, что дописали шаги
         const varsRow = renderRunVariablesRow(run);
@@ -1748,6 +2018,11 @@
 
         // Таймлайн шагов (с рекурсией для sub-workflow)
         runDetail.appendChild(renderRunTimeline(run));
+
+        // ⚠ Запрос переживает смену прогона: его набирают один раз и щёлкают
+        // карточки слева, проверяя, в каком из них текст встретился. Сбрасывать
+        // поле на каждом открытии значило бы заставлять набирать заново.
+        stepSearchApply();
     }
 
     // Реестр объявленных переменных по workflow_id: одна и та же ветка встречается
@@ -1766,6 +2041,245 @@
             console.error('Не загружены переменные workflow:', workflowId, e);
             workflowVariablesCache[workflowId] = [];
         }
+    }
+
+    // ── Поиск по шагам открытого прогона ────────────────────────────────────
+    //
+    // ⚠⚠ Ищет внутри ОДНОГО прогона, а не по списку слева. Три селекта рядом
+    // отбирают прогоны запросом к базе; это поле работает по тому, что уже
+    // лежит в браузере, и поэтому ничего не стоит: `GET /workflow_trace/run/…`
+    // привозит дерево целиком — шаги, их вход, выход и ошибки.
+    //
+    // ⚠⚠ Поиск по ВСЕМ прогонам сюда дописать нельзя «заодно»: это подстрока по
+    // LONGTEXT в таблице шагов, то есть полный проход. На этой же паре таблиц
+    // проект уже обжигался — `variables_start LIKE '%…%'` стоил 639 мс на проде
+    // и лечился генерируемой колонкой (`workflow_trace.md`). Понадобится — это
+    // отдельная работа с индексом и замером, а не ещё одна ветка в этой функции.
+    //
+    // ⚠⚠ Ищем по узлам с классом `search-in` — это ЗНАЧЕНИЯ, а не подписи к ним.
+    // Первая версия брала `textContent` всей строки, и это выглядело разумно:
+    // тело аккордеона отрисовано всегда, в нём ровно то, что человек увидит
+    // раскрыв. Проба на живом прогоне показала цену: слово «рендера» совпало с
+    // 5 шагами из 5 — оно стоит в подписи «Вход (metadata после рендера)» у
+    // каждого. Так же совпали бы `output`, `переход`, `success` и имя модели.
+    // Поиск, который на частые слова отвечает «все», — это не поиск.
+    //
+    // Класс вешает тот, кто рисует значение (`appendSection`, заголовок шага),
+    // поэтому список искомого не ведётся отдельно и не может с показом
+    // разойтись: новая секция получает его тем же вызовом.
+
+    const STEP_SEARCH_MIN = 2;          // короче — совпадёт со всем подряд
+
+    // ⚠ У поиска по всем прогонам порог свой и выше: там каждый лишний запрос —
+    // полный проход по таблицам трассы, а двух знаков хватит, чтобы совпало всё.
+    // Число то же, что у сервера (`TRACE_SEARCH_MIN`): разойдись они, поле
+    // отправляло бы запрос, который ручка молча считает пустым.
+    const STEP_SEARCH_ALL_MIN = 3;
+
+    // ⚠⚠ Подсветок на ОДИН шаг, и это потолок цены, а не вкуса. Считался он
+    // по текстовым узлам, а не по совпадениям, — разница оказалась в два
+    // порядка: значение шага это один `<pre>` на 20 000 знаков (столько пишет
+    // трасса, `TRACE_VALUE_MAX_LEN`), то есть ОДИН текстовый узел, в котором
+    // частое слово встречается сотни раз. На пробе из 170 шагов «нагрузки» дало
+    // 715 428 подсветок: страница вставала на 5 секунд, очистка — на 6.4.
+    // Пятидесяти хватает, чтобы увидеть, где совпало: дальше человек читает
+    // шаг, а не считает жёлтые пятна.
+    const STEP_SEARCH_MARK_MAX = 50;
+
+    // ⚠⚠ Сколько совпавших шагов раскрывать самим. Раскрывались все, и на
+    // широком запросе это разворачивало 167 шагов по 20 000 знаков разом: 1.8 с
+    // работы ради экрана, который всё равно не прочитать. Узкий запрос (пара
+    // шагов) раскрыть — помощь, широкий — свалка; у широкого человек сперва
+    // смотрит на счётчик и уточняет слово.
+    const STEP_SEARCH_OPEN_MAX = 20;
+
+    const stepSearch = {
+        query: '',      // приведённый к нижнему регистру запрос; '' — поиск выключен
+        hits: [],       // строки шагов с совпадением, в порядке показа
+        at: -1,         // на каком совпадении стоит Enter
+    };
+
+    /** Текст строки шага для поиска — считается один раз на отрисовку.
+     *
+     * ⚠ Кэш живёт на самом узле: прогон перерисовывается целиком, узлы при этом
+     * новые, и протухнуть кэшу негде. Пересчёт на каждый знак в поле стоил бы
+     * обхода всех 167 строк с их двадцатикилобайтными `output`.
+     */
+    function stepSearchTextOf(row) {
+        if (row._searchText === undefined) {
+            row._searchText = [...row.querySelectorAll('.search-in')]
+                .map(node => node.textContent).join('\n').toLowerCase();
+        }
+        return row._searchText;
+    }
+
+    /** Обернуть совпадения в `<mark>` — в тех же узлах, по которым шёл поиск.
+     *
+     * ⚠ Запас подсветок общий на весь шаг и тратится по ходу: иначе потолок на
+     * каждое значение давал бы вчетверо больше обещанного.
+     */
+    function stepSearchMark(row, query) {
+        let budget = STEP_SEARCH_MARK_MAX;
+        for (const node of row.querySelectorAll('.search-in')) {
+            if (budget <= 0) break;
+            budget = stepSearchMarkIn(node, query, budget);
+        }
+    }
+
+    /** @returns {number} сколько подсветок осталось в запасе. */
+    function stepSearchMarkIn(root, query, budget) {
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+            acceptNode(node) {
+                if (!node.nodeValue || !node.nodeValue.toLowerCase().includes(query)) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                return NodeFilter.FILTER_ACCEPT;
+            },
+        });
+
+        const targets = [];
+        while (walker.nextNode()) targets.push(walker.currentNode);
+
+        for (const node of targets) {
+            if (budget <= 0) break;
+            const text = node.nodeValue;
+            const lower = text.toLowerCase();
+            const frag = document.createDocumentFragment();
+            let from = 0;
+            let at = lower.indexOf(query);
+            while (at !== -1 && budget > 0) {
+                if (at > from) frag.appendChild(document.createTextNode(text.slice(from, at)));
+                frag.appendChild(el('mark', 'search-hit', text.slice(at, at + query.length)));
+                budget -= 1;
+                from = at + query.length;
+                at = lower.indexOf(query, from);
+            }
+            // Хвост узла — одним куском: он мог остаться неразобранным, когда запас кончился
+            if (from < text.length) frag.appendChild(document.createTextNode(text.slice(from)));
+            node.parentNode.replaceChild(frag, node);
+        }
+
+        return budget;
+    }
+
+    /** Снять подсветку и склеить разрезанные текстовые узлы обратно. */
+    function stepSearchUnmark(root) {
+        root.querySelectorAll('mark.search-hit').forEach(hit => {
+            const parent = hit.parentNode;
+            parent.replaceChild(document.createTextNode(hit.textContent), hit);
+            // ⚠ Без `normalize` соседние текстовые узлы остаются разрезанными, и
+            // следующий поиск не найдёт слово, попавшее на стык.
+            parent.normalize();
+        });
+    }
+
+    /** Применить текущий запрос к открытому прогону: спрятать, подсветить, посчитать. */
+    function stepSearchApply() {
+        const count = document.getElementById('stepSearchCount');
+        const box = document.querySelector('.step-search');
+        const query = stepSearch.query;
+
+        box.classList.toggle('is-on', !!document.getElementById('stepSearch').value);
+        stepSearchUnmark(runDetail);
+
+        const rows = [...runDetail.querySelectorAll('.step-row')];
+        const blocks = [...runDetail.querySelectorAll('.child-run')];
+
+        if (!query) {
+            rows.forEach(row => row.classList.remove(
+                'step-hidden', 'step-match', 'step-match-current'));
+            blocks.forEach(block => block.classList.remove('step-hidden'));
+            stepSearch.hits = [];
+            stepSearch.at = -1;
+            count.textContent = '';
+            count.classList.remove('is-none');
+            return;
+        }
+
+        const hits = [];
+        rows.forEach(row => {
+            const found = stepSearchTextOf(row).includes(query);
+            row.classList.toggle('step-match', found);
+            row.classList.toggle('step-hidden', !found);
+            row.classList.remove('step-match-current');
+            if (!found) return;
+            stepSearchMark(row, query);
+            hits.push(row);
+        });
+
+        // Совпавшие раскрываем сами — пока их немного: иначе найденное осталось
+        // бы за аккордеоном. Широкий запрос оставляем свёрнутым (см. потолок),
+        // и закрывать уже раскрытое руками не идём: это выбор человека.
+        if (hits.length <= STEP_SEARCH_OPEN_MAX) hits.forEach(row => row.classList.add('open'));
+
+        // Дочерний прогон без единого совпадения прячем целиком: от него осталась
+        // бы одна шапка с названием sub-workflow и пустотой под ней
+        blocks.forEach(block => {
+            block.classList.toggle('step-hidden', !block.querySelector('.step-row.step-match'));
+        });
+
+        // Сводка прогона — такая же область поиска, как шаги: на сервере поиск
+        // по всем прогонам смотрит и в её поля, и расходиться им нельзя
+        const inSummary = stepSearchSummary(query);
+
+        stepSearch.hits = hits;
+        stepSearch.at = -1;
+
+        count.classList.toggle('is-none', hits.length === 0 && !inSummary);
+        // ⚠ Три разных ответа, и сводить их в один нельзя: «прогон не открыт»
+        // (искать негде), «только в сводке» (нашлось, но не в шагах) и «не
+        // найдено». Человек, увидевший «не найдено» над подсвеченным запросом,
+        // перестаёт верить счётчику.
+        if (!rows.length) count.textContent = 'прогон не открыт';
+        else if (hits.length) count.textContent =
+            `${hits.length} из ${rows.length}${inSummary ? ' + сводка' : ''}`;
+        else count.textContent = inSummary ? 'только в сводке' : 'не найдено';
+    }
+
+    /**
+     * Подсветить совпадения в сводке прогона — запрос, ответ, оба контракта.
+     *
+     * ⚠ Область та же, что у серверного поиска по всем прогонам
+     * (`TRACE_SEARCH_RUN_COLUMNS`), и это не совпадение, а условие: поле одно,
+     * и два разных ответа на один вопрос обесценивают оба.
+     *
+     * @returns {boolean} нашлось ли хоть что-то в сводке.
+     */
+    function stepSearchSummary(query) {
+        let budget = STEP_SEARCH_MARK_MAX;
+        let found = false;
+
+        for (const node of runDetail.querySelectorAll('.run-summary .search-in')) {
+            if (!node.textContent.toLowerCase().includes(query)) continue;
+            found = true;
+            if (budget > 0) budget = stepSearchMarkIn(node, query, budget);
+        }
+        return found;
+    }
+
+    /** Прокрутить к следующему совпадению (Enter). */
+    function stepSearchJump() {
+        if (!stepSearch.hits.length) return;
+        stepSearch.hits.forEach(row => row.classList.remove('step-match-current'));
+
+        stepSearch.at = (stepSearch.at + 1) % stepSearch.hits.length;
+        const row = stepSearch.hits[stepSearch.at];
+        row.classList.add('step-match-current');
+        // ⚠ Раскрываем тот, к которому пришли: при широком запросе шаги остаются
+        // свёрнутыми, и «перейти к совпадению» без этого показывало бы заголовок
+        row.classList.add('open');
+        row.scrollIntoView({behavior: 'smooth', block: 'center'});
+
+        document.getElementById('stepSearchCount').textContent =
+            `${stepSearch.at + 1} из ${stepSearch.hits.length}`;
+    }
+
+    function stepSearchSet(value) {
+        const text = String(value || '').trim().toLowerCase();
+        // ⚠ Запрос короче двух знаков считаем пустым: «а» совпадает почти с каждым
+        // шагом, и поиск превращается в подсветку всей страницы.
+        stepSearch.query = text.length >= STEP_SEARCH_MIN ? text : '';
+        stepSearchApply();
     }
 
     // Реестры для всех workflow дерева запуска: у каждого sub-workflow он свой
@@ -1967,7 +2481,9 @@
 
             head.appendChild(el('span', 'step-index', `Шаг #${step.exec_index}${step.step_id ? ` (ID: ${step.step_id})` : ''}`));
             head.appendChild(el('span', 'step-icon', state.stepTypeIcons[step.step_type] || '·'));
-            head.appendChild(el('span', 'step-name', step.step_title || step.step_type));
+            // ⚠ `search-in` — название шага ищется наравне с его данными: чаще
+            // всего человек помнит именно его («Тема: вопросы»), а не текст внутри
+            head.appendChild(el('span', 'step-name search-in', step.step_title || step.step_type));
             if (step.llm_name) head.appendChild(el('span', 'step-llm-badge', step.llm_name));
             if (step.tokens_input != null || step.tokens_output != null) {
                 const tin = step.tokens_input != null ? `↑${step.tokens_input}` : '';
@@ -1994,11 +2510,18 @@
             const isEmpty = v => v === null || v === undefined || v === '' || v === '{}';
 
             // value может быть строкой (рендерится в pre) или готовым DOM-узлом
+            //
+            // ⚠⚠ Значению вешается `search-in` — по этим узлам идёт поиск по шагам.
+            // Подпись секции класса не получает намеренно: пока искали по всей
+            // строке, слово из подписи («рендера» из «Вход (metadata после
+            // рендера)») совпадало со всеми шагами разом.
             function appendSection(parent, title, value) {
                 const section = el('div', 'section');
                 section.appendChild(el('div', 'section-title', title));
-                if (value instanceof Node) section.appendChild(value);
-                else section.appendChild(el('pre', null, isEmpty(value) ? '—' : value));
+                const body = value instanceof Node
+                    ? value : el('pre', null, isEmpty(value) ? '—' : value);
+                body.classList.add('search-in');
+                section.appendChild(body);
                 parent.appendChild(section);
             }
 
@@ -2110,6 +2633,69 @@
             state.page++;
             loadRuns();
         }
+    };
+
+    // Поиск по шагам: набор ждёт паузы, Enter листает совпадения, Esc очищает.
+    //
+    // ⚠ Задержка нужна не сети (её тут нет), а работе по DOM: каждый пересчёт
+    // обходит все строки шагов и переставляет подсветку, а прогоны бывают на
+    // полторы сотни шагов с двадцатикилобайтными `output`.
+    const stepSearchInput = document.getElementById('stepSearch');
+    let stepSearchTimer = null;
+
+    stepSearchInput.oninput = () => {
+        clearTimeout(stepSearchTimer);
+        stepSearchTimer = setTimeout(() => stepSearchSet(stepSearchInput.value), 200);
+    };
+
+    // ⚠⚠ Enter ищет по ВСЕМ прогонам, а не листает совпадения в открытом.
+    // В поле поиска Enter значит «искать» — это ожидание человека, и спорить с
+    // ним нечем; листание переехало на соседнюю кнопку «↓», где и видно, что
+    // оно про открытый прогон.
+    stepSearchInput.onkeydown = (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            clearTimeout(stepSearchTimer);
+            const typed = String(stepSearchInput.value || '').trim();
+
+            if (typed.length < STEP_SEARCH_ALL_MIN) {
+                showNotification(
+                    `Для поиска по всем прогонам нужно хотя бы ${STEP_SEARCH_ALL_MIN} знака`,
+                    'warning');
+                return;
+            }
+
+            // Подсветку в открытом прогоне оставляем: найденный прогон откроется
+            // с уже помеченными шагами — ради этого обе половины и живут рядом
+            if (typed.toLowerCase() !== stepSearch.query) stepSearchSet(typed);
+
+            state.searchAll = typed;
+            state.page = 1;
+            loadRuns();
+        } else if (event.key === 'Escape') {
+            stepSearchInput.value = '';
+            clearTimeout(stepSearchTimer);
+            stepSearchSet('');
+            if (state.searchAll) {
+                state.searchAll = '';
+                state.page = 1;
+                loadRuns();
+            }
+        }
+    };
+
+    document.getElementById('stepSearchJump').onclick = () => stepSearchJump();
+
+    document.getElementById('stepSearchClear').onclick = () => {
+        stepSearchInput.value = '';
+        clearTimeout(stepSearchTimer);
+        stepSearchSet('');
+        if (state.searchAll) {
+            state.searchAll = '';
+            state.page = 1;
+            loadRuns();
+        }
+        stepSearchInput.focus();
     };
 
     initSidebarResizer('traceResizer', 'workflow_trace_sidebar_width',

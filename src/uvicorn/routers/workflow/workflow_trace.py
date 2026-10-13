@@ -1,10 +1,12 @@
 import asyncio
+import time
 import uuid
 
 from fastapi import APIRouter, Request, Depends, HTTPException
 
 from src.ai.ai_llm import ai_llm_node_get
 from json_.json_ import json_from_string
+from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from src.ai.ai_workflow import ai_workflow_load
 from src.ai.framework.agent.ai_framework_manager import workflow_runs_active
@@ -14,6 +16,25 @@ from src.mysql_.repository.agent_repository import AgentRepository
 
 router = APIRouter()
 
+# ── Поиск по содержимому прогонов ───────────────────────────────────────────
+#
+# ⚠ Короче трёх знаков не ищем: отсеивать нечем, а проход был бы полный.
+TRACE_SEARCH_MIN = 3
+
+# ⚠⚠ Потолок времени одного поиска. Не уложился — база обрывает сама, ручка
+# отвечает 504 и просит сузить отбор. Без потолка дорогой запрос держал бы
+# соединение пула, а их шесть на весь процесс.
+TRACE_SEARCH_TIMEOUT_MS = 8000
+
+# Сколько раз подстрока уходит в запрос — по числу колонок в `_trace_search_where`.
+# ⚠ Считается из самого условия, а не числом рядом: разойдись они, драйвер
+# получил бы не то число доводов и упал бы на ровном месте.
+TRACE_SEARCH_RUN_COLUMNS = ('r.prompt_user', 'r.result', 'r.error',
+                            'r.request_json', 'r.response_json')
+TRACE_SEARCH_STEP_COLUMNS = ('s.step_title', 's.metadata_rendered',
+                             's.variables_changed', 's.output', 's.error')
+TRACE_SEARCH_MARKS = len(TRACE_SEARCH_RUN_COLUMNS) + len(TRACE_SEARCH_STEP_COLUMNS)
+
 
 @router.get("/workflow_trace/run/list")
 async def workflow_trace_run_list(
@@ -22,11 +43,42 @@ async def workflow_trace_run_list(
         agent_id: int | None = None,
         node_id: int | None = None,
         status: str | None = None,
+        search: str | None = None,
         page: int = 1,
         limit: int = 30,
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_TRACE_VIEW]))
 ):
-    """Список запусков workflow (только верхний уровень, depth=0) с пагинацией."""
+    """Список запусков workflow (только верхний уровень, depth=0) с пагинацией.
+
+    `search` — подстрока в содержимом прогона: его запрос, ответ, ошибка,
+    контракт вызова и **шаги** (название, вход, выход, изменённые переменные,
+    ошибка), включая шаги подпотоков. Отбор по ноде, workflow, агенту и статусу
+    действует вместе с ней и сужает проход.
+
+    ## ⚠⚠ Это полный проход, и он здесь сознательный
+
+    Подстроку по `LONGTEXT` индексом не ускорить: `LIKE '%…%'` не берёт префикс,
+    а `FULLTEXT` ищет словами — он не нашёл бы `photo_send` в
+    `"topic": "photo_send"` и не дал бы искать по куску имени. Семантика
+    подстроки у поиска по открытому прогону уже такая, и расходиться им нельзя.
+
+    Поэтому цена не прячется, а ограничивается:
+
+    - **минимум три знака** — короче отсеивать нечего, проход был бы ради всего;
+    - **потолок времени** (`MAX_EXECUTION_TIME`) — запрос, не уложившийся в него,
+      база обрывает сама, и ручка честно отвечает «не уложился, сузьте отбор»;
+    - **без второго прохода за счётом** — при поиске `COUNT(*)` не считается
+      вовсе: он стоил бы ровно столько же, сколько сам поиск. Отдаётся столько
+      строк, сколько нашлось в пределах `limit`, и признак `limited`;
+    - **`variables_start` не ищется** — это самая толстая колонка таблицы (в
+      среднем 2.9 КБ на строку), а её содержимое и так попадает в шаги через
+      `metadata_rendered` и `variables_changed`.
+
+    ⚠ Поиск идёт **по запросу человека**, а не на каждую отрисовку страницы —
+    в отличие от уборки, которая когда-то стояла здесь же и шла на каждое
+    открытие (см. ниже). Это разница между «иногда дорого по нажатию» и
+    «дорого всегда».
+    """
     where = ["r.depth = 0"]
     params: list = []
 
@@ -45,6 +97,13 @@ async def workflow_trace_run_list(
         where.append("r.status = %s")
         params.append(status)
 
+    # Поиск по содержимому: своим условием, чтобы отбор выше сужал ему проход
+    needle = str(search or '').strip()
+    searching = len(needle) >= TRACE_SEARCH_MIN
+    if searching:
+        where.append(_trace_search_where())
+        params.extend([f'%{needle}%'] * TRACE_SEARCH_MARKS)
+
     where_sql = " AND ".join(where)
     limit = max(1, min(int(limit), 100))
     page = max(1, int(page))
@@ -57,9 +116,17 @@ async def workflow_trace_run_list(
     # всё просмотренное — то есть открытие страницы трасс запирало запись
     # трассы для идущих в этот момент workflow. Почему именно так — в
     # докстринге `ai_workflow_trace_trim`.
+    began = time.monotonic()
     async with mysql_get_db_async() as db:
-        await db.execute(f"SELECT COUNT(*) as qty FROM agent_workflow_trace r WHERE {where_sql}", params)
-        total = (await db.fetchone())['qty']
+        if searching:
+            # ⚠⚠ При поиске счёта НЕТ: `COUNT(*)` по тому же условию — второй
+            # такой же полный проход, то есть ровно удвоение цены ради числа в
+            # подписи. Сколько нашлось сверх показанного, человеку скажет
+            # признак `limited`, а не точное число.
+            total = None
+        else:
+            await db.execute(f"SELECT COUNT(*) as qty FROM agent_workflow_trace r WHERE {where_sql}", params)
+            total = (await db.fetchone())['qty']
 
         # ⚠ Ни `result`, ни `error` карточка списка не показывает — только
         # заголовок, состояние, время, число шагов и начало промпта. А это
@@ -70,25 +137,55 @@ async def workflow_trace_run_list(
         # ⚠ `prompt_user` обрезан здесь, а не в браузере: в карточке у него
         # `white-space: nowrap; text-overflow: ellipsis`, то есть видно ровно
         # одну строку, а приезжал он целиком.
-        await db.execute(
-            f"""
-            SELECT r.id, r.run_uuid, r.workflow_id, r.agent_id, r.user_id, r.status,
-                   LEFT(r.prompt_user, 300) AS prompt_user,
-                   r.started_at, r.duration_ms,
-                   w.title AS workflow_title,
-                   a.title AS agent_title,
-                   (SELECT COUNT(*) FROM agent_workflow_trace_step s WHERE s.run_id = r.id) AS steps_qty,
-                   (SELECT COUNT(*) FROM agent_workflow_trace c WHERE c.parent_run_id = r.id) AS children_qty
-            FROM agent_workflow_trace r
-            LEFT JOIN agent_workflow w ON w.id = r.workflow_id
-            LEFT JOIN agent a ON a.id = r.agent_id
-            WHERE {where_sql}
-            ORDER BY r.id DESC
-            LIMIT %s OFFSET %s
-            """,
-            params + [limit, offset]
-        )
-        rows = await db.fetchall()
+        # ⚠ Потолок времени ставится подсказкой оптимизатору, а не `SET STATEMENT`:
+        # второе — синтаксис MariaDB, здесь MySQL 8. Не уложился — база обрывает
+        # запрос сама (ошибка 3024), и это лучше, чем занятое соединение пула.
+        hint = f"/*+ MAX_EXECUTION_TIME({TRACE_SEARCH_TIMEOUT_MS}) */ " if searching else ""
+        try:
+            await db.execute(
+                f"""
+                SELECT {hint}
+                       r.id, r.run_uuid, r.workflow_id, r.agent_id, r.user_id, r.status,
+                       LEFT(r.prompt_user, 300) AS prompt_user,
+                       r.started_at, r.duration_ms,
+                       w.title AS workflow_title,
+                       a.title AS agent_title,
+                       (SELECT COUNT(*) FROM agent_workflow_trace_step s WHERE s.run_id = r.id) AS steps_qty,
+                       (SELECT COUNT(*) FROM agent_workflow_trace c WHERE c.parent_run_id = r.id) AS children_qty
+                FROM agent_workflow_trace r
+                LEFT JOIN agent_workflow w ON w.id = r.workflow_id
+                LEFT JOIN agent a ON a.id = r.agent_id
+                WHERE {where_sql}
+                ORDER BY r.id DESC
+                LIMIT %s OFFSET %s
+                """,
+                params + [limit, offset]
+            )
+            rows = await db.fetchall()
+        except Exception as error:
+            if not searching:
+                raise
+            # ⚠ Отвечаем отказом, а не пустым списком: «не нашлось» и «искать
+            # оказалось дороже отведённого» — разные ответы, и пустой список
+            # соврал бы человеку, что текста в прогонах нет.
+            logger_info(f"⚠️ Поиск по прогонам не уложился: {error}")
+            raise HTTPException(
+                status_code=504,
+                detail=f'Поиск не уложился в {TRACE_SEARCH_TIMEOUT_MS // 1000} с. '
+                       f'Сузьте отбор — нодой, workflow, агентом или состоянием.')
+
+    spent = int((time.monotonic() - began) * 1000)
+
+    if searching:
+        # ⚠ Страниц при поиске одна: листать нечем — счёта нет, а узнавать его
+        # вторым проходом дороже самого поиска
+        return {
+            "result": rows,
+            "pagination": {"current_page": 1, "total_pages": 1,
+                           "total_records": len(rows)},
+            "search": {"query": needle, "found": len(rows),
+                       "limited": len(rows) >= limit, "ms": spent},
+        }
 
     return {
         "result": rows,
@@ -372,3 +469,40 @@ async def workflow_trace_run_delete(
     async with mysql_get_db_async() as db:
         await db.execute("DELETE FROM agent_workflow_trace WHERE run_uuid = %s", (run_uuid,))
     return {"result": "success"}
+
+
+def _trace_search_where() -> str:
+    """Условие «текст встречается в прогоне» — его поля плюс его шаги.
+
+    Шаги берутся **вместе с подпотоками**: совпадение внутри sub-workflow
+    принадлежит тому прогону, из которого его позвали, — в списке показываются
+    только верхние (`depth = 0`), и без этого найденное в подпотоке не нашлось
+    бы вовсе. Подъём от шага к корню идёт рекурсией по `parent_run_id`
+    (колонка индексирована), а не обходом дерева сверху: совпадений единицы,
+    прогонов тысячи.
+
+    ⚠ `variables_start` не ищется намеренно: самая толстая колонка таблицы
+    (в среднем 2.9 КБ на строку), а её содержимое и так попадает в шаги через
+    `metadata_rendered` и `variables_changed`. Платить за неё вторым чтением
+    всей таблицы — ради того же текста.
+
+    ⚠⚠ Порядок `%s` здесь и порядок доводов у зовущего — одно знание, и живёт
+    оно в `TRACE_SEARCH_RUN_COLUMNS` / `TRACE_SEARCH_STEP_COLUMNS`. Допишешь
+    колонку мимо них — драйвер получит не то число доводов.
+    """
+    run_match = ' OR '.join(f'{column} LIKE %s' for column in TRACE_SEARCH_RUN_COLUMNS)
+    step_match = ' OR '.join(f'{column} LIKE %s' for column in TRACE_SEARCH_STEP_COLUMNS)
+
+    return f"""({run_match} OR r.id IN (
+        WITH RECURSIVE hit AS (
+            SELECT DISTINCT s.run_id AS id
+              FROM agent_workflow_trace_step s
+             WHERE {step_match}
+            UNION
+            SELECT t.parent_run_id
+              FROM agent_workflow_trace t
+              JOIN hit ON t.id = hit.id
+             WHERE t.parent_run_id IS NOT NULL
+        )
+        SELECT id FROM hit
+    ))"""

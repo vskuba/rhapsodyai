@@ -54,9 +54,17 @@ async def ai_workflow_trace_run_start(run_uuid: str, workflow_id, agent_id, user
                                    prompt_user, variables: dict,
                                    parent_run_id: int | None = None,
                                    parent_step_id: int | None = None,
-                                   depth: int = 0) -> int | None:
+                                   depth: int = 0,
+                                   request_json=None) -> int | None:
     """Создает запись запуска workflow. Возвращает run_id либо None (трейс выключен/сбой) —
-    сбой записи журнала никогда не должен ронять выполнение workflow."""
+    сбой записи журнала никогда не должен ронять выполнение workflow.
+
+    ⚠ `request_json` — контракт вызова, который сложил ЗОВУЩИЙ (ручка) и положил
+    на модель. Движок переносит его сюда, не разбирая: что такое «тело запроса»,
+    знает только тот, кто его объявил. Пишется здесь, а не вторым заходом в
+    конце, затем что прогон читают и **пока он идёт** — у зависшего вопрос «чем
+    его позвали» первый по порядку, а отвечать на него будет уже нечем.
+    """
     if not ai_workflow_trace_enabled():
         return None
     try:
@@ -65,11 +73,13 @@ async def ai_workflow_trace_run_start(run_uuid: str, workflow_id, agent_id, user
                 """
                 INSERT INTO agent_workflow_trace
                     (run_uuid, parent_run_id, parent_step_id, depth, workflow_id, agent_id,
-                     user_id, session_uuid, request_uuid, prompt_user, variables_start)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     user_id, session_uuid, request_uuid, prompt_user, variables_start,
+                     request_json)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (run_uuid, parent_run_id, parent_step_id, depth, workflow_id, agent_id,
-                 user_id, session_uuid, request_uuid, _workflow_trace_truncate(prompt_user), _workflow_trace_json_dump(variables))
+                 user_id, session_uuid, request_uuid, _workflow_trace_truncate(prompt_user),
+                 _workflow_trace_json_dump(variables), _workflow_trace_json_dump(request_json))
             )
             return db.lastrowid
     except Exception as e:
@@ -96,6 +106,52 @@ async def ai_workflow_trace_run_finish(run_id: int | None, status: str,
             )
     except Exception as e:
         logger_info(f"⚠️ ai_workflow_trace_run_finish не записан: {e}")
+
+
+async def ai_workflow_trace_run_contract(run_id: int | None, request=None, response=None) -> None:
+    """Записать контракт вызова: чем прогон начали и что ушло зовущему.
+
+    ЗАПРОС и ОТВЕТ на странице — это `prompt_user` и `result`, то есть вход и
+    выход **workflow**. Контракт — соседний вопрос: что пришло по HTTP и что
+    по нему ответили. Из прогона он не восстанавливается: `variables` запроса
+    растворены в снапшоте старта вперемешку с переменными агента и ноды, а
+    `message_id` с `intentions` не хранились нигде.
+
+    Args:
+        run_id: номер прогона (`model.trace_run_id`); `None` — писать некуда.
+        request: тело запроса. `None` — не трогать колонку.
+        response: тело ответа или отказа. `None` — не трогать колонку.
+
+    ⚠⚠ Зовёт **ручка**, а не движок: контракт принадлежит тому, кто его
+    объявил. Движок про HTTP не знает, и у соседних входов (мини-приложение,
+    блог) контракты свои.
+
+    ⚠ Пишется двумя заходами — запрос в начале, ответ в конце, — поэтому
+    `None` значит «про это поле мне сейчас нечего сказать», а не «пусто».
+    Иначе второй заход затирал бы первый.
+
+    ⚠ Сбой записи не роняет вызов: контракт — журнал, а не работа. То же
+    правило, что у остальных функций модуля.
+    """
+    if run_id is None or (request is None and response is None):
+        return
+
+    fields, params = [], []
+    if request is not None:
+        fields.append('request_json = %s')
+        params.append(_workflow_trace_json_dump(request))
+    if response is not None:
+        fields.append('response_json = %s')
+        params.append(_workflow_trace_json_dump(response))
+
+    try:
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                f"UPDATE agent_workflow_trace SET {', '.join(fields)} WHERE id = %s",
+                (*params, run_id)
+            )
+    except Exception as e:
+        logger_info(f"⚠️ ai_workflow_trace_run_contract не записан: {e}")
 
 
 async def ai_workflow_trace_step(run_id: int | None, exec_index: int, step: dict,

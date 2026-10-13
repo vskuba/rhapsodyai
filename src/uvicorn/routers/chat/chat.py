@@ -21,6 +21,7 @@ from json_.json_ import json_from_string
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from src.ai.ai_workflow import ai_workflow_variables_global_get
+from src.ai.ai_workflow_trace import ai_workflow_trace_run_contract
 from src.auth.auth import AuthChecker
 from src.auth.auth_session import AuthSession
 from src.faster_whisper.faster_whisper_model import faster_whisper_model_transcribe
@@ -221,6 +222,17 @@ async def chat_ask_ai(
         "session_uuid": session_uuid,
         "tools": tools,
     })
+
+    # ⚠⚠ Контракт вызова — в журнал прогона, рядом с ним самим. ЗАПРОС и ОТВЕТ
+    # на странице трассы это `prompt_user` и `result`, то есть вход и выход
+    # **workflow**; чем позвали по HTTP — вопрос соседний и по прогону не
+    # восстановимый: `variables` запроса растворяются в снапшоте старта
+    # вперемешку с переменными агента, ноды и реестра.
+    #
+    # ⚠ Кладём ДО запуска: движок перенесёт это в строку журнала при её
+    # заведении, и контракт будет виден у идущего прогона — там, где он нужнее
+    # всего. После ответа писать поздно: у зависшего ответа не будет никогда.
+    framework_model.contract_request = json_request.model_dump()
     agent_manager.framework_workflow_run(framework_model, future, loop)
 
     # Долгие workflow (например, тестовые прогоны в цикле) поднимают таймаут
@@ -250,11 +262,26 @@ async def chat_ask_ai(
         # обмена прожила шесть дней незамеченной.
         intentions = framework_model.chat_intentions
 
-        return {"result": result_text, "message_id": message_id,
-                "intentions": intentions}
+        response = {"result": result_text, "message_id": message_id,
+                    "intentions": intentions}
+
+        # ⚠ Вторая половина контракта: что ушло зовущему. Пишется тем же, чем
+        # отвечаем, — одним объектом, чтобы в журнале лежало ровно отданное,
+        # а не его пересказ.
+        await ai_workflow_trace_run_contract(framework_model.trace_run_id, response=response)
+
+        return response
     except asyncio.TimeoutError:
         # Пытаемся отменить future, чтобы не висела в памяти
         future.cancel()
+        # ⚠⚠ Отказ — тоже ответ контракта, и в журнале он нужнее удачного:
+        # «почему зовущий не дождался» разбирают именно по нему. Без этой
+        # записи у прогона, оборванного таймаутом, ответа нет вовсе — и
+        # отличить его от оборванного «Стопом» нечем.
+        await ai_workflow_trace_run_contract(
+            framework_model.trace_run_id,
+            response={"status": 504,
+                      "detail": f"Превышено время ожидания ответа от ИИ ({timeout} сек.)"})
         raise HTTPException(status_code=504, detail=f"Превышено время ожидания ответа от ИИ ({timeout} сек.)")
     except Exception as e:
         backtrace = traceback.format_exc()
@@ -262,6 +289,9 @@ async def chat_ask_ai(
             f"❌ Ошибка при ответе web чата: {e}."
             f"Полный стек вызовов:\n{backtrace}"
         )
+        await ai_workflow_trace_run_contract(
+            framework_model.trace_run_id,
+            response={"status": 500, "detail": str(e)})
         raise e
 
 

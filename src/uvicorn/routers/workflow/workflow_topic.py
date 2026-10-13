@@ -43,8 +43,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from i18n_.i18n_ import i18n_translit_cyr
 from mysql_.mysql_ import mysql_get_db_async
-from src.ai.ai_workflow_import import (AiWorkflowImportConflictError,
-                                       AiWorkflowImportFailedError,
+from src.ai.ai_workflow_import import (AiWorkflowImportFailedError,
                                        AiWorkflowImportRejectedError)
 from src.ai.ai_workflow_topic_export import (
     AiWorkflowTopicExportNodeMissingError, ai_workflow_topic_export_payload)
@@ -124,10 +123,12 @@ async def workflow_topic_import(
     actor = getattr(user, 'username', None) or getattr(user, 'id', None)
     try:
         result = await ai_workflow_topic_import_apply(data, node_id, actor)
+    # ⚠ Ветки 409 здесь нет, в отличие от импорта узла: конфликт — это «номер из
+    # файла занят чужой записью», а слияние по коду номерами из файла не
+    # пользуется вовсе (`ai_workflow_topic_import.py`). Ловить ошибку, которую
+    # нечему поднять, значит обещать ответ, которого не бывает.
     except AiWorkflowImportRejectedError as error:
         raise HTTPException(status_code=400, detail=str(error))
-    except AiWorkflowImportConflictError as error:
-        raise HTTPException(status_code=409, detail=str(error))
     except AiWorkflowImportFailedError as error:
         raise HTTPException(status_code=500, detail=str(error))
     return {"status": "success", "result": result}

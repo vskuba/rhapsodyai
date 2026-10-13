@@ -278,7 +278,16 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 request_uuid=model.request_uuid,
                 prompt_user=model.workflow_variables.get('prompt_user'),
                 variables=model.workflow_variables,
+                # ⚠ Контракт вызова сложила ручка и положила на модель; движок
+                # переносит его в журнал не разбирая. Что такое «тело запроса»,
+                # знает только тот, кто его объявил, — у соседних входов
+                # (мини-приложение, блог) контракты свои.
+                request_json=getattr(model, 'contract_request', None),
             )
+            # ⚠ Номер строки журнала — на модель: по нему ручка допишет туда
+            # ответ контракта. Движок про HTTP не знает и писать его не вправе —
+            # он знает только, куда писать.
+            model.trace_run_id = trace_run_id
 
             # Регистрируем задачу запуска: кнопка «Стоп» отменяет её по run_uuid
             workflow_runs_active[run_uuid] = asyncio.current_task()

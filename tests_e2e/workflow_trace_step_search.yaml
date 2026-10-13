@@ -1,0 +1,70 @@
+name: Трасса — поиск по шагам прогона
+description: >-
+  Поле 🔍 над фильтрами ищет в шагах ОТКРЫТОГО прогона. Стережёт три числа:
+  слово из подписи страницы не совпадает ни с одним шагом, найденное совпадает
+  ровно с тем, что лежит в значениях, и подсветок на шаг не больше потолка.
+page: /admin/workflow_trace
+widths: [1440]
+
+# Прогон открываем щелчком по карточке — дорогой человека: прямой ссылки на
+# прогон страница не понимает, а на вкладке Success прогоны уже со всеми шагами.
+steps:
+  - click: '.status-tab[data-status="success"]'
+  - wait_for: 'return document.querySelectorAll(".run-card").length > 0'
+  - click: '.run-card'
+  - wait_for: 'return document.querySelectorAll("#runDetail .step-row").length > 0'
+  - wait: 600
+
+areas:
+  - name: Поле поиска
+    selector: '.step-search'
+    rules: [visible, inside]
+
+checks:
+  # ⚠⚠ Главный сторож. Поиск брал `textContent` всей строки шага, и слово из
+  # ПОДПИСИ («рендера» из «Вход (metadata после рендера)») совпадало со всеми
+  # шагами разом — как и `output`, `переход`, `success`. Поиск, отвечающий «все»
+  # на частое слово, бесполезен, а по виду работает.
+  #
+  # ⚠ Проверено возвратом ошибки: с прежним кодом случай краснеет — «ожидали 0,
+  # получили 3». Зелёный на сломанном коде не стерёг бы ничего.
+  - name: шагов, совпавших со словом из подписи страницы
+    expect: 0
+    js: |
+      const input = document.getElementById('stepSearch');
+      input.value = 'рендера';
+      input.dispatchEvent(new Event('input', {bubbles: true}));
+      await new Promise(r => setTimeout(r, 600));
+      return document.querySelectorAll('#runDetail .step-row.step-match').length;
+
+  # Совпало ровно то, что должно: счёт ведётся независимо, по значениям шагов.
+  # Вернись поиск к подписям — числа разойдутся, и вердикт покажет, на сколько.
+  - name: расхождение «нашлось» против «должно было найтись»
+    expect: 0
+    js: |
+      const rows = [...document.querySelectorAll('#runDetail .step-row')];
+      const dataOf = row => [...row.querySelectorAll('.search-in')]
+          .map(n => n.textContent).join('\n').toLowerCase();
+      const words = (dataOf(rows[0]).match(/[a-zа-яё_]{6,14}/g) || []);
+      const word = words[0] || (rows[0].querySelector('.step-name').textContent || '').trim();
+      if (!word) return 0;
+
+      const input = document.getElementById('stepSearch');
+      input.value = word;
+      input.dispatchEvent(new Event('input', {bubbles: true}));
+      await new Promise(r => setTimeout(r, 700));
+
+      const found = document.querySelectorAll('#runDetail .step-row.step-match').length;
+      const owed = rows.filter(row => dataOf(row).includes(word.toLowerCase())).length;
+      return Math.abs(found - owed);
+
+  # Потолок подсветок на шаг: значение шага — один `<pre>` на 20 000 знаков, и
+  # частое слово в нём встречается сотнями. Пока потолок считался по текстовым
+  # узлам, а не по совпадениям, запрос давал 715 428 подсветок и вешал страницу
+  # на 5 секунд. Число — на сколько превысили.
+  - name: подсветок сверх потолка в одном шаге
+    expect: 0
+    js: |
+      const over = [...document.querySelectorAll('#runDetail .step-row')]
+          .map(row => row.querySelectorAll('mark.search-hit').length - 50);
+      return Math.max(0, ...over, 0);
