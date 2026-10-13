@@ -149,6 +149,15 @@
 
     .search-all-text { flex: 1; min-width: 0; }
 
+    /* Окно поиска по шагам — тише основной подписи, но на виду: это оговорка
+       к найденному, а не отдельная новость */
+    .search-all-window {
+        flex: 0 0 auto;
+        color: #5b86ab;
+        font-size: 10px;
+        white-space: nowrap;
+    }
+
     .search-all-off {
         flex: 0 0 auto;
         border: none;
@@ -1776,7 +1785,20 @@
                 ? `найдено ${found.found}${found.limited ? ' (первые)' : ''} · ${found.ms} мс`
                 : `ничего не найдено · ${found.ms} мс`);
 
-        host.appendChild(el('span', 'search-all-text', `Поиск по всем: «${found.query}» — ${said}`));
+        const line = el('span', 'search-all-text', `Поиск по всем: «${found.query}» — ${said}`);
+        host.appendChild(line);
+
+        // ⚠⚠ Окно поиска по шагам обязано быть названо. Поля прогона (запрос,
+        // ответ, контракт) ищутся по всей истории, а шаги — только в недавних
+        // прогонах: на проде полный проход по ним стоит 7.6 с и упирается в
+        // потолок. Не скажи этого, человек считает поиск полным и делает вывод
+        // «такого не было» из того, что до этого места не дошли.
+        if (found.steps_window) {
+            line.title = `Шаги искались в последних ${found.steps_window} прогонах; `
+                + 'запрос, ответ и контракт — по всей истории';
+            host.appendChild(el('span', 'search-all-window',
+                `шаги: последние ${found.steps_window}`));
+        }
         const off = el('button', 'search-all-off', '✕');
         off.type = 'button';
         off.title = 'Вернуться ко всем прогонам';

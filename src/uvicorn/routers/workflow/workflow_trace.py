@@ -26,14 +26,39 @@ TRACE_SEARCH_MIN = 3
 # соединение пула, а их шесть на весь процесс.
 TRACE_SEARCH_TIMEOUT_MS = 8000
 
-# Сколько раз подстрока уходит в запрос — по числу колонок в `_trace_search_where`.
-# ⚠ Считается из самого условия, а не числом рядом: разойдись они, драйвер
-# получил бы не то число доводов и упал бы на ровном месте.
+# Колонки, по которым идёт поиск. ⚠ Условие и его доводы собираются **из этих
+# же списков** (`_trace_search_where` и `_trace_search_params`) — порядок `%s` и
+# порядок значений иначе разошлись бы молча, и драйвер упал бы на ровном месте.
 TRACE_SEARCH_RUN_COLUMNS = ('r.prompt_user', 'r.result', 'r.error',
                             'r.request_json', 'r.response_json')
 TRACE_SEARCH_STEP_COLUMNS = ('s.step_title', 's.metadata_rendered',
                              's.variables_changed', 's.output', 's.error')
-TRACE_SEARCH_MARKS = len(TRACE_SEARCH_RUN_COLUMNS) + len(TRACE_SEARCH_STEP_COLUMNS)
+
+# ⚠⚠⚠ Окно поиска ПО ШАГАМ — сколько последних строк трассы просматривать.
+#
+# Замерено на проде 13.10.2026, и замер перевернул оценку: таблица шагов там
+# **1311 МБ** (242 611 строк) против 147 МБ у самой трассы — я ожидал 174 МБ на
+# обе. Полный сбор совпадений по шагам стоит **7.6 с**, то есть упирается в
+# потолок и обрывается: без этого окна поиск на проде не работал вовсе, всегда
+# отвечая 504.
+#
+# | окно | совпадений | время |
+# |------|-----------|-------|
+# | вся таблица | 25 483 | 7625 мс |
+# | max-10000 | 8 824 | 3739 мс |
+# | max-3000 | 2 583 | 654 мс |
+# | max-1000 | 897 | 213 мс |
+#
+# ⚠ Поля самого прогона (`TRACE_SEARCH_RUN_COLUMNS`) окном НЕ ограничены: проход
+# по ним стоит 4 мс на тех же 29 тысячах прогонов. Асимметрия не прихоть — она
+# ровно по тому, что дорого: запрос, ответ и контракт ищутся по всей истории,
+# шаги — в недавнем.
+#
+# ⚠ Окно считается в строках трассы, а не в прогонах верхнего уровня: номера
+# дочерних прогонов лежат вперемешку с родительскими, и `id >= max - N` — то
+# единственное, что база берёт индексом. Сколько это прогонов, ручка считает и
+# говорит человеку (`steps_window`): на проде 5000 строк ≈ 600 прогонов.
+TRACE_SEARCH_STEP_WINDOW = 5000
 
 
 @router.get("/workflow_trace/run/list")
@@ -72,12 +97,20 @@ async def workflow_trace_run_list(
       строк, сколько нашлось в пределах `limit`, и признак `limited`;
     - **`variables_start` не ищется** — это самая толстая колонка таблицы (в
       среднем 2.9 КБ на строку), а её содержимое и так попадает в шаги через
-      `metadata_rendered` и `variables_changed`.
+      `metadata_rendered` и `variables_changed`;
+    - **шаги ищутся в окне** последних `TRACE_SEARCH_STEP_WINDOW` строк трассы,
+      поля прогона — по всей истории. Замер на проде: шаги 7.6 с против 4 мс у
+      полей, разница в их размере (1311 МБ против 147 МБ).
 
     ⚠ Поиск идёт **по запросу человека**, а не на каждую отрисовку страницы —
     в отличие от уборки, которая когда-то стояла здесь же и шла на каждое
     открытие (см. ниже). Это разница между «иногда дорого по нажатию» и
     «дорого всегда».
+
+    Ответ при поиске несёт `search`: `query`, `found`, `limited`, `ms` и
+    `steps_window` — сколько прогонов попало в окно поиска по шагам. ⚠ Окно
+    обязано быть названо: без него человек считает поиск полным по истории, а
+    он полон только по полям прогона.
     """
     where = ["r.depth = 0"]
     params: list = []
@@ -102,7 +135,7 @@ async def workflow_trace_run_list(
     searching = len(needle) >= TRACE_SEARCH_MIN
     if searching:
         where.append(_trace_search_where())
-        params.extend([f'%{needle}%'] * TRACE_SEARCH_MARKS)
+        params.extend(_trace_search_params(needle))
 
     where_sql = " AND ".join(where)
     limit = max(1, min(int(limit), 100))
@@ -184,7 +217,8 @@ async def workflow_trace_run_list(
             "pagination": {"current_page": 1, "total_pages": 1,
                            "total_records": len(rows)},
             "search": {"query": needle, "found": len(rows),
-                       "limited": len(rows) >= limit, "ms": spent},
+                       "limited": len(rows) >= limit, "ms": spent,
+                       "steps_window": await _trace_search_window_runs()},
         }
 
     return {
@@ -486,9 +520,15 @@ def _trace_search_where() -> str:
     `metadata_rendered` и `variables_changed`. Платить за неё вторым чтением
     всей таблицы — ради того же текста.
 
+    ⚠⚠⚠ **Шаги ограничены окном** (`TRACE_SEARCH_STEP_WINDOW`), поля прогона —
+    нет. Так сделано потому, что цена у них разная на два порядка: на проде
+    сбор совпадений по шагам стоит 7.6 с (таблица 1311 МБ), по полям прогона —
+    4 мс (147 МБ). Без окна поиск на проде обрывался потолком **всегда**.
+
     ⚠⚠ Порядок `%s` здесь и порядок доводов у зовущего — одно знание, и живёт
     оно в `TRACE_SEARCH_RUN_COLUMNS` / `TRACE_SEARCH_STEP_COLUMNS`. Допишешь
-    колонку мимо них — драйвер получит не то число доводов.
+    колонку мимо них — драйвер получит не то число доводов. Окно идёт **после**
+    них, своим доводом.
     """
     run_match = ' OR '.join(f'{column} LIKE %s' for column in TRACE_SEARCH_RUN_COLUMNS)
     step_match = ' OR '.join(f'{column} LIKE %s' for column in TRACE_SEARCH_STEP_COLUMNS)
@@ -497,7 +537,8 @@ def _trace_search_where() -> str:
         WITH RECURSIVE hit AS (
             SELECT DISTINCT s.run_id AS id
               FROM agent_workflow_trace_step s
-             WHERE {step_match}
+             WHERE s.run_id >= (SELECT MAX(id) - %s FROM agent_workflow_trace)
+               AND ({step_match})
             UNION
             SELECT t.parent_run_id
               FROM agent_workflow_trace t
@@ -506,3 +547,44 @@ def _trace_search_where() -> str:
         )
         SELECT id FROM hit
     ))"""
+
+
+def _trace_search_params(needle: str) -> list:
+    """Доводы к `_trace_search_where` — в том же порядке, в каком там стоят `%s`.
+
+    ⚠⚠ Живёт рядом с условием и собирается из тех же списков колонок. Пока
+    доводы считались числом (`[…] * MARKS`), окно поиска по шагам нельзя было
+    вставить в середину, не сломав счёт молча: драйвер получает позиционные
+    значения и о смысле их не знает.
+    """
+    like = f'%{needle}%'
+
+    return ([like] * len(TRACE_SEARCH_RUN_COLUMNS)
+            + [TRACE_SEARCH_STEP_WINDOW]
+            + [like] * len(TRACE_SEARCH_STEP_COLUMNS))
+
+
+async def _trace_search_window_runs() -> int:
+    """Сколько прогонов верхнего уровня попало в окно поиска по шагам.
+
+    Окно задано в строках трассы (`TRACE_SEARCH_STEP_WINDOW`), а человеку надо
+    сказать его в прогонах: «искали в последних 600» понятно, «в последних 5000
+    строках» — нет, он таких единиц не видит нигде на странице.
+
+    ⚠ Отдельным запросом, а не вместе с поиском: по индексу `(depth, status,
+    id)` он `Using index` и стоит единицы миллисекунд, а приделанный к поиску
+    подзапрос мешал бы оптимизатору выбирать план для дорогой части.
+
+    ⚠ Сбой — ноль, а не исключение: число это подпись под уже найденным, и
+    ронять из-за неё готовый ответ нельзя.
+    """
+    try:
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                "SELECT COUNT(*) AS qty FROM agent_workflow_trace "
+                "WHERE depth = 0 AND id >= (SELECT MAX(id) - %s FROM agent_workflow_trace)",
+                (TRACE_SEARCH_STEP_WINDOW,))
+            return int((await db.fetchone() or {}).get('qty') or 0)
+    except Exception as error:
+        logger_info(f"⚠️ Окно поиска не посчитано: {error}")
+        return 0
