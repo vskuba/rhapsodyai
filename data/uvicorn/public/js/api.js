@@ -1,5 +1,9 @@
 // Ошибка ответа API: вытягивает detail/message из JSON-тела, иначе — HTTP-статус.
 // FastAPI кладет причину в {detail: "..."} (или массив объектов при 422-валидации).
+//
+// ⚠ Код ответа едет на самой ошибке (`error.status`): отказ по существу (409 —
+// «так нельзя, и вот почему») вызывающий показывает иначе, чем поломку, а
+// отличить их по тексту нечем.
 async function apiError(response) {
     let message = `Ошибка: ${response.status}`;
     try {
@@ -10,7 +14,9 @@ async function apiError(response) {
     } catch {
         // тело не JSON (HTML от прокси и т.п.) — оставляем статус
     }
-    return new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    return error;
 }
 
 export async function getData(url) {

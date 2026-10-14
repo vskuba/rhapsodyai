@@ -5,7 +5,8 @@ from fastapi import APIRouter, Request, Depends, HTTPException
 from mysql_.mysql_ import mysql_get_db_async
 from src.ai.ai_workflow import (WORKFLOW_SUBFLOW_STEP_TYPES, WORKFLOW_VARIABLE_NODE_PUBLIC,
                                ai_workflow_subflow_ref_pattern_sql,
-                               ai_workflow_variables_node_get, ai_workflow_step_refs_remap)
+                               ai_workflow_variables_node_get, ai_workflow_step_refs_find,
+                               ai_workflow_step_refs_remap)
 from src.ai.ai_workflow_history import (HISTORY_ACTION_CREATE,
                                         HISTORY_ACTION_DELETE,
                                         HISTORY_ACTION_REORDER,
@@ -524,11 +525,36 @@ async def workflow_step_delete(
         workflow_step_id: int,
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_DELETE]))
 ):
+    """Удаление шага. ⚠⚠ **Отказ, пока на шаг ведут переходы других шагов.**
+
+    Цель перехода лежит строкой внутри JSON `metadata` чужого шага — внешним
+    ключом такую ссылку не удержать, и до этой проверки удаление оставляло её
+    висеть. Цена известна поимённо: 14.10.2026 в `dating_talk_intention` выход
+    #819 заменили новым #6586, старый удалили кнопкой, а два перехода на него
+    остались — и живой чат встал с `KeyError: 819`.
+
+    ⚠⚠ Падал **каждый** прогон, дошедший до шага с висячим переходом, а не
+    только тот, где условие истинно: движок достаёт индекс цели
+    (`workflow_steps_mapping[target_step_id]` в `ai_framework_manager`) **до**
+    проверки условия. Десять прогонов в `error` за восемнадцать минут, пять из
+    них — неотвеченные собеседники.
+
+    ⚠ Отказ **снимаемый**: уберите или перенацельте переходы — и шаг удалится.
+    Поэтому в ответе не слово «нельзя», а список ссылающихся: чинить — в них.
+
+    ⚠ Ссылка на самого себя удалению не мешает: петля уходит вместе с шагом.
+    """
     repo = AgentWorkflowStepRepository()
 
     # ⚠ Читаем **до** удаления: после него имени шага не существует, а запись
     # «удалён шаг #803» через месяц не читается никак.
     was = await repo.find(workflow_step_id) or {}
+
+    referrers = await _step_referrers_find(repo, workflow_id, workflow_step_id)
+    if referrers:
+        raise HTTPException(status_code=409,
+                            detail=_step_delete_refusal(was, workflow_step_id, referrers))
+
     done = await repo.delete(workflow_step_id)
 
     await workflow_history_write(
@@ -743,6 +769,53 @@ async def workflow_variable_delete(
 
     return {"result": gone}
 
+
+
+async def _step_referrers_find(repo: AgentWorkflowStepRepository,
+                               workflow_id: int, step_id: int) -> list:
+    """Шаги этого workflow, которые ведут переходом на `step_id`.
+
+    Args:
+        repo: уже заведённый репозиторий шагов — второй здесь ни к чему.
+        workflow_id: где ищем. ⚠ Только он: переходы ходят внутри одного
+            workflow (движок строит карту шагов по нему), и ссылка из чужого
+            была бы не помехой удалению, а отдельной поломкой.
+        step_id: шаг, который собрались удалять.
+
+    Returns:
+        list: `[{id, title}]` в порядке `position` — как их видит человек в
+        списке шагов; пусто, если на шаг никто не ведёт.
+
+    ⚠ Сам на себя — не помеха: петля уходит из базы вместе с шагом, висячей
+    ссылки после неё не остаётся.
+
+    ⚠ Форму ссылки спрашиваем у `ai_workflow_step_refs_find`, а не ищем
+    подстроку: номер лежит и числом, и строкой, а `"step_id": 7` нашёлся бы
+    внутри `"step_id": 76`.
+    """
+    rows = await repo.find_by({'workflow_id': workflow_id}) or []
+
+    return [{'id': int(one['id']), 'title': workflow_history_name(one)}
+            for one in sorted(rows, key=lambda row: int(row.get('position') or 0))
+            if int(one['id']) != int(step_id)
+            and int(step_id) in ai_workflow_step_refs_find(one.get('metadata') or '')]
+
+
+def _step_delete_refusal(was: dict, step_id: int, referrers: list) -> str:
+    """Слова отказа: кого удаляли и кто ему мешает.
+
+    ⚠ Текст уезжает в уведомление страницы как есть (`steps.js`,
+    `showNotification`), поэтому он — предложение для человека, а не код
+    ошибки: шаги названы и по имени, и по номеру. Имя подписано в редакторе,
+    номер — единственное, что различает два шага с одинаковым заголовком.
+    """
+    names = ', '.join(f'«{one["title"]}» (#{one["id"]})' if one['title'] else f'шаг #{one["id"]}'
+                      for one in referrers)
+    title = workflow_history_name(was)
+    whose = f'Шаг «{title}» (#{step_id})' if title else f'Шаг #{step_id}'
+
+    return (f'{whose} удалить нельзя: на него ведут переходы из {names}. '
+            f'Уберите или перенацельте их и повторите удаление.')
 
 
 async def _node_variables_public(node_id: int) -> list:

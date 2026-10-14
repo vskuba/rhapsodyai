@@ -441,7 +441,11 @@ async function deleteStep(stepId, stepTitle) {
         await loadWorkflowSteps(workflowId);
     } catch (e) {
         console.error("Ошибка при удалении шага:", e);
-        showNotification(`Ошибка: ${e.message}`, 'error');
+        // ⚠ 409 — не поломка, а отказ по существу: на шаг ведут переходы других
+        // шагов, и сервер прислал их список. Показываем его словами сервера и
+        // без «Ошибка:» — читать это человеку, и чинить ему же.
+        if (e.status === 409) showNotification(e.message, 'warning');
+        else showNotification(`Ошибка: ${e.message}`, 'error');
     }
 }
 
