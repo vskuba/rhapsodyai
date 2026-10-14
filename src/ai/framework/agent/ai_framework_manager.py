@@ -48,6 +48,19 @@ AI_FRAMEWORK_TO_NEXT_STEP = 'to_next_step'
 # а не текст, который прочтёт собеседник.
 AI_FRAMEWORK_NO_MORE_STEP = 'no more step available'
 
+# Чем помечен в трассе переход, чья цель не нашлась среди шагов workflow.
+#
+# ⚠⚠ **Висячая ссылка — не повод ронять прогон.** Цель перехода лежит строкой в
+# `metadata` чужого шага, и пережить она может что угодно: удаление шага до
+# заставы в ручке (14.10.2026, `KeyError: 819` и вставший чат), перенос между
+# базами, правку метаданных руками. Прогон обязан такое пережить: один кривой
+# переход не должен останавливать разговор.
+#
+# ⚠⚠ Но и молчать нельзя. Пропущенный переход — это прогон, ушедший **не той
+# дорогой**, и без отметки разбирать его будут по промптам. Поэтому помеха
+# пишется в трассу шага полем `error` при зелёном статусе и строкой в журнал.
+AI_FRAMEWORK_TRANSITION_GONE = 'переход на несуществующий шаг'
+
 # Шаги, которые сами возвращают ответ. ⚠ Им галочка ни к чему: они и так
 # заканчивают прогон, и запрет следующего шага для них ничего не значит.
 AI_FRAMEWORK_STEP_RETURNS = ('return_response_text', 'return_response_llm')
@@ -578,19 +591,28 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             trace_step_started = time.monotonic()
             trace_vars_before = dict(variables)
             trace_transition = None
+            # Помехи шага, не ставшие отказом: переход, чья цель не нашлась.
+            # ⚠ Свой список на каждый шаг — иначе помеха первого шага ехала бы
+            # в записи всех следующих.
+            trace_broken = []
             trace_output = None
             trace_llm_id = None  # заполняется после LLM-шага
             trace_tokens_input = None
             trace_tokens_output = None
 
             # Запись текущего шага в журнал (замыкание видит состояние итерации)
+            #
+            # ⚠⚠ Помехи шага (`trace_broken`) едут в `error` при **зелёном**
+            # статусе: пропущенный переход прогон не остановил, но знать о нём
+            # надо — это единственное место, где он виден. Своя причина, если
+            # она есть, сильнее: отказ важнее помехи.
             async def trace_current_step(status: str = 'success', error: str | None = None):
                 await ai_workflow_trace_step(
                     trace_run_id, trace_exec_index, current_step,
                     metadata_rendered=step_meta,
                     variables_changed=ai_workflow_trace_variables_diff(trace_vars_before, variables),
                     output=trace_output, transition=trace_transition,
-                    status=status, error=error,
+                    status=status, error=error or ('; '.join(trace_broken) or None),
                     duration_ms=int((time.monotonic() - trace_step_started) * 1000),
                     llm_id=trace_llm_id,
                     tokens_input=trace_tokens_input,
@@ -630,8 +652,20 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     variable_name = transition.get('variable')
                     operator = transition.get('operator')
                     value = transition.get('value')
+                    step_index = _transition_step_index(workflow_steps_mapping,
+                                                        transition.get('step_id'))
+
+                    # ⚠⚠ Цели нет — пропускаем ПЕРЕХОД, а не роняем прогон, и
+                    # помечаем помеху: разговор переживёт кривую ссылку, но
+                    # молча уйти не той дорогой не должен.
+                    if step_index is None:
+                        gone = (f"{AI_FRAMEWORK_TRANSITION_GONE} "
+                                f"#{transition.get('step_id')} (before)")
+                        logger_info(f"⛔ Шаг «{current_step['title']}»: {gone} — переход пропущен")
+                        trace_broken.append(gone)
+                        continue
+
                     target_step_id = int(transition.get('step_id'))
-                    step_index = workflow_steps_mapping[target_step_id]
                     next_step = steps[step_index]
 
                     condition = self._transition_condition_check(variables, variable_name, operator, value)
@@ -1320,8 +1354,19 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     variable_name = transition.get('variable')
                     operator = transition.get('operator')
                     value = transition.get('value')
+                    step_index = _transition_step_index(workflow_steps_mapping,
+                                                        transition.get('step_id'))
+
+                    # ⚠ Та же мягкость, что и у переходов «до»: родов два, и
+                    # починить один значило бы оставить половину поломки.
+                    if step_index is None:
+                        gone = (f"{AI_FRAMEWORK_TRANSITION_GONE} "
+                                f"#{transition.get('step_id')} (after)")
+                        logger_info(f"⛔ Шаг «{current_step['title']}»: {gone} — переход пропущен")
+                        trace_broken.append(gone)
+                        continue
+
                     target_step_id = int(transition.get('step_id'))
-                    step_index = workflow_steps_mapping[target_step_id]
                     next_step = steps[step_index]
 
                     condition = self._transition_condition_check(variables, variable_name, operator, value)
@@ -1546,6 +1591,41 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
         значений — чат-слой, а не workflow. request_uuid — служебная, в таблице ее нет."""
         variables_global = await ai_workflow_variables_global_get()
         return {v.get('name', '').strip() for v in variables_global if v.get('name')} | {'request_uuid'}
+
+
+def _transition_step_index(steps_mapping: dict, raw_step_id) -> int | None:
+    """Место цели перехода в списке шагов. `None` — цели нет.
+
+    Args:
+        steps_mapping: карта «номер шага → индекс в списке», как её строит
+            прогон; ключи целые.
+        raw_step_id: номер из перехода. Бывает и числом, и строкой: редактор
+            кладёт одно, перенос между базами приносит другое.
+
+    Returns:
+        int | None: индекс шага; `None` — шага с таким номером в этом workflow
+        нет или номер испорчен.
+
+    ## ⚠⚠ Почему `None`, а не исключение
+
+    Прежде индекс доставался прямым обращением (`steps_mapping[int(raw)]`), и
+    висячая ссылка роняла **весь прогон** — причём на любом заходе в шаг, а не
+    только когда условие истинно: индекс доставался до проверки условия. Так
+    встал живой чат 14.10.2026 (`KeyError: 819`).
+
+    ⚠ Испорченный номер (`''`, `None`, `'abc'`) — такая же «цели нет», а не
+    второй род беды: `int('')` бросал бы ровно так же громко.
+
+    ⚠⚠ Ноль — **найденная** цель (первый шаг списка). Вызывающий обязан
+    спрашивать `is None`, а не истинность: `if not step_index` увёл бы переход
+    на первый шаг в ветку «цели нет».
+    """
+    try:
+        step_id = int(raw_step_id)
+    except (TypeError, ValueError):
+        return None
+
+    return (steps_mapping or {}).get(step_id)
 
 
 def _to_next_step(step_meta: dict) -> bool:
