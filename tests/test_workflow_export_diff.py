@@ -36,6 +36,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from scripts.workflow_export_diff import (workflow_export_diff,
                                           workflow_export_diff_report)
 
+# Группа — `ai`, как у соседей по переносу (`test_workflow_export_import.py`,
+# `test_workflow_export_topics.py`): стережётся workflow, а не настройки.
+#
+# ⚠ Без группы файл **не запускался ни при одном прогоне по маркеру** — а так
+# гоняют сюиту обычно (`pytest -m ai`). Тест, который не идёт, стережёт ровно
+# ничего, и заметить это можно только сторожем `test_marks.py`.
+pytestmark = pytest.mark.ai
+
 
 def _payload(steps=(), variables=(), topics=(), questions=()):
     """Файл ноды из того малого, что сверке нужно. Остального в нём и не бывает."""

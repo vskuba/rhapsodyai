@@ -56,6 +56,18 @@ def _chat_ask_returns() -> list:
 
     ⚠ Берём только `return` самой ручки, не заходя во вложенные функции: у неё
     внутри есть свои, и их возвраты к контракту отношения не имеют.
+
+    ## ⚠⚠ Возврат бывает **именем**, а не словарём на месте
+
+    Ручка собирает ответ в переменную и отдаёт её (`response = {...}` →
+    `return response`) — так появился контракт прогона: один объект и в ответ, и
+    в журнал. Пока разбор искал только словарь-литерал, он не находил **ни
+    одного** возврата, и сторож стоял красным, ничего не стерегая: красное без
+    смысла читается как «сюита шумит» и не чинится неделями.
+
+    Поэтому имя разрешается по присваиваниям внутри самой ручки. А возврат,
+    который разобрать не вышло, — **отказ**, а не пропуск: именно пропуск и
+    сделал сторожа слепым.
     """
     source = Path('src/uvicorn/routers/chat/chat.py').read_text(encoding='utf-8')
 
@@ -68,9 +80,29 @@ def _chat_ask_returns() -> list:
              if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
              for node in ast.walk(child)}
 
-    return [node.value for node in ast.walk(door)
-            if isinstance(node, ast.Return) and node not in inner
-            and isinstance(node.value, ast.Dict)]
+    assigned = {target.id: node.value
+                for node in ast.walk(door)
+                if isinstance(node, ast.Assign) and node not in inner
+                and isinstance(node.value, ast.Dict)
+                for target in node.targets if isinstance(target, ast.Name)}
+
+    answers, unread = [], []
+    for node in ast.walk(door):
+        if not isinstance(node, ast.Return) or node in inner:
+            continue
+
+        if isinstance(node.value, ast.Dict):
+            answers.append(node.value)
+        elif isinstance(node.value, ast.Name) and node.value.id in assigned:
+            answers.append(assigned[node.value.id])
+        else:
+            unread.append(ast.unparse(node.value) if node.value else 'None')
+
+    assert not unread, \
+        (f'возврат ручки не разобрался, и контракт у него не проверен: {unread}. '
+         f'Собирайте ответ словарём — на месте или в переменной.')
+
+    return answers
 
 
 def test_the_engine_knows_the_real_tool_name():
