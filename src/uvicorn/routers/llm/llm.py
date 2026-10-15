@@ -18,6 +18,13 @@ router = APIRouter()
 LLM_ERROR_RESET_SECONDS = (15, 45, 180, 300)
 LLM_ERROR_RESET_DEFAULT = 300
 
+# ⚠ Anthropic требует версию API заголовком на **каждом** запросе, включая
+# справочный `GET /models`. Без него пинг возвращает 400 «anthropic-version:
+# header is required», и живая модель показывается в панели мёртвой. Сам вызов
+# модели идёт OpenAI-совместимой ручкой через pydantic-ai, и там заголовок
+# ставит клиент — потому несоответствие и всплыло только на пинге.
+LLM_PING_ANTHROPIC_VERSION = '2023-06-01'
+
 
 @router.get("/llm/list")
 async def llm_list(db=Depends(mysql_get_db_async), user=Depends(AuthChecker([AuthPermission.LLM_VIEW]))):
@@ -433,6 +440,9 @@ async def llm_ping(llm_id: int, user=Depends(AuthChecker([AuthPermission.LLM_UPD
             params['key'] = api_key  # Google API авторизуется query-параметром
         elif api_key:
             headers['Authorization'] = f'Bearer {api_key}'
+
+        if provider == 'claude':
+            headers['anthropic-version'] = LLM_PING_ANTHROPIC_VERSION
 
         started = time.monotonic()
         try:
