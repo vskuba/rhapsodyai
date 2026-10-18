@@ -512,6 +512,13 @@
         padding-bottom: 6px;
     }
 
+    /* Кнопки переноса открытого workflow — правый край строки с заголовком */
+    .form-header-actions {
+        margin-left: auto;
+        display: flex;
+        gap: 6px;
+    }
+
     .form-header-bottom {
         display: flex;
         justify-content: space-between;
@@ -2125,6 +2132,19 @@
                 <div class="form-header-top">
                     <span id="formTitle" style="display:none;"></span>
                     <div class="workflow-id">Workflow: #</div>
+                    <!-- Те же кнопки переноса, что в шапке сайдбара, но скоуп
+                         другой: файл одного открытого workflow (ключ `scope`
+                         в файле), импорт сносит только его, соседей не задевает. -->
+                    <div class="form-header-actions">
+                        <button type="button" class="btn-sidebar-action" id="exportWorkflowBtn"
+                                title="Скачать открытый workflow одним файлом">Экспорт</button>
+                        <button type="button" class="btn-sidebar-action" id="importWorkflowBtn"
+                                title="Заменить открытый workflow содержимым файла; соседние workflow ноды не тронуты">Импорт</button>
+                        <!-- Файл выбирается только этим полем; после чтения оно
+                             очищается, чтобы повторный выбор того же файла снова
+                             считался onchange. -->
+                        <input type="file" id="importWorkflowFile" accept=".json,application/json" hidden>
+                    </div>
                 </div>
                 <div class="form-header-bottom">
                     <div class="workflow-tabs" id="workflowTabs">

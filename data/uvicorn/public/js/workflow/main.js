@@ -763,6 +763,109 @@ if (importWorkflowsBtn && importWorkflowsFile) {
     };
 }
 
+/**
+ * Экспорт и импорт одного открытого workflow — тот же перенос, что у ноды в
+ * сайдбаре, но скоуп закладки: в файле один workflow с ключом `scope`,
+ * импорт сносит только свою запись (совпав и id, и именем), соседей не задевает.
+ * Сервер скоуп читает из файла, детали — `src/ai/ai_workflow_export.py`.
+ */
+const exportWorkflowBtn = document.getElementById('exportWorkflowBtn');
+const importWorkflowBtn = document.getElementById('importWorkflowBtn');
+const importWorkflowFile = document.getElementById('importWorkflowFile');
+
+if (exportWorkflowBtn) {
+    exportWorkflowBtn.onclick = async () => {
+        const id = editorWorkflowId();
+        if (!id) {
+            showNotification('Workflow не открыт — нечего экспортировать', 'error');
+            return;
+        }
+        exportWorkflowBtn.disabled = true;
+        try {
+            const res = await getData(`/workflow/export?workflow_id=${encodeURIComponent(id)}`);
+            const payload = res.result;
+            const name = (payload.workflows[0] && payload.workflows[0].name) || 'workflow';
+            fileDownloadJson(payload, `workflow_${name.replace(/\s+/g, '_')}_${fileStamp()}.json`);
+            let message = `Экспортирован workflow «${name}», шагов: ${payload.steps.length}`;
+            if (payload.warnings.length) message += ` — предупреждений: ${payload.warnings.length}`;
+            showNotification(message, payload.warnings.length ? 'warning' : 'success');
+        } catch (e) {
+            showNotification(e.message, 'error');
+        } finally {
+            exportWorkflowBtn.disabled = false;
+        }
+    };
+}
+
+if (importWorkflowBtn && importWorkflowFile) {
+    importWorkflowBtn.onclick = () => {
+        if (!editorWorkflowId()) {
+            showNotification('Workflow не открыт — нечего заменять', 'error');
+            return;
+        }
+        importWorkflowFile.click();
+    };
+
+    importWorkflowFile.onchange = async () => {
+        const file = importWorkflowFile.files[0];
+        // Снимаем выбор сразу: повторный выбор того же файла должен снова дать onchange.
+        importWorkflowFile.value = '';
+        if (!file) return;
+
+        let payload;
+        try {
+            payload = JSON.parse(await file.text());
+        } catch (e) {
+            showNotification(`Файл не читается как JSON: ${e.message}`, 'error');
+            return;
+        }
+        const scoped = (payload.workflows || [])[0];
+        if (payload.scope !== 'workflow' || !scoped) {
+            // Узловой файл сносит все workflow ноды — это не дело кнопки
+            // редактора, для него свой импорт в сайдбаре.
+            showNotification('В файле нода целиком, а не один workflow — '
+                + 'импортируйте такой файл через сайдбар', 'error');
+            return;
+        }
+
+        // Импорт сносит запись, лишь совпав и id, и именем; когда открытая
+        // закладка файлу не равна, это надо показать, а не подменять цель молча.
+        const openId = editorWorkflowId();
+        const openName = document.getElementById('name')?.value.trim() || '';
+        const openSteps = document.querySelectorAll('.step-item-block').length;
+        const foreign = [];
+        if (String(scoped.id) !== String(openId)) foreign.push(`в файле #${scoped.id}, в редакторе #${openId}`);
+        if (scoped.name !== openName) foreign.push(`в файле «${scoped.name}», в редакторе «${openName || '—'}»`);
+        const question = foreign.length
+            ? `Открытый workflow отличается от записи файла (${foreign.join('; ')}).\n\n` +
+              `Импорт придёт под ноду файла своей записью «${scoped.name}», соседи не изменятся. ` +
+              `Шагов в файле: ${payload.steps.length}.`
+            : `Заменить workflow «${scoped.name}» (#${scoped.id}) его же файлом?\n\n` +
+              `Сейчас шагов: ${openSteps}. В файле: ${payload.steps.length}. ` +
+              `Соседние workflow ноды не изменятся.`;
+        if (!confirm(question)) return;
+
+        importWorkflowBtn.disabled = true;
+        try {
+            const res = await postData('/workflow/import', payload);
+            const result = res.result;
+            let message = `Импорт: workflow ${result.workflows_imported}, шагов ${result.steps_imported}`;
+            if (result.agents_rebound) message += `, агентов возвращено ${result.agents_rebound}`;
+            showNotification(message, 'success');
+            (result.notes || []).forEach(note => showNotification(note, 'warning'));
+
+            // Замена по совпавшим id и имени — закладка та же, выбор остаётся
+            // валидным: перерисовать список и форму по свежим данным.
+            await initWorkflowManager();
+        } catch (e) {
+            // Сервер при любой ошибке откатывает транзакцию — база остаётся как была.
+            showNotification(e.message, 'error');
+        } finally {
+            importWorkflowBtn.disabled = false;
+        }
+    };
+}
+
 // Индекс «Undefined переменных»: сырьё догрузилось или кэш сброшен — значки в
 // левом списке расставляют заново, не дожидаясь, пока человек полистает карусель.
 onUndefinedIndexChange(() => {

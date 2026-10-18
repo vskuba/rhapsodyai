@@ -14,8 +14,11 @@ id**, а не полагается на автоинкремент, и `metadata
 (`ai_workflow.py`); политика здесь своя — id сохраняем и переписываем их
 только при столкновении с чужими записями.
 
-⚠ **Импорт заменяет только ноды из файла**: чистит workflow этих нод и
-вставляет свои. Остальные ноды не трогает. `agent.workflow_id` — внешний ключ
+⚠ **Импорт заменяет только то, что приносит файл**: узловой файл чистит
+workflow всех нод из файла и вставляет свои; файл одного workflow (ключ
+`scope: "workflow"`, его снимает кнопка шапки редактора) сносит только свою
+запись — и то лишь совпав с ней и id, и именем, — соседей по ноде не задевая.
+Чужие ноды не трогает никто. `agent.workflow_id` — внешний ключ
 `SET NULL`: импорт снимает привязки агентов и гасит их обратно (агент переживает
 замену своего workflow).
 
@@ -78,13 +81,18 @@ class AiWorkflowImportFailedError(AiWorkflowImportError):
 
 
 async def ai_workflow_import_apply(data, actor):
-    """Заменить workflow ноды, чей это файл. Остальные ноды не трогаются.
+    """Заменить то, что приносит файл: узловой — все workflow ноды, scoped —
+    один workflow. Остальные ноды и чужие workflow той же ноды не трогаются.
 
-    Порядок внутри одной транзакции: снимок привязок агентов → чистка ноды
-    (workflow, а при наличии секции — и группы тем) → вставка workflow и тем
-    **с исходными id** → шаги **с исходными id** → переменные (по строке на
-    каждый workflow-владелец) → переменные ноды и их связи → обратная привязка
-    агентов. Любая ошибка — откат, база как была.
+    Порядок внутри одной транзакции: снимок привязок агентов → чистка под
+    скоупа файла (workflow, а при наличии секции — и группы тем) → вставка
+    workflow и тем **с исходными id** → шаги **с исходными id** → переменные
+    (по строке на каждый workflow-владелец) → переменные ноды и их связи →
+    обратная привязка агентов. Любая ошибка — откат, база как была.
+
+    Скоуп берётся из ключа `scope`; файла без ключа — узловой, как родился.
+    Scoped-файл (`scope: "workflow"`) сносит только свою запись — и то лишь
+    когда та совпала и id, и именем, — соседей по ноде он не задевает.
 
     Совпадения на чужих записях:
     - `id` или имя workflow занято чужим workflow → 409, файл не импортируется;
@@ -93,9 +101,10 @@ async def ai_workflow_import_apply(data, actor):
     - `id` группы тем занят группой чужой ноды → все группы файла получают
       новые id, ссылки шагов переписывает `ai_workflow_topic_group_refs_remap`.
 
-    ⚠⚠ Темы трогаются **только если файл несёт их секцию**. Файл, снятый до её
-    появления, темы принимающей стороны не чистит: иначе перенос workflow
-    старым файлом стирал бы чужую работу молча.
+    ⚠⚠ Темы трогаются **только если файл несёт их секцию** — а scoped-файл
+    её не несёт вовсе, см. выше. Файл, снятый до появления секции, темы
+    принимающей стороны не чистит: иначе перенос workflow старым файлом
+    стирал бы чужую работу молча.
     """
     payload = _validate_import_payload(data)
 
@@ -108,7 +117,7 @@ async def ai_workflow_import_apply(data, actor):
             workflows = payload['workflows']
             workflow_ids = [workflow['id'] for workflow in workflows]
 
-            wipe = await _collect_wipe_set(db, target_node_id)
+            wipe = await _collect_wipe_set(db, target_node_id, payload)
 
             await _check_collisions(db, payload, workflow_ids, wipe)
             step_mapping = await _assign_step_ids(db, payload, wipe)
@@ -164,8 +173,12 @@ async def ai_workflow_import_apply(data, actor):
                      f'{len(topic_group_mapping)} групп файла получили новые id, '
                      f'ссылки шагов на них переписаны')
     if not payload['topics_managed']:
-        notes.append('В файле нет секции тем (он старше её появления) — '
-                     'группы тем принимающей стороны не тронуты')
+        if payload['scope'] == 'workflow':
+            notes.append('Файл одного workflow: темы принадлежат ноде, и импорт '
+                         'их не тронул')
+        else:
+            notes.append('В файле нет секции тем (он старше её появления) — '
+                         'группы тем принимающей стороны не тронуты')
     if payload['warnings']:
         notes.extend(payload['warnings'])
 
@@ -251,6 +264,13 @@ def _validate_import_payload(data):
         raise AiWorkflowImportRejectedError(
             f'Неизвестная версия формата: {data.get("version")} (ожидается {WORKFLOW_EXPORT_VERSION})')
 
+    # Файл без ключа `scope` — узловой, как родился: его секции тем обязаны
+    # быть на месте, их отсутствие читается как «старый файл», а не как выбор.
+    scope = data.get('scope', 'node')
+    if scope not in ('node', 'workflow'):
+        raise AiWorkflowImportRejectedError(
+            f'Поле «scope»: «node» или «workflow», получено {scope!r}')
+
     for key in ('workflows', 'steps', 'variables', 'variable_links',
                 'node_variables', 'node_variable_links'):
         if not isinstance(data.get(key), list):
@@ -265,6 +285,16 @@ def _validate_import_payload(data):
         node = {'name': ai_workflow_export_strip(raw_node['name'])[:50]}
 
     workflows = _validate_workflows(data['workflows'])
+    if scope == 'workflow':
+        # Тем у файла одного workflow нет и быть не может: они принадлежат
+        # ноде, и чужой workflow файл их не чистит — секцию свою неси
+        # отдельным файлом тем.
+        if len(workflows) != 1:
+            raise AiWorkflowImportRejectedError(
+                f'Файл одного workflow: ровно один workflow внутри, здесь {len(workflows)}')
+        if any(key in data for key in ('topic_groups', 'topics', 'topic_questions')):
+            raise AiWorkflowImportRejectedError(
+                'Файл одного workflow не несёт тем: они принадлежат ноде, а не ему')
     steps = _validate_steps(data['steps'], workflows)
     variables = _validate_variables(data['variables'])
     variable_links = _validate_variable_links(data['variable_links'], variables, workflows)
@@ -281,6 +311,7 @@ def _validate_import_payload(data):
         'variable_links': variable_links,
         'node_variables': node_variables,
         'node_variable_links': node_variable_links,
+        'scope': scope,
         'topics_managed': topics['managed'],
         'topic_groups': topics['topic_groups'],
         'topics': topics['topics'],
@@ -561,10 +592,21 @@ async def _resolve_target_node(db, node):
     return found['id']
 
 
-async def _collect_wipe_set(db, target_node_id):
-    """Существующие workflow заменяемой ноды: их id — объём удаления."""
-    await db.execute('SELECT `id` FROM `agent_workflow` WHERE `node_id` <=> %s ORDER BY `id`',
-                     (target_node_id,))
+async def _collect_wipe_set(db, target_node_id, payload):
+    """Что сносит импорт: узловой файл — все workflow ноды, scoped — только свой.
+
+    Запись попадает под зачистку только совпав **и id, и именем**: это та же
+    запись, а не чужая с похожим id. Чужой workflow ноды scoped-файл не
+    задевает — в этом весь смысл файла одного workflow, узловой сносил бы
+    соседей молча.
+    """
+    if payload['scope'] == 'workflow':
+        workflow = payload['workflows'][0]
+        await db.execute('SELECT `id` FROM `agent_workflow` WHERE `id` = %s AND `name` = %s',
+                         (workflow['id'], workflow['name']))
+    else:
+        await db.execute('SELECT `id` FROM `agent_workflow` WHERE `node_id` <=> %s ORDER BY `id`',
+                         (target_node_id,))
     return [row['id'] for row in (await db.fetchall() or [])]
 
 

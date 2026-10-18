@@ -17,7 +17,9 @@
 - конфликт: чужой id и занятое имя → 409, битый файл → 400, нет такой ноды → 400;
 - откат: падение в середине импорта не трогает ноду;
 - предупреждения: цель `workflow_invoke` вне файла не тянется, а видна в warnings;
-- одно имя у двух workflow — две записи в файле, дубль внутри workflow сливается.
+- одно имя у двух workflow — две записи в файле, дубль внутри workflow сливается;
+- скоуп одного workflow (`workflow_id`, ключ `scope`): в файле только он,
+  импорт сносит только свою запись, соседи по ноде остаются нетронутыми.
 """
 
 import json
@@ -232,6 +234,101 @@ class TestWorkflowExportImport:
         assert len(untouched["steps"]) == 2
 
 
+class TestWorkflowScopedExportImport:
+    """Файл одного открытого workflow: скоуп, соседи целы, отказы.
+
+    Кнопки шапки редактора носят один workflow: `workflow_id`, ключ `scope`
+    в файле, и импорт сносит только свою запись — соседей по ноде не задевая.
+    """
+
+    async def test_scoped_export_shape(self, client: httpx.AsyncClient, probe: dict):
+        """Файл несёт один workflow, его шаги и переменные; секций тем — нет вовсе."""
+        payload = await _export_workflow(client, probe["wf_one"])
+
+        assert payload["scope"] == "workflow"
+        assert payload["version"] == 1
+        assert payload["node"]["name"] == NODE_NAME
+        assert [w["id"] for w in payload["workflows"]] == [probe["wf_one"]]
+        # Чужой workflow в файле лишний: шаги, переменные и связи — только свои.
+        assert {s["id"] for s in payload["steps"]} == {probe["invoke_step"]}
+        assert [v["name"] for v in payload["variables"]] == [f"{WF_ONE}_v"]
+        assert [v["name"] for v in payload["node_variables"]] == [f"{WF_ONE}_nv"]
+        assert {l["workflow_id"] for l in payload["variable_links"]} == {probe["wf_one"]}
+        # Темы принадлежат ноде: в файле одного workflow их секций нет — и
+        # пустых списков: отсутствие ключа читается импортом как «не трогать».
+        assert "topic_groups" not in payload
+        assert "topics" not in payload
+        assert "topic_questions" not in payload
+
+    async def test_scoped_roundtrip_spares_neighbors(self, client: httpx.AsyncClient, probe: dict):
+        """Круговой проходscoped-файла: id целы, Metadata цела, сосед цел."""
+        payload = await _export_workflow(client, probe["wf_one"])
+
+        response = await client.post("/workflow/import", json=payload)
+        assert response.status_code == 200, response.text
+        result = response.json()["result"]
+        assert result["workflows_removed"] == 1, "scoped-файл сносит только свою запись"
+        assert result["workflows_imported"] == 1
+
+        again = await _export_workflow(client, probe["wf_one"])
+        assert {s["id"] for s in again["steps"]} == {probe["invoke_step"]}
+        strip_id = lambda rows: [{k: v for k, v in r.items() if k != "id"} for r in rows]
+        before = {s["id"]: s["metadata"] for s in payload["steps"]}
+        after = {s["id"]: s["metadata"] for s in again["steps"]}
+        assert before == after, "round-trip не должен менять metadata"
+        assert strip_id(payload["variables"]) == strip_id(again["variables"])
+
+        # Сосед по ноде — весь, со своим шагом и его metadata: в этом весь смысл
+        # файла одного workflow.
+        node_file = await _export(client, probe["node_id"])
+        assert {w["id"] for w in node_file["workflows"]} == {probe["wf_one"], probe["wf_two"]}
+        assert {s["id"] for s in node_file["steps"]} == {probe["invoke_step"], probe["invoke_ref"]}
+        neighbor = {s["id"]: s for s in node_file["steps"]}[probe["invoke_ref"]]
+        assert "workflow_invoke" in neighbor["metadata"]
+
+    async def test_scoped_import_conflict_foreign_id(self, client: httpx.AsyncClient, probe: dict):
+        """Чужой id (занят соседом с другим именем) → 409, и соседи целы."""
+        payload = await _export_workflow(client, probe["wf_one"])
+        # Подмена последовательная, как в узловом тесте: запись, её шаги и
+        # связи — иначе отказ приходит на сверке ссылок, а не на конфликте id.
+        payload["workflows"][0]["id"] = probe["wf_two"]
+        for step in payload["steps"]:
+            step["workflow_id"] = probe["wf_two"]
+        for link in payload["variable_links"] + payload["node_variable_links"]:
+            if link["workflow_id"] == probe["wf_one"]:
+                link["workflow_id"] = probe["wf_two"]
+
+        response = await client.post("/workflow/import", json=payload)
+        assert response.status_code == 409, response.text
+
+        untouched = await _export(client, probe["node_id"])
+        assert {w["id"] for w in untouched["workflows"]} == {probe["wf_one"], probe["wf_two"]}
+        assert {s["id"] for s in untouched["steps"]} == {probe["invoke_step"], probe["invoke_ref"]}
+
+    async def test_scoped_file_rejects_contradictions(self, client: httpx.AsyncClient, probe: dict):
+        """Скоуп не сходится с содержимым файла, скоуп неведом, workflow нет — отказать."""
+        payload = await _export_workflow(client, probe["wf_one"])
+        node_file = await _export(client, probe["node_id"])
+
+        # Два workflow под скоупом одного — файл противоречит себе: либо
+        # узловой, либо неси один.
+        crowded = {**node_file, "scope": "workflow"}
+        assert (await client.post("/workflow/import", json=crowded)).status_code == 400
+
+        unknown = {**payload, "scope": "galaxy"}
+        assert (await client.post("/workflow/import", json=unknown)).status_code == 400
+
+    async def test_export_wants_exactly_one_param(self, client: httpx.AsyncClient, probe: dict):
+        """Ни одного параметра — неясно, что выгружать; оба разом — тоже."""
+        both = await client.get(
+            f"/workflow/export?node_id={probe['node_id']}&workflow_id={probe['wf_one']}")
+        assert both.status_code == 400, both.text
+        assert (await client.get("/workflow/export")).status_code == 400
+
+        ghost = await client.get("/workflow/export?workflow_id=999999")
+        assert ghost.status_code == 404, "нет такого workflow — не 500 и не пусто"
+
+
 # ---------------------------------------------------------------------------
 # Приватное: одноразовые данные и обращения, которыми пользуется всё выше
 # ---------------------------------------------------------------------------
@@ -312,6 +409,13 @@ async def _drop_probe(client: httpx.AsyncClient, probe: dict) -> None:
 
 async def _export(client: httpx.AsyncClient, node_id) -> dict:
     response = await client.get(f"/workflow/export?node_id={node_id}")
+    assert response.status_code == 200, response.text
+    return response.json()["result"]
+
+
+async def _export_workflow(client: httpx.AsyncClient, workflow_id) -> dict:
+    """Файл одного workflow — его снимок кнопкой шапки редактора."""
+    response = await client.get(f"/workflow/export?workflow_id={workflow_id}")
     assert response.status_code == 200, response.text
     return response.json()["result"]
 

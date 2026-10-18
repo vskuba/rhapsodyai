@@ -37,6 +37,13 @@ JSON, а пересборка через `json.dumps` их необратимо 
   от переменных только с нодой;
 - `agent_workflow_trace*`, `workflow_run` — журнал выполнения, не настройка;
 - `browser_workflow*` — отдельная подсистема браузера.
+
+⚠ **Файл бывает на один workflow, не только на ноду.** Кнопки шапки редактора
+проносят один открытый workflow: тогда в payload лежит ключ `scope: "workflow"`,
+в `workflows` одна запись, а секций тем нет вовсе — темы принадлежат ноде, и
+файл одного workflow не вправе чистить темы чужих workflow (отсутствующая
+секция читается импортом как «темы не трогать», тот же приём, что у старых
+файлов без секции). Файл без ключа `scope` — узловой, как родился.
 """
 
 from datetime import datetime, timezone
@@ -58,6 +65,10 @@ class AiWorkflowExportNodeMissingError(AiWorkflowExportError):
     """Ноды с таким id нет на этой инсталляции — экспортировать нечего."""
 
 
+class AiWorkflowExportWorkflowMissingError(AiWorkflowExportError):
+    """Workflow с таким id нет на этой инсталляции — экспортировать нечего."""
+
+
 def ai_workflow_export_strip(value):
     """`CHAR(n)` дополняет имя пробелами до ширины — снимаем на границе файла.
 
@@ -67,12 +78,16 @@ def ai_workflow_export_strip(value):
     return value.strip() if isinstance(value, str) else value
 
 
-async def ai_workflow_export_payload(node_pk):
-    """Собрать файл узла: строки, шаги, переменные, связи — дословно, с id.
+async def ai_workflow_export_payload(node_pk, workflow_pk=None):
+    """Собрать файл: строки, шаги, переменные, связи — дословно, с id.
 
     `node_pk` — id ноды или `None` (псевдонода «Вне нод», `node_id IS NULL`).
-    Ответ пригоден для `POST /workflow/import` как есть.
+    `workflow_pk` — id одного workflow: тогда файл скоупнут — только он,
+    ключ `scope: "workflow"` и без секций тем (темы принадлежат ноде, файл
+    одного workflow их не трогает). Ответ пригоден для `POST /workflow/import`
+    как есть.
     """
+    scoped = workflow_pk is not None
     payload = {
         'format': WORKFLOW_EXPORT_FORMAT,
         'version': WORKFLOW_EXPORT_VERSION,
@@ -84,13 +99,24 @@ async def ai_workflow_export_payload(node_pk):
         'variable_links': [],
         'node_variables': [],
         'node_variable_links': [],
-        'topic_groups': [],
-        'topics': [],
-        'topic_questions': [],
         'warnings': [],
     }
+    if scoped:
+        payload['scope'] = 'workflow'
 
     async with mysql_get_db_async() as db:
+        if scoped:
+            workflow_rows = await _workflow_export_fetch_workflows(db, None, workflow_pk)
+            if not workflow_rows:
+                raise AiWorkflowExportWorkflowMissingError(f'Workflow {workflow_pk} не найден')
+            # Нода берётся с самой записи: имя ноды — подпись для принимающей
+            # стороны, а на этой установке workflow живёт под своей нодой.
+            node_pk = workflow_rows[0]['node_id']
+        else:
+            workflow_rows = await _workflow_export_fetch_workflows(db, node_pk)
+
+        workflow_ids = [row['id'] for row in workflow_rows]
+
         if node_pk is not None:
             await db.execute('SELECT `name` FROM `node` WHERE `id` = %s', (node_pk,))
             node = await db.fetchone()
@@ -99,9 +125,6 @@ async def ai_workflow_export_payload(node_pk):
             # `id` ноды в файл не пишем: импорт опознаёт ноду по имени — id
             # на принимающей стороне будет свой, а этот только сбивал бы.
             payload['node'] = {'name': ai_workflow_export_strip(node['name'])}
-
-        workflow_rows = await _workflow_export_fetch_workflows(db, node_pk)
-        workflow_ids = [row['id'] for row in workflow_rows]
 
         for row in workflow_rows:
             payload['workflows'].append({
@@ -131,12 +154,22 @@ async def ai_workflow_export_payload(node_pk):
         if node_pk is not None:
             payload['node_variables'], payload['node_variable_links'] = \
                 await _workflow_export_fetch_node_variables(db, node_pk, workflow_ids)
-            payload['topic_groups'], payload['topics'], payload['topic_questions'] = \
-                await ai_workflow_export_topics_fetch(db, node_pk)
+
+        if scoped:
+            # Темы принадлежат ноде, а не workflow: секций тем в файле нет, и
+            # импорт их не трогает — тот же приём, что с чтением старых файлов
+            # без секции. Ссылки шагов на группы видны здесь как чужие.
+            exported_group_ids = set()
+        else:
+            if node_pk is not None:
+                payload['topic_groups'], payload['topics'], payload['topic_questions'] = \
+                    await ai_workflow_export_topics_fetch(db, node_pk)
+            else:
+                payload['topic_groups'] = payload['topics'] = payload['topic_questions'] = []
+            exported_group_ids = {group['id'] for group in payload['topic_groups']}
 
         payload['warnings'].extend(
-            _workflow_export_warn_foreign_topic_groups(
-                payload['steps'], {group['id'] for group in payload['topic_groups']}))
+            _workflow_export_warn_foreign_topic_groups(payload['steps'], exported_group_ids))
 
     return payload
 
@@ -271,10 +304,23 @@ async def ai_workflow_export_topics_fetch(db, node_pk):
     return groups, topics, questions
 
 
-async def _workflow_export_fetch_workflows(db, node_pk):
-    """Строки `agent_workflow` узла; для псевдоноды — `node_id IS NULL`."""
-    await db.execute('SELECT `id`, `name`, `title`, `description`, `position`, `group_name`, `subflow` '
-                     'FROM `agent_workflow` WHERE `node_id` <=> %s ORDER BY `id`', (node_pk,))
+_WORKFLOW_COLUMNS = ('`id`, `node_id`, `name`, `title`, `description`, `position`, '
+                    '`group_name`, `subflow`')
+
+
+async def _workflow_export_fetch_workflows(db, node_pk, workflow_pk=None):
+    """Строки `agent_workflow` узла; для псевдоноды — `node_id IS NULL`.
+
+    `workflow_pk` — одна запись по id: поле `node_id` в выборке держим даже
+    когда нода не спрашивают — scoped-файл берёт имя ноды с самой строки.
+    """
+    if workflow_pk is not None:
+        sql, params = (f'SELECT {_WORKFLOW_COLUMNS} FROM `agent_workflow` '
+                      'WHERE `id` = %s ORDER BY `id`'), (workflow_pk,)
+    else:
+        sql, params = (f'SELECT {_WORKFLOW_COLUMNS} FROM `agent_workflow` '
+                      'WHERE `node_id` <=> %s ORDER BY `id`'), (node_pk,)
+    await db.execute(sql, params)
     return await db.fetchall() or []
 
 
