@@ -19,7 +19,9 @@
 
 Пустые обе — единственный отказ: такая строка не говорит ничего.
 """
+import re
 from datetime import datetime, timedelta
+from difflib import SequenceMatcher
 
 from datetime_.datetime_ import datetime_utc_now
 from mysql_.mysql_ import mysql_get_db_async
@@ -53,6 +55,20 @@ COMPANION_SESSION_TEXT_MAX = {'chat': 1000, 'mail': 2000}
 # сегодняшнее — вчерашняя строка к этому ответу не относится и остаётся в
 # ленте своей репликой. Подробности — в `_pending_absorb`.
 COMPANION_SESSION_PENDING_SEC = 86400
+
+# Выше этой похожести две реплики считаются одной и той же.
+#
+# ⚠ Число не выведено, а подобрано на живых ответах, и взято то же, что стояло у
+# прежней проверки по сессии: ниже начинают слипаться разные реплики с общим
+# хвостом («…расскажи подробнее»), выше перестаёт ловиться перефразировка.
+COMPANION_SESSION_REPEAT_RATIO = 0.85
+
+# Сколько последних обменов пары сравнивать, если предел не задали.
+#
+# ⚠ Пять, а не двадцать: повтор ловится у свежего хвоста разговора, а на длинном
+# окне растёт цена ложного срабатывания — вопрос, заданный месяц назад,
+# законно задают снова.
+COMPANION_SESSION_REPEAT_LIMIT = 5
 
 
 async def companion_session_add(owner_unique_id: str, companion_unique_id: str,
@@ -485,6 +501,109 @@ async def companion_session_rows(owner_unique_id: str,
     return list(reversed(rows or []))
 
 
+async def companion_session_repeat_check(owner_unique_id: str,
+                                         companion_unique_id: str,
+                                         response: str,
+                                         question: str = '',
+                                         kind: str = 'chat',
+                                         limit: int = 0) -> dict:
+    """Не повторяет ли черновик того, что мы уже писали этому человеку.
+
+    Анти-луп: «сплю уже» на каждое «ок». Повтор — когда выполнены **оба**
+    условия: наш черновик повторяет один из последних ответов этой паре И его
+    сообщение повторяет одно из прошлых. Один и тот же ответ на РАЗНЫЕ вопросы
+    законен («да», «нет»), поэтому новое входящее снимает подозрение.
+
+    Args:
+        owner_unique_id: ключ нашей стороны (`companion.unique_id`).
+        companion_unique_id: ключ той стороны.
+        response: черновик ответа — до отправки и до записи обмена.
+        question: что написал он сейчас. Пусто — заговорили мы сами.
+        kind: `chat` или `mail` — каналы не смешиваются.
+        limit: сколько последних обменов сравнивать. Ноль — умолчание.
+
+    Returns:
+        A dictionary with the check result.
+        repeat (int): 1 — зацикливание, отвечать не надо; 0 — отвечать можно.
+        why (str): чем кончилась проверка, словами — для трассы.
+
+    ## ⚠⚠ Почему не по сессии
+
+    Прежняя проверка (`session_response_repeat_check`) искала прошлые ответы в
+    `agent_session` по `session_uuid`. Соседу этот ключ передавать нечем, и
+    движок заводит новый на каждый запрос: 1062 прогона `dating_talk` — 1062
+    разных сессии, 818 вызовов проверки и `repeat = 0` во всех 818. Сравнивать
+    там было не с чем никогда.
+
+    Разговор пары живёт не в сессии, а в `companion_session`, и адресуется он
+    парой ключей. Отсюда и аргументы: те же, что у `companion_session_history`.
+
+    ## ⚠⚠ Берём всё сказанное, а не видимое агенту
+
+    `companion_session_rows` прячет недоставленное и убранное человеком — она
+    собирает ленту для промпта, и показывать там несказанное нельзя. Здесь
+    вопрос другой: **не сочиняли ли мы это уже**. Недоставленный ответ лежит в
+    очереди и может уйти следом, убранный со страницы — мог уйти до того, как
+    его убрали. Оба случая делают второй такой же ответ повтором, поэтому
+    проверка смотрит строки как есть, своим запросом.
+
+    ⚠ Цена различия измерена: у писем прода 462 ответа из 718 помечены убранными
+    одним днём, 168 не подтверждены доставкой. Сравнивай проверка видимую ленту
+    — она не нашла бы и четверти того, что мы писали.
+
+    ## ⚠ Текущее сообщение в ленте уже может лежать
+
+    Приём (`companion_session_incoming`) пишет реплику собеседника сразу, не
+    дожидаясь ответа, — и тогда сравнение нашло бы её само в себе. Поэтому самое
+    свежее его сообщение, если оно и есть переданное, из сравнения выпадает.
+
+    ⚠ **Не бросает.** Сбой чтения даёт `repeat = 0`: промолчать по ошибке хуже,
+    чем ответить дважды, — второе человек простит, первое выглядит как обрыв.
+    """
+    draft = _text_flat(response)
+
+    if not draft:
+        # Пустой черновик гасит не эта проверка, а шаги до неё: ей сравнивать
+        # нечего, и «повтором» пустота не является.
+        return {'repeat': 0, 'why': 'черновик пуст, сравнивать нечего'}
+
+    channel = str(kind or '').strip().lower()
+
+    if channel not in COMPANION_SESSION_KINDS:
+        channel = COMPANION_SESSION_KINDS[0]
+
+    # ⚠ Предел приходит из workflow-переменной, то есть строкой, и бывает
+    # пустой. Движок приводит по аннотации, но инструмент зовут и из кода.
+    try:
+        take = int(limit or 0)
+    except (TypeError, ValueError):
+        take = 0
+
+    take = take or COMPANION_SESSION_REPEAT_LIMIT
+    take = max(1, min(take, COMPANION_SESSION_LIMIT_MAX))
+
+    rows = await _said_rows(owner_unique_id, companion_unique_id, channel, take)
+
+    if not rows:
+        return {'repeat': 0, 'why': 'этому человеку мы в этом канале ещё не писали'}
+
+    if not _said_among(draft, [row.get('answer') for row in rows]):
+        return {'repeat': 0, 'why': 'такого мы ещё не писали'}
+
+    incoming = _text_flat(question)
+
+    if not incoming:
+        # Заговорили мы сами — письмо избранному, инициатива, рассылка. Второго
+        # условия у такого хода нет вовсе: сравнивать не с чем, и единственный
+        # признак зацикливания — что этими же словами мы уже заговаривали.
+        return {'repeat': 1, 'why': 'заговорили мы сами, и этими словами уже заговаривали'}
+
+    if not _said_among(incoming, _asked_before(rows, incoming)):
+        return {'repeat': 0, 'why': 'ответ повторяется, но спросил он о новом'}
+
+    return {'repeat': 1, 'why': 'и ответ, и его сообщение повторяют сказанное раньше'}
+
+
 async def _by_source(owner_id: int, kind: str, source_uid: str) -> int:
     """Номер уже записанного обмена с этим ключом источника; нет — ноль."""
     try:
@@ -597,6 +716,98 @@ async def _companion_id(unique_id: str) -> int:
         return int(found.get('id') or 0)
 
     return int((await companion_create(unique_id)).get('id') or 0)
+
+
+async def _said_rows(owner_unique_id: str, companion_unique_id: str,
+                     kind: str, take: int) -> list[dict]:
+    """Последние обмены пары как есть — вместе с недоставленным и убранным.
+
+    Свежие сверху: сравнению порядок безразличен, а отбросить самую свежую его
+    реплику (см. `_asked_before`) так дешевле.
+
+    ⚠ Отдельный запрос, а не `companion_session_rows`: та показывает ленту
+    агенту и потому прячет половины, которых он не говорил вслух. Проверке
+    повтора нужны все — причина в докстринге `companion_session_repeat_check`.
+    """
+    owner_key = str(owner_unique_id or '').strip()
+    companion_key = str(companion_unique_id or '').strip()
+
+    if not owner_key or not companion_key:
+        return []
+
+    try:
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                'SELECT s.`question`, s.`answer`'
+                '  FROM `companion_session` s'
+                '  JOIN `companion` o ON o.`id` = s.`owner_id`'
+                '  JOIN `companion` c ON c.`id` = s.`companion_id`'
+                ' WHERE o.`unique_id` = %s AND c.`unique_id` = %s'
+                '   AND s.`kind` = %s'
+                # ⚠ По времени, а не по `id`: перенесённые обмены ложатся в базу
+                # позже, чем стоят в разговоре.
+                ' ORDER BY COALESCE(s.`question_at`, s.`answer_at`) DESC,'
+                '          s.`id` DESC'
+                ' LIMIT %s',
+                (owner_key, companion_key, kind, int(take)))
+            rows = await db.fetchall()
+    except Exception:
+        return []
+
+    return list(rows or [])
+
+
+def _asked_before(rows: list[dict], incoming: str) -> list[str]:
+    """Его прошлые реплики — без той, что он прислал прямо сейчас.
+
+    ⚠⚠ «Прямо сейчас» — это **висящая** реплика: самая свежая строка, где его
+    слова есть, а нашего ответа ещё нет. Такую пишет приём
+    (`companion_session_incoming`), не дожидаясь ответа, и не выброси мы её —
+    сообщение совпало бы само с собой, второе условие выполнялось бы всегда, и
+    проверка гасила бы ответ на каждое новое сообщение.
+
+    ⚠ По «первому совпадению» так не отличить: скажи он то же самое вчера, у той
+    строки есть наш ответ — она прошлое, и прятать её нельзя, иначе настоящее
+    зацикливание («ок» → «сплю уже» → «ок») осталось бы незамеченным.
+    """
+    rest = rows
+    newest = rows[0] if rows else {}
+
+    if (not str(newest.get('answer') or '').strip()
+            and _text_flat(newest.get('question')) == incoming):
+        rest = rows[1:]
+
+    asked = [_text_flat(row.get('question')) for row in rest]
+
+    return [said for said in asked if said]
+
+
+def _said_among(text: str, said: list) -> bool:
+    """Есть ли среди сказанного то же самое — точно или с точностью до слов."""
+    for one in said:
+        previous = _text_flat(one)
+
+        if not previous:
+            continue
+
+        if previous == text:
+            return True
+
+        if SequenceMatcher(None, text, previous).ratio() >= COMPANION_SESSION_REPEAT_RATIO:
+            return True
+
+    return False
+
+
+def _text_flat(text) -> str:
+    """Реплика в виде, пригодном для сравнения.
+
+    Нижний регистр, только буквы и цифры, пробелы схлопнуты: скобки, эмодзи и
+    точки у повтора меняются, а слова — нет.
+    """
+    flat = re.sub(r'[^\w\s]+', '', str(text or '').lower(), flags=re.UNICODE)
+
+    return re.sub(r'\s+', ' ', flat).strip()
 
 
 def _lines_of(row: dict, text_max: int) -> list[str]:
