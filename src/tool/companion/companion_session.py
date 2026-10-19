@@ -504,7 +504,7 @@ async def companion_session_rows(owner_unique_id: str,
 async def companion_session_repeat_check(owner_unique_id: str,
                                          companion_unique_id: str,
                                          response: str,
-                                         question: str = '',
+                                         prompt_user: str = '',
                                          kind: str = 'chat',
                                          limit: int = 0) -> dict:
     """Не повторяет ли черновик того, что мы уже писали этому человеку.
@@ -518,7 +518,10 @@ async def companion_session_repeat_check(owner_unique_id: str,
         owner_unique_id: ключ нашей стороны (`companion.unique_id`).
         companion_unique_id: ключ той стороны.
         response: черновик ответа — до отправки и до записи обмена.
-        question: что написал он сейчас. Пусто — заговорили мы сами.
+        prompt_user: что написал он сейчас. Пусто — заговорили мы сами.
+            ⚠ Зовётся как переменная workflow, а не как половина обмена
+            (`question` в таблице): карта входов шага читается глазами, и
+            одинаковые имена слева и справа избавляют её от перевода.
         kind: `chat` или `mail` — каналы не смешиваются.
         limit: сколько последних обменов сравнивать. Ноль — умолчание.
 
@@ -590,7 +593,7 @@ async def companion_session_repeat_check(owner_unique_id: str,
     if not _said_among(draft, [row.get('answer') for row in rows]):
         return {'repeat': 0, 'why': 'такого мы ещё не писали'}
 
-    incoming = _text_flat(question)
+    incoming = _text_flat(prompt_user)
 
     if not incoming:
         # Заговорили мы сами — письмо избранному, инициатива, рассылка. Второго

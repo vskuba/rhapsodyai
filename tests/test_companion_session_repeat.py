@@ -53,6 +53,23 @@ async def pair():
         await db.connection.commit()
 
 
+class TestArgumentNamesAreTheContract:
+    async def test_names_match_the_step_input_map(self):
+        """⚠⚠ Имена доводов — договор с картой входов шага, а не деталь кода.
+
+        Шаг `tool_invoke` зовёт инструмент именованными доводами, собранными из
+        карты. Переименуй довод — движок передаст ключ, которого в сигнатуре нет,
+        и шаг упадёт с `TypeError` **на проде**, потому что карта живёт в базе, а
+        не в репозитории, и правка кода её не чинит.
+        """
+        import inspect
+
+        given = list(inspect.signature(companion_session_repeat_check).parameters)
+
+        assert given == ['owner_unique_id', 'companion_unique_id', 'response',
+                         'prompt_user', 'kind', 'limit']
+
+
 class TestRepeatNeedsBothHalves:
     async def test_same_answer_to_same_question_is_repeat(self, pair):
         """Тот же ответ на то же сообщение — зацикливание."""
