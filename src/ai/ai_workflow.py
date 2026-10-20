@@ -1,3 +1,4 @@
+import json
 import re
 
 from typing import Any
@@ -88,6 +89,86 @@ WORKFLOW_NAME_RE = re.compile(r'[a-zA-Z_][a-zA-Z0-9_]*')
 # поймал бы `oregon`, а имя переменной пробелов не содержит.
 WORKFLOW_OR_RE = re.compile(r'\s+or\s+')
 WORKFLOW_AND_RE = re.compile(r'\s+and\s+')
+
+# ## ⚠⚠ Цикл `[<for k,v in items>]…[<endfor>]` и присваивание `[<set k = k + 1>]`
+#
+# Заведены из-за того, что в промпте стояло `%dice_invite_angle%` — одна метка,
+# за которой пряталась нумерованная простыня, собранная инструментом. Человек,
+# читающий промпт, не видел ни того, что это список, ни того, откуда взялась
+# нумерация: её делал код жребия, за три файла отсюда. Теперь строй списка виден
+# там же, где он нужен:
+#
+#     [<for k,v in dice_invite_angle>][<set k = k + 1>]%k%. %v%
+#     [<endfor>]
+#
+# ⚠ Имена внутри `[<…>]` — **без процентов**, то же правило, что у `[<if …>]`:
+# проценты значат «сюда встанет значение», а здесь имя не подставляют, им
+# распоряжаются.
+#
+# ⚠⚠ Тело цикла рендерится **рекурсивно и целиком**, со связанными `k` и `v`:
+# внутри работают и метки, и вложенные `[<if …>]`, и вложенный цикл. Иначе
+# `[<for …>][<if v>]…[<endif>][<endfor>]` проверял бы `v`, которой на момент
+# разворачивания условий ещё нет ни у кого.
+WORKFLOW_FOR_OPEN = '[<for '
+WORKFLOW_FOR_CLOSE = '[<endfor>]'
+
+# Заголовок цикла. Две записи: `[<for v in items>]` — только значение,
+# `[<for k,v in items>]` — ключ и значение, как в Python.
+#
+# ⚠ Источник — **имя переменной**, а не выражение. Цикл по вычисленному на месте
+# списку выглядел бы мощнее, но спрятал бы в промпт вторую грамматику; всё, что
+# нужно посчитать, считает шаг до этого.
+#
+# ## ⚠⚠ `start=` — откуда считать ключ
+#
+# Ключ списка идёт **с нуля**, как во всех языках, и менять это умолчание
+# нельзя: человек, знающий любой язык, ждёт нуля. Но промпт почти всегда просит
+# «line 1», и писать ради этого `[<set k = k + 1>]` в каждом цикле — обряд:
+#
+#     [<for k,v in items, start=1>]line %k% — %v%[<endfor>]
+#
+# ⚠ Значение считается тем же разборщиком, что у `[<set …>]`
+# (`_expression_value`): число, имя переменной, выражение. Своей грамматики для
+# него не заводится — вторая умела бы ровно то же самое и расходилась бы с
+# первой.
+WORKFLOW_FOR_HEAD_RE = re.compile(
+    r'\[<for\s+([a-zA-Z_][a-zA-Z0-9_]*)'
+    r'(?:\s*,\s*([a-zA-Z_][a-zA-Z0-9_]*))?'
+    r'\s+in\s+([a-zA-Z_][a-zA-Z0-9_]*)'
+    r'(?:\s*,\s*start\s*=\s*((?:[^>\[]|>(?!\]))+?))?'
+    r'\s*>\]'
+)
+
+# Сколько циклов разбираем в одном тексте. ⚠ Не про вложенность — её держит
+# рекурсия по телу, и не про длину списка. Это число СОСЕДНИХ циклов подряд,
+# и двести заведомо больше любого осмысленного шаблона.
+WORKFLOW_FOR_PASSES_MAX = 200
+
+# Присваивание прямо в промпте: `[<set имя = выражение>]`.
+#
+# ⚠⚠ Действует **от своего места и до конца текста**, а не на весь шаблон
+# сразу. Так его и читают: `%k%` выше тега — прежнее значение, ниже — новое.
+# Сделай мы «сначала все присваивания, потом подстановка», метка выше тега
+# показывала бы значение, которого в этом месте ещё нет.
+#
+# ⚠ Тег не оставляет после себя ничего — ни пробела, ни перевода строки.
+WORKFLOW_SET_OPEN = '[<set '
+WORKFLOW_SET_RE = re.compile(
+    r'\[<set\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*((?:[^>\[]|>(?!\]))+?)\s*>\]'
+)
+
+# Действия выражения, по старшинству: умножение раньше сложения.
+#
+# ⚠⚠ Старшинство настоящее, а не «слева направо». Условия в движке разбираются
+# без скобок, и соблазн был сделать так же; но `1 + 2 * 3` слева направо даёт
+# девять, и человек об это споткнётся молча — ответ-то число.
+WORKFLOW_EXPR_LEVELS = (('*', '/'), ('+', '-'))
+
+# Разбор выражения на части: строка в кавычках целиком, действие, всё прочее.
+#
+# ⚠ Кавычки ловятся первыми: внутри них бывает что угодно, в том числе `+`
+# (`[<set sign = ' + '>]`), и разбери мы их как действие — выражение развалится.
+WORKFLOW_EXPR_TOKEN_RE = re.compile(r"""'[^']*'|"[^"]*"|[+\-*/]|[^+\-*/\s]+""")
 
 # Атом условия: `!var`, `var`, `var <оп> значение`.
 #
@@ -495,6 +576,143 @@ def ai_workflow_if_blocks_render(source: str, variables: dict) -> str:
     return source
 
 
+def ai_workflow_for_blocks_render(source: str, variables: dict) -> str:
+    """Разворачивает циклы `[<for k,v in items>]…[<endfor>]` в шаблоне.
+
+    Args:
+        source: текст шаблона.
+        variables: словарь переменных прогона.
+
+    Returns:
+        str: текст, где каждый цикл заменён своими повторениями. Нераспознанный
+        цикл остаётся **как есть** и достаётся сторожу (`ai_workflow_marks_check`).
+
+    По чему умеет ходить — `_for_items`: список, словарь, их же JSON-строкой и
+    обычный многострочный текст (строка за строкой).
+
+    ⚠ Ключ списка идёт **с нуля**, как во всех языках. Смещает его `start=`
+    в заголовке (`_for_items_start`): `[<for k,v in items, start=1>]`.
+
+    ## ⚠⚠ Внешний цикл разворачивается первым, и это важно
+
+    Границы ищутся счётчиком вложенности, а не регуляркой. Возьмись мы за
+    внутренний (как это делает разворачивание условий), его тело развернулось бы
+    без `k` и `v` внешнего — то есть по переменным, которых ещё нет ни у кого.
+
+    ## ⚠ Переменной нет — блок остаётся, пустой список — исчезает
+
+    Разница та же, что у условий между «не понял» и «ложь». Отсутствие
+    переменной почти всегда опечатка в имени: свернись цикл молча, кусок промпта
+    пропал бы без следа. Пустой список — законный исход, повторять нечего.
+    """
+    out = str(source or '')
+    at = 0
+
+    for _ in range(WORKFLOW_FOR_PASSES_MAX):
+        if WORKFLOW_FOR_OPEN not in out[at:]:
+            break
+
+        found = _for_block_find(out, at)
+
+        if found is None:
+            break
+
+        head, body, end = found
+        name = head.group(3)
+
+        if name not in variables:
+            # ⚠ Переменной нет — блок остаётся человеку и сторожу, но соседние
+            # циклы дальше по тексту разобрать мы обязаны: иначе одна опечатка
+            # гасила бы весь остаток шаблона.
+            at = end
+            continue
+
+        source_value = variables.get(name)
+        items = _for_items(source_value)
+
+        if items is None:
+            at = end
+            continue
+
+        items = _for_items_start(items, head.group(4), source_value, variables)
+
+        if items is None:
+            # ⚠ `start=` не сочлось либо задано словарю, у которого ключ — имя,
+            # а не номер. И то и другое — ошибка записи, и молча считать «ну и
+            # ладно, пойдём с нуля» нельзя: человек получил бы не ту нумерацию
+            # без единого следа.
+            at = end
+            continue
+
+        # ⚠ Одно имя — это ЗНАЧЕНИЕ, а не ключ: `[<for v in items>]` читается
+        # как в Python, где ключ дописывают слева, а не справа.
+        key_name = head.group(1) if head.group(2) else ''
+        value_name = head.group(2) or head.group(1)
+
+        chunks = []
+
+        for key, value in items:
+            scope = dict(variables)
+
+            if key_name:
+                scope[key_name] = key
+
+            scope[value_name] = value
+            chunks.append(ai_workflow_text_render(body, scope))
+
+        done = ''.join(chunks)
+        out = out[:head.start()] + done + out[end:]
+
+        # ⚠⚠ Курсор встаёт ЗА развёрнутым куском, и поиск туда не возвращается.
+        # Иначе значение, в котором лежит текст `[<for …>]`, разворачивалось бы
+        # снова и снова: за двести проходов такой шаблон раздувался в полторы
+        # тысячи знаков мусора. Тело цикла уже отрисовано рекурсивно — вложенные
+        # циклы в нём разобраны, перечитывать там нечего.
+        #
+        # ⚠ Тот же порядок, что у соседа: условия тоже разворачиваются ДО
+        # подстановки меток, и подставленное значение разметкой уже не считается.
+        at = head.start() + len(done)
+
+    return out
+
+
+def ai_workflow_set_render(source: str, variables: dict) -> str:
+    """Выполняет `[<set имя = выражение>]` и подставляет метки одним проходом.
+
+    Args:
+        source: текст шаблона — уже без циклов и условных блоков.
+        variables: словарь переменных прогона. Не меняется: присваивание живёт
+            в копии и до конца этого текста.
+
+    Returns:
+        str: текст с подставленными значениями; теги `[<set …>]` исчезают.
+
+    ⚠⚠ Проход **линейный**, слева направо, и подстановка идёт кусками между
+    тегами — потому что присваивание действует от своего места. Подставь мы
+    метки разом до или после, `%k%` выше тега показала бы значение, которого в
+    этом месте ещё нет.
+
+    ⚠ Непонятое выражение оставляет тег в тексте нетронутым — как и условие,
+    которого не понял разборщик. Сторож такое ловит, молча съесть не даёт.
+    """
+    text = str(source or '')
+    scope = dict(variables)
+    out, at = '', 0
+
+    for found in WORKFLOW_SET_RE.finditer(text):
+        out += _marks_substitute(text[at:found.start()], scope)
+        value = _expression_value(found.group(2), scope)
+
+        if value is None:
+            out += found.group(0)
+        else:
+            scope[found.group(1)] = value
+
+        at = found.end()
+
+    return out + _marks_substitute(text[at:], scope)
+
+
 # Метка переменной в промпте: `%имя%`. ⚠ Имя обязано быть **идентификатором** —
 # буквы, цифры, подчёркивание, и не с цифры. Без этого сторож ловил бы обычные
 # проценты в тексте: «выполнено на 100% сотрудниками и на 0% роботами» между
@@ -510,7 +728,12 @@ WORKFLOW_MARK_RE = re.compile(r'%([a-zA-Z_][a-zA-Z0-9_]*)%')
 #
 # ⚠ Приметы — **слово вместе со скобками**, а не `[<`: по одним скобкам проверка
 # завтра поймает чужой текст.
-WORKFLOW_BLOCK_LEFT = ('[<if ', '[<else>]', '[<endif>]')
+#
+# ⚠⚠ Цикл и присваивание здесь обязаны быть по той же причине, по какой здесь
+# условие: `[<for k,v in typo>]` не содержит процентов, и сторож меток такой
+# остаток не видит вовсе — промпт уехал бы в модель вместе с разметкой.
+WORKFLOW_BLOCK_LEFT = ('[<if ', '[<else>]', '[<endif>]',
+                       '[<for ', '[<endfor>]', '[<set ')
 
 # Прежние синтаксисы. ⚠⚠ Ловятся **намеренно и отдельным сообщением**: оставь их
 # просто неработающими — и старый блок уедет в LLM словами, потому что `%if var%`
@@ -584,14 +807,39 @@ def ai_workflow_marks_check(text: str, where: str = '') -> None:
     if blocks:
         seen = ', '.join(f'«{one}»' for one in blocks)
         old = [one for one in blocks if one in WORKFLOW_BLOCK_OLD]
-        hint = ('Это **прежний** синтаксис условного блока. Новый: '
-                '`[<if переменная>]…[<else>]…[<endif>]`, отрицание — '
-                '`[<if !переменная>]`.' if old else
-                'Блок не развернулся: проверьте, что он закрыт `[<endif>]`, а имя '
-                'переменной внутри написано без процентов — `[<if имя>]`.')
+        # ⚠ Подсказка по роду остатка: про незакрытый цикл советовать
+        # `[<endif>]` значило бы послать человека чинить не то место.
+        loop = [one for one in blocks if one in ('[<for ', '[<endfor>]')]
+        assign = [one for one in blocks if one == '[<set ']
+
+        if old:
+            hint = ('Это **прежний** синтаксис условного блока. Новый: '
+                    '`[<if переменная>]…[<else>]…[<endif>]`, отрицание — '
+                    '`[<if !переменная>]`.')
+        elif loop:
+            hint = ('Цикл не развернулся: проверьте, что он закрыт '
+                    '`[<endfor>]`, записан как `[<for k,v in имя>]` (или '
+                    '`[<for v in имя>]`), имя внутри — без процентов, и что '
+                    'переменная с таким именем есть и содержит список, словарь '
+                    'или текст строками. Смещение нумерации пишется '
+                    '`[<for k,v in имя, start=1>]` и словарю не положено — '
+                    'у него ключ имя, а не номер.')
+        elif assign:
+            hint = ('Присваивание не выполнилось: запись — '
+                    '`[<set имя = выражение>]`, в выражении допустимы числа, '
+                    'строки в кавычках, имена переменных и действия `+ - * /`. '
+                    'Имя, которого нет среди переменных, делает выражение '
+                    'несчитаемым.')
+        else:
+            hint = ('Блок не развернулся: проверьте, что он закрыт `[<endif>]`, '
+                    'а имя переменной внутри написано без процентов — '
+                    '`[<if имя>]`.')
 
         raise AiWorkflowMarkError(
-            f'в промпте шага «{where or "?"}» осталась условная разметка: {seen}. '
+            # ⚠ «Разметка шаблона», а не «условная»: родов тегов теперь три, и
+            # человек, чинящий незакрытый `[<for …>]`, не должен гадать, при чём
+            # тут условие.
+            f'в промпте шага «{where or "?"}» осталась разметка шаблона: {seen}. '
             f'{hint} Неразвёрнутый блок уходит в LLM словами, и модель читает его '
             f'как часть задания.')
 
@@ -618,11 +866,31 @@ def ai_workflow_variables_render(source: Any, variables: dict) -> Any:
         # (`[<if test_dialog>]просто текст[<endif>]`), процентов не содержит вовсе —
         # и такая строка возвращалась как есть, то есть уезжала в LLM **вместе с
         # разметкой**. Поймано сюитой в тот же час; в базе такие блоки есть.
-        if '%' not in source and WORKFLOW_IF_OPEN not in source:
+        if ('%' not in source and WORKFLOW_IF_OPEN not in source
+                and WORKFLOW_FOR_OPEN not in source
+                and WORKFLOW_SET_OPEN not in source):
             return source
 
-        # Сначала разворачиваем условные блоки, затем подставляем переменные
-        rendered_str = ai_workflow_if_blocks_render(source, variables)
+        # Порядок: циклы → условия → присваивания с подстановкой.
+        #
+        # ⚠⚠ Циклы ПЕРВЫМИ, и это не вкусовщина. Тело цикла рендерится
+        # рекурсивно со связанными `k` и `v`, поэтому вложенное в него условие
+        # (`[<for k,v in x>][<if v>]…[<endif>][<endfor>]`) разбирается уже при
+        # известном `v`. Возьмись условия раньше — они увидели бы переменную,
+        # которой нет ни у кого, и блок достался бы сторожу на ровном месте.
+        #
+        # ⚠ Обратный порядок — условие ВОКРУГ цикла — работает и так: цикл
+        # развернётся в обеих ветках, а условие потом выберет одну.
+        rendered_str = ai_workflow_for_blocks_render(source, variables)
+        rendered_str = ai_workflow_if_blocks_render(rendered_str, variables)
+
+        # ⚠⚠ Присваивание забирает подстановку себе целиком: оно действует от
+        # своего места, и метки обязаны подставляться кусками между тегами. Без
+        # тегов путь прежний — вместе с умной типизацией ниже, которую проход
+        # кусками дать не может (строка с тегом целиком меткой не является).
+        if WORKFLOW_SET_OPEN in rendered_str:
+            return ai_workflow_set_render(rendered_str, variables)
+
         for key, val in variables.items():
             placeholder = f"%{key}%"
 
@@ -920,3 +1188,311 @@ def _condition_value_resolve(value: str, variables: dict) -> tuple:
         return ('' if got is None else got), text in variables
 
     return text, True
+
+
+def _marks_substitute(text: str, variables: dict) -> str:
+    """Подставляет `%метки%` в кусок текста. Всегда строка, без умной типизации.
+
+    ⚠ Умная типизация (строка ровно из одной метки возвращает значение своего
+    типа) живёт у `ai_workflow_variables_render` и сюда не спускается: здесь
+    кусок между тегами, а не значение целиком.
+    """
+    out = str(text or '')
+
+    for key, value in variables.items():
+        placeholder = f'%{key}%'
+
+        if placeholder in out:
+            out = out.replace(placeholder, str(value))
+
+    return out
+
+
+def _for_block_find(source: str, at: int = 0) -> tuple | None:
+    """Первый цикл верхнего уровня: `(заголовок, тело, конец блока)`.
+
+    `None` — цикла нет, заголовок не разобрался либо блок не закрыт. Во всех
+    трёх случаях текст остаётся нетронутым и достаётся сторожу.
+
+    ⚠⚠ Вложенность считается счётчиком, а не регуляркой: нужен **внешний**
+    блок, его тело развернёт рекурсия вместе со связанными переменными.
+    """
+    start = source.find(WORKFLOW_FOR_OPEN, at)
+
+    if start < 0:
+        return None
+
+    head = WORKFLOW_FOR_HEAD_RE.match(source, start)
+
+    if head is None:
+        return None
+
+    depth, cursor = 1, head.end()
+
+    while depth:
+        opened = source.find(WORKFLOW_FOR_OPEN, cursor)
+        closed = source.find(WORKFLOW_FOR_CLOSE, cursor)
+
+        if closed < 0:
+            return None
+
+        if 0 <= opened < closed:
+            depth, cursor = depth + 1, opened + len(WORKFLOW_FOR_OPEN)
+            continue
+
+        depth, cursor = depth - 1, closed + len(WORKFLOW_FOR_CLOSE)
+
+    return head, source[head.end():cursor - len(WORKFLOW_FOR_CLOSE)], cursor
+
+
+def _for_items(value) -> list | None:
+    """Значение переменной в список пар «ключ, значение». `None` — ходить нечем.
+
+    Понимает четыре вида:
+
+        список      ключ — номер с нуля, значение — элемент
+        словарь     ключ и значение как есть
+        JSON-строка разбирается и попадает в один из двух случаев выше
+        текст       строка за строкой, ключ — номер с нуля
+
+    ⚠⚠ Текст строками — ради того, с чего всё начиналось: инструменты отдают
+    серию готовой простынёй, и до перевода их на списки цикл обязан работать по
+    тому, что лежит в переменной **сегодня**.
+
+    ⚠ Пустые строки не элементы: нумерация после них сбилась бы на пустоту,
+    которой в тексте никто не писал.
+
+    ⚠⚠ Число и `None` — не список, и растягивать их в один элемент нельзя:
+    `[<for k,v in count>]` на числе почти наверняка опечатка в имени, и ответом
+    должен быть сторож, а не одно молчаливое повторение.
+    """
+    if isinstance(value, dict):
+        return [(key, _value_out(one)) for key, one in value.items()]
+
+    if isinstance(value, (list, tuple)):
+        return list(enumerate(_value_out(one) for one in value))
+
+    if not isinstance(value, str):
+        return None
+
+    text = value.strip()
+
+    if not text:
+        return []
+
+    if text[0] in '[{':
+        # ⚠⚠ `json.loads`, а не общий `json_from_string`: тот вынимает из
+        # болтовни модели **объект** и на массиве верхнего уровня молча отдаёт
+        # `{}` (так и написано в его докстринге). Для цикла это значило бы, что
+        # список из трёх элементов разворачивается в ноль повторений — без
+        # ошибки, без следа, с пустым куском промпта.
+        #
+        # ⚠ Болтовня вокруг здесь и не ждётся: значение приходит из переменной
+        # прогона, а не прямо из ответа модели.
+        try:
+            got = json.loads(text)
+        except (ValueError, TypeError):
+            got = None
+
+        if isinstance(got, dict):
+            return list(got.items())
+
+        if isinstance(got, list):
+            return list(enumerate(got))
+
+    return list(enumerate(
+        one for one in text.splitlines() if one.strip()))
+
+
+def _expression_value(expression: str, variables: dict):
+    """Значение выражения `[<set …>]`. `None` — не разобралось.
+
+    Понимает число, строку в кавычках, имя переменной и действия `+ - * /` со
+    старшинством. Скобок нет: промпт — не язык программирования, и выражение в
+    нём живёт ровно до «прибавь единицу к номеру».
+
+    ⚠⚠ Имя, которого нет среди переменных, делает выражение **неразобранным**,
+    а не пустым. Это почти всегда опечатка, и тихо получить из неё ноль хуже,
+    чем увидеть тег в тексте и ошибку сторожа.
+
+    ⚠ `+` на нечислах склеивает текст: `[<set title = name + ' — ' + kind>]`.
+    Остальные действия требуют чисел и иначе отвечают `None`.
+    """
+    text = str(expression or '').strip()
+
+    if not text:
+        return None
+
+    tokens = WORKFLOW_EXPR_TOKEN_RE.findall(text)
+
+    if not tokens or tokens[0] in '+-*/' or tokens[-1] in '+-*/':
+        return None
+
+    values = []
+
+    for position, token in enumerate(tokens):
+        if position % 2:
+            if token not in '+-*/':
+                return None
+
+            values.append(token)
+            continue
+
+        if token in '+-*/':
+            return None
+
+        got, known = _condition_value_resolve(token, variables)
+
+        if not known:
+            return None
+
+        values.append(got)
+
+    for actions in WORKFLOW_EXPR_LEVELS:
+        values = _expression_fold(values, actions)
+
+        if values is None:
+            return None
+
+    return _number_out(values[0])
+
+
+def _expression_fold(values: list, actions: tuple) -> list | None:
+    """Схлопывает одно старшинство действий слева направо. `None` — не вышло."""
+    out = [values[0]]
+    position = 1
+
+    while position < len(values):
+        action, right = values[position], values[position + 1]
+
+        if action not in actions:
+            out += [action, right]
+            position += 2
+            continue
+
+        got = _expression_apply(out[-1], action, right)
+
+        if got is None:
+            return None
+
+        out[-1] = got
+        position += 2
+
+    return out
+
+
+def _expression_apply(left, action: str, right):
+    """Одно действие над двумя значениями. `None` — несчитаемо.
+
+    ⚠ Деление на ноль — не поломка промпта, а несчитаемое выражение: отвечаем
+    `None`, тег остаётся в тексте, сторож говорит об этом словами.
+    """
+    first, second = _number_in(left), _number_in(right)
+
+    if first is None or second is None:
+        # ⚠ Склейка текста только сложением: «умножить слово» смысла не имеет,
+        # и притворяться, что имеет, значило бы прятать опечатку.
+        return f'{left}{right}' if action == '+' else None
+
+    if action == '+':
+        return first + second
+
+    if action == '-':
+        return first - second
+
+    if action == '*':
+        return first * second
+
+    return first / second if second else None
+
+
+def _number_in(value) -> float | None:
+    """Значение числом. `None` — не число."""
+    if isinstance(value, bool):
+        return None
+
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    try:
+        return float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _number_out(value):
+    """Целое число — целым, остальное как есть.
+
+    ⚠⚠ Иначе `[<set k = k + 1>]` клал бы в метку «1.0»: арифметика считает во
+    float, а человек пишет нумерацию и ждёт «1».
+    """
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+
+    return value
+
+
+def _value_out(value):
+    """Элемент списка таким, каким его увидит промпт.
+
+    ⚠⚠ `None` — это **пустота, а не слово «None»**. Подстановка приводит
+    значение к строке (`str(val)`), и необработанный `None` встал бы в промпт
+    английским словом, которое модель прочтёт как данные. То же правило уже
+    действует у сравнения (`_condition_value_resolve`).
+    """
+    return '' if value is None else value
+
+
+def _for_items_start(items: list, start, source, variables: dict) -> list | None:
+    """Перенумеровать пары под `start=`. `None` — запись негодная.
+
+    Args:
+        items: пары «ключ, значение» от `_for_items`.
+        start: текст справа от `start=`; `None` — его не писали.
+        source: исходное значение переменной — по нему видно словарь.
+        variables: переменные прогона.
+
+    ## ⚠⚠ Ключ по умолчанию — НОЛЬ, и это не обсуждается
+
+    Так считают все языки, и человек, знающий любой из них, ждёт нуля. `start=`
+    не меняет умолчания — он смещает нумерацию там, где промпт просит «line 1».
+
+    ## ⚠ Словарю `start=` не положен
+
+    У словаря ключ — имя, а не номер; смещать там нечего. Промолчи мы — человек
+    получил бы прежние ключи и решил, что `start=` просто «не сработал». Поэтому
+    ответ `None`: блок остаётся в тексте и достаётся сторожу.
+    """
+    if start is None:
+        return items
+
+    if not items:
+        return items
+
+    if _for_keys_are_names(source, items):
+        return None
+
+    shift = _expression_value(start, variables)
+
+    if shift is None:
+        return None
+
+    try:
+        first = int(shift)
+    except (TypeError, ValueError):
+        return None
+
+    return [(number, value)
+            for number, (_, value) in enumerate(items, start=first)]
+
+
+def _for_keys_are_names(source, items: list) -> bool:
+    """Словарь ли это — то есть ключ у пар имя, а не номер.
+
+    ⚠ Смотрим на сами пары, а не только на тип источника: словарь приезжает и
+    JSON-строкой, и тогда по источнику его не отличить от списка.
+    """
+    if isinstance(source, dict):
+        return True
+
+    return any(not isinstance(key, int) for key, _ in items)

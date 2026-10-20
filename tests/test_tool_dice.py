@@ -241,33 +241,59 @@ class TestASeriesOfRolls:
         assert got['angle'] in ('игра', 'вызов', 'вопрос')
         assert '\n' not in got['angle']
 
-    async def test_a_series_comes_numbered(self):
+    async def test_a_series_comes_as_a_list(self):
+        """⚠⚠ Список, а НЕ нумерованная строка: нумерует промпт циклом.
+
+        Нумерация уехала в `[<for k,v in …>][<set k = k + 1>]` — туда, где
+        список и читают. Здесь стережётся сама форма: вернись отсюда строка,
+        цикл в промпте прошёлся бы по её строкам и номера задвоились бы.
+        """
         got = await dice_batch(self.SPEC, times=5)
-        lines = got['angle'].split('\n')
 
-        assert len(lines) == 5
-        assert [one.split('.')[0] for one in lines] == ['1', '2', '3', '4', '5']
+        assert isinstance(got['angle'], list), f'ответ не список: {got["angle"]!r}'
+        assert len(got['angle']) == 5
 
-    async def test_every_line_is_a_real_option(self):
+    async def test_nothing_is_numbered_by_the_tool(self):
+        """⚠ Ни одного номера от инструмента — иначе промпт пронумерует дважды."""
+        got = await dice_batch(self.SPEC, times=5)
+
+        for one in got['angle']:
+            assert not one[:3].strip().rstrip('.').isdigit(), \
+                f'инструмент пронумеровал сам: {one!r}'
+
+    async def test_every_item_is_a_real_option(self):
         got = await dice_batch(self.SPEC, times=12)
 
-        for line in got['angle'].split('\n'):
-            assert line.split('. ', 1)[1] in self.SPEC['angle'], line
+        for one in got['angle']:
+            assert one in self.SPEC['angle'], one
+
+    async def test_an_empty_roll_keeps_its_place(self):
+        """⚠⚠⚠ Пустое выпадение остаётся ЭЛЕМЕНТОМ — ради этого и список.
+
+        Доли задаёт человек, и при недоборе до ста бросок честно пуст: «в этой
+        реплике приёма нет». Отдавай инструмент строки, пустая потерялась бы в
+        цикле промпта, и вся нумерация ниже съехала бы на единицу — «приём 2»
+        достался бы третьей реплике, без единой ошибки.
+        """
+        got = await dice_batch({'angle': {'а': 0, 'б': 0}}, times=4)
+
+        assert got['angle'] == ['', '', '', ''], \
+            f'пустые выпадения не держат места: {got["angle"]!r}'
 
     async def test_the_count_arrives_as_text(self):
         """⚠ Число приходит workflow-переменной, то есть строкой; мусор — один."""
-        assert len((await dice_batch(self.SPEC, times='3'))['angle'].split('\n')) == 3
+        assert len((await dice_batch(self.SPEC, times='3'))['angle']) == 3
 
         for given in ('', None, 0, 'мусор', -5):
             got = await dice_batch(self.SPEC, times=given)
 
-            assert '\n' not in got['angle'], f'{given!r} дало серию'
+            assert len(got['angle']) == 1, f'{given!r} дало серию из {len(got["angle"])}'
 
     async def test_the_series_has_a_ceiling(self):
         """⚠ Потолок: опечатка в настройке иначе уехала бы списком на тысячу."""
         got = await dice_batch(self.SPEC, times=10_000)
 
-        assert len(got['angle'].split('\n')) == 50
+        assert len(got['angle']) == 50
 
     async def test_repeats_inside_a_series_are_allowed(self):
         """⚠⚠ Доли заданы человеком, и «без повторов» исказило бы их молча.
@@ -277,7 +303,7 @@ class TestASeriesOfRolls:
         """
         got = await dice_batch(self.SPEC, times=50)
 
-        assert len(got['angle'].split('\n')) == 50
+        assert len(got['angle']) == 50
 
 
 async def _shares(spec: dict, name: str) -> dict:

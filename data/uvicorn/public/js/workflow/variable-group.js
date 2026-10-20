@@ -137,6 +137,20 @@ const VAR_IF_RE = /\[<if ((?:[^>\[]|>(?!\]))+)>\]/g;
 const VAR_IF_ATOM_RE = /'[^']*'|"[^"]*"|[a-zA-Z_][a-zA-Z0-9_]*/g;
 const VAR_IF_SKIP = new Set(['and', 'or']);
 
+// Цикл `[<for k,v in items>]` и присваивание `[<set n = n + 1>]`. Правила те же,
+// что у движка (`WORKFLOW_FOR_HEAD_RE`, `WORKFLOW_SET_RE` в `ai_workflow.py`).
+//
+// ⚠⚠ Эти два тега **заводят имена прямо в тексте**, и в этом их отличие от
+// условия. Не знай о них сбор, `k` и `v` попали бы в «Undefined переменные» —
+// то есть страница ругалась бы на единственное место, где имя и объявлено.
+//
+// ⚠ Источник цикла (`items`) — наоборот, настоящее чтение, наравне с `%меткой%`:
+// без него «где используется» не нашло бы переменную, ради которой цикл и
+// написан.
+const VAR_FOR_RE =
+    /\[<for\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\s*,\s*([a-zA-Z_][a-zA-Z0-9_]*))?\s+in\s+([a-zA-Z_][a-zA-Z0-9_]*)(?:\s*,\s*start\s*=\s*((?:[^>\[]|>(?!\]))+?))?\s*>\]/g;
+const VAR_SET_RE = /\[<set\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*((?:[^>\[]|>(?!\]))+?)\s*>\]/g;
+
 /**
  * Все переменные, которые участвуют в шаге — и читаемые, и записываемые.
  *
@@ -241,6 +255,46 @@ export function stepMadeVariables(step) {
     walk(parseMetadata(step.metadata), null);
 
     return made;
+}
+
+/**
+ * Имена, которые шаг **связывает прямо в тексте**: `[<for k,v in …>]` и
+ * `[<set имя = …>]`.
+ *
+ * ## ⚠⚠ Третий род имени, и он намеренно не «сделанное шагом»
+ *
+ * Положенное шагом (`stepMadeVariables`) живёт до конца прогона и показывается
+ * человеку группой «Dynamic переменные». Связанное текстом живёт **только внутри
+ * своего поля** — движок считает его в копии словаря (`ai_workflow_set_render`),
+ * и соседнее поле того же шага его уже не видит.
+ *
+ * Поэтому оно гасит «Undefined» (имя объявлено, ругаться не на что), но в списки
+ * не попадает: показать его значило бы предложить человеку переменную, которой
+ * нигде, кроме одной строки промпта, не существует, — и ту ещё можно случайно
+ * завести в реестре, молча перекрыв собою счётчик цикла.
+ */
+export function stepBoundVariables(step) {
+    const bound = new Set();
+
+    const walk = (node) => {
+        if (typeof node === 'string') {
+            textBoundVariables(node, bound);
+
+            return;
+        }
+        if (Array.isArray(node)) {
+            node.forEach(walk);
+
+            return;
+        }
+        if (!node || typeof node !== 'object') return;
+
+        Object.values(node).forEach(walk);
+    };
+
+    walk(parseMetadata(step.metadata));
+
+    return bound;
 }
 
 /**
@@ -532,6 +586,10 @@ export function undefinedVariables(variables, stepsData, workflows, tools, hidde
     steps.forEach(step => {
         stepMadeVariables(step).forEach(name => known.add(name));
 
+        // ⚠ Связанные текстом — только сюда, в гашение «Undefined». В
+        // `dynamicGroup` их нет намеренно: они не переживают своего поля.
+        stepBoundVariables(step).forEach(name => known.add(name));
+
         const metadata = parseMetadata(step.metadata);
         if (!metadata) return;
 
@@ -782,4 +840,55 @@ function textVariables(text, into) {
             into.add(word);
         }
     }
+
+    // ⚠ У цикла читается источник и выражение `start=`: `k` и `v` он заводит
+    // сам, и попади они сюда — оказались бы в «Undefined», где им не место.
+    // Собирает их `textBoundVariables`, и она же отвечает за `[<set …>]`.
+    for (const match of text.matchAll(VAR_FOR_RE)) {
+        into.add(match[3]);
+
+        // ⚠⚠ `start=` принимает и имя переменной (`start=from`): без разбора
+        // такое имя не нашлось бы ни в «где используется», ни в подсветке, и
+        // выглядело бы неиспользуемым при живой ссылке на него.
+        for (const atom of (match[4] || '').matchAll(VAR_IF_ATOM_RE)) {
+            const word = atom[0];
+
+            if (word[0] === "'" || word[0] === '"') continue;
+
+            into.add(word);
+        }
+    }
+
+    // ⚠⚠ В выражении присваивания имена — настоящее чтение: `[<set k = k + 1>]`
+    // читает `k`. Слева от знака равенства — наоборот, объявление, и его здесь
+    // нет намеренно.
+    for (const match of text.matchAll(VAR_SET_RE)) {
+        for (const atom of match[2].matchAll(VAR_IF_ATOM_RE)) {
+            const word = atom[0];
+
+            if (word[0] === "'" || word[0] === '"') continue;
+
+            into.add(word);
+        }
+    }
+}
+
+
+/**
+ * Имена, которые текст заводит сам: `[<for k,v in …>]` и `[<set имя = …>]`.
+ *
+ * ⚠⚠ Отдельно от «что шаг читает», потому что это объявление, а не чтение.
+ * Смешай их в одну кучу — и `k` одновременно числился бы неопределённым (никто
+ * не кладёт) и используемым, то есть страница ругалась бы на место объявления.
+ */
+function textBoundVariables(text, into) {
+    if (typeof text !== 'string') return;
+
+    for (const match of text.matchAll(VAR_FOR_RE)) {
+        into.add(match[1]);
+
+        if (match[2]) into.add(match[2]);
+    }
+
+    for (const match of text.matchAll(VAR_SET_RE)) into.add(match[1]);
 }
