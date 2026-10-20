@@ -1,3 +1,5 @@
+import {fillVariablesSelectOptions} from './variables.js';
+
 // Редактор жребия: переменные, их варианты и шансы выпадения.
 //
 // ⚠⚠ Своим модулем, а не ещё двумя сотнями строк в `step-widgets.js`. Тот уже
@@ -8,14 +10,26 @@
 // их имена придумывает человек здесь же. Поэтому общий вид «входы слева, выходы
 // справа» ему не подходит, и у него свой.
 
-// Имя инструмента, ради которого всё это. ⚠ Сверяется с `tool.name` в базе:
-// переименуют там — здесь перестанет находиться, и человек увидит общий вид.
+// Имена инструментов, ради которых всё это. ⚠ Сверяются с `tool.name` в базе:
+// переименуют там — здесь перестанут находиться, и человек увидит общий вид с
+// JSON-простынёй в поле ввода вместо списка вариантов.
+//
+// ⚠⚠ Два, а не одно: `dice_batch` — тот же жребий, только бросает серию на
+// пачку. Описание у них одинаковое, и редактировать его человек обязан
+// одинаково — иначе у одного из двух шагов он правит текст JSON руками.
 export const DICE_TOOL_NAME = 'dice';
+export const DICE_TOOL_BATCH = 'dice_batch';
+export const DICE_TOOL_NAMES = [DICE_TOOL_NAME, DICE_TOOL_BATCH];
 
 // Довод инструмента, в который уезжает описание жребия.
 // ⚠ Обязан совпадать с именем аргумента функции `dice(spec)`: движок кладёт
 // значения в аргументы **по имени** (`inputs_map`), а не по порядку.
 const DICE_ARG = 'spec';
+
+// Довод, которым `dice_batch` узнаёт длину серии. ⚠ Имя переменной, а не
+// число: сколько реплик в пачке, решает заход, и зашитое число соврало бы
+// на первом же пакете другого размера.
+const DICE_ARG_TIMES = 'times';
 
 // Приставка, которой движок отличает литерал от имени переменной
 // (`ai_framework_manager`: `var_name.startswith('_const_')`).
@@ -53,13 +67,24 @@ function _isNumberShare(text) {
  * @param {HTMLElement} host куда рисовать; очищается.
  * @param {object} current текущее `tool_invoke` шага.
  * @param {function} save принимает готовое `{tool_name, inputs_map, outputs_map}`.
+ * @param {string} toolName какой из двух жребиев: `dice` или `dice_batch`.
  */
-export function renderDiceWidget(host, current, save) {
+export function renderDiceWidget(host, current, save, toolName = DICE_TOOL_NAME) {
     host.innerHTML = '';
+
+    // ⚠ Имя берём от выбранного инструмента, а не от первого из пары: сохрани
+    // виджет своё зашитое имя — человек выбрал бы `dice_batch`, а в шаг уехал
+    // бы `dice`, и серия превратилась бы в один бросок молча.
+    const isBatch = String(toolName) === DICE_TOOL_BATCH;
 
     const list = document.createElement('div');
     list.className = 'dice-list';
     list.style = 'display: flex; flex-direction: column; gap: 10px;';
+
+    // Поле «сколько бросков» — только у серии, и только выбором переменной.
+    const timesSelect = document.createElement('select');
+    timesSelect.className = 'form-control dice-times';
+    timesSelect.style = 'flex: 1; padding: 5px; font-size: 12px; height: 32px;';
 
     const collect = () => {
         const spec = {};
@@ -83,11 +108,13 @@ export function renderDiceWidget(host, current, save) {
             outputs[name] = name;
         });
 
-        save({
-            tool_name: DICE_TOOL_NAME,
-            inputs_map: {[DICE_ARG]: DICE_CONST + JSON.stringify(spec)},
-            outputs_map: outputs,
-        });
+        const inputs = {[DICE_ARG]: DICE_CONST + JSON.stringify(spec)};
+
+        if (isBatch && timesSelect.value) {
+            inputs[DICE_ARG_TIMES] = timesSelect.value;
+        }
+
+        save({tool_name: toolName, inputs_map: inputs, outputs_map: outputs});
     };
 
     const addVariable = (name = '', options = null) => {
@@ -109,7 +136,16 @@ export function renderDiceWidget(host, current, save) {
         + 'число, метка переменной (%percent_setting%: шанс задаёт настройка '
         + 'сайта) или «остаток» — всё, что не разобрали соседи. Не набрали ста '
         + 'процентов и остатка нет — в разнице не выпадает ничего, и переменная '
-        + 'приходит пустой.'));
+        + 'приходит пустой.'
+        + (isBatch
+            ? ' Серия: каждая переменная бросается столько раз, сколько скажет '
+              + 'переменная ниже, и приходит нумерованным списком.'
+            : '')));
+
+    if (isBatch) {
+        host.appendChild(_timesRow(timesSelect, current, collect));
+    }
+
     host.appendChild(list);
     host.appendChild(addButton);
 
@@ -601,6 +637,31 @@ function _numberOf(text) {
     const num = Number(raw.replace(',', '.'));
 
     return Number.isFinite(num) ? num : 0;
+}
+
+/** Ряд «сколько бросков» для серии: подпись и выбор переменной. */
+function _timesRow(select, current, collect) {
+    const row = document.createElement('div');
+    row.className = 'dice-times-row';
+    row.style = 'display: flex; align-items: center; gap: 8px;'
+        + ' background: #fff; padding: 6px 10px; border: 1px solid #e2e8f0;'
+        + ' border-radius: 4px;';
+
+    const label = document.createElement('span');
+    label.style = 'font-size: 12px; color: #334155; white-space: nowrap;';
+    label.textContent = 'Бросков на переменную:';
+
+    // ⚠⚠ Только выбором переменной, без поля для числа. Длина серии равна
+    // размеру пачки, а он приходит заходом — зашитое число совпадало бы с ним
+    // ровно до первого пакета другого размера, и разойтись они могли бы молча.
+    const saved = ((current || {}).inputs_map || {})[DICE_ARG_TIMES] || '';
+    fillVariablesSelectOptions(select, saved, '-- переменная с числом --');
+    select.onchange = collect;
+
+    row.appendChild(label);
+    row.appendChild(select);
+
+    return row;
 }
 
 function _hint(text) {

@@ -7,7 +7,7 @@ import {state, WORKFLOW_STEP_CONFIG, WORKFLOW_CONDITION_OPERATORS,
 import {parseMetadata, editorWorkflowId} from './utils.js';
 import {getToolOutputKeys} from './variable-group.js';
 import {fillVariablesSelectOptions} from './variables.js';
-import {renderDiceWidget, DICE_TOOL_NAME} from './dice-widget.js';
+import {renderDiceWidget, DICE_TOOL_NAMES} from './dice-widget.js';
 import {renderSubflowMaps, subflowMapsCollect} from './subflow-maps.js';
 import {textModalIcon} from './text-modal.js';
 
@@ -350,7 +350,7 @@ export function renderCustomStepFields(step, metadata) {
                 // `dice` придумывает человек в редакторе, а здесь `outputs_map`
                 // всегда уезжает пустым — для инструментов с объявленными
                 // выходами это верно, для него нет.
-                if (String(selectedName) === DICE_TOOL_NAME) return;
+                if (DICE_TOOL_NAMES.includes(String(selectedName))) return;
 
                 const inputsMap = {};
 
@@ -404,8 +404,12 @@ export function renderCustomStepFields(step, metadata) {
                 // общий вид «входы слева, объявленные выходы справа» ему нечем
                 // наполнить. Описание он сам укладывает в `inputs_map`
                 // литералом `_const_`, а имена — в `outputs_map`.
-                if (String(toolName) === DICE_TOOL_NAME) {
-                    renderDiceWidget(mappingContainer, currentValue, saveChanges);
+                if (DICE_TOOL_NAMES.includes(String(toolName))) {
+                    // ⚠ Имя передаём: у серии (`dice_batch`) к описанию
+                    // добавляется довод `times`, и виджет обязан сохранить то
+                    // имя, которое человек выбрал, а не первое из пары.
+                    renderDiceWidget(mappingContainer, currentValue, saveChanges,
+                        toolName);
 
                     return;
                 }
