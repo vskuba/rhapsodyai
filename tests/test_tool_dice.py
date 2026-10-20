@@ -221,6 +221,61 @@ class TestTheSpecMayArriveAsText:
         assert got['x'] in ('а', 'б'), got
 
 
+class TestASeriesOfRolls:
+    """`times` — серия бросков одной переменной: пачке нужен приём на строку.
+
+    ⚠⚠ Один приём на всю пачку сделал бы её однообразной, а выбор приёмов
+    самой моделью — ровно то, от чего жребий заведён.
+    """
+
+    SPEC = {'angle': {'игра': 50, 'вызов': 30, 'вопрос': 20}}
+
+    async def test_one_roll_is_the_old_behaviour(self):
+        """⚠ Умолчание не тронуто: прежние шаги зовут инструмент без `times`."""
+        got = await dice(self.SPEC)
+
+        assert got['angle'] in ('игра', 'вызов', 'вопрос')
+        assert '\n' not in got['angle']
+
+    async def test_a_series_comes_numbered(self):
+        got = await dice(self.SPEC, times=5)
+        lines = got['angle'].split('\n')
+
+        assert len(lines) == 5
+        assert [one.split('.')[0] for one in lines] == ['1', '2', '3', '4', '5']
+
+    async def test_every_line_is_a_real_option(self):
+        got = await dice(self.SPEC, times=12)
+
+        for line in got['angle'].split('\n'):
+            assert line.split('. ', 1)[1] in self.SPEC['angle'], line
+
+    async def test_the_count_arrives_as_text(self):
+        """⚠ Число приходит workflow-переменной, то есть строкой; мусор — один."""
+        assert len((await dice(self.SPEC, times='3'))['angle'].split('\n')) == 3
+
+        for given in ('', None, 0, 'мусор', -5):
+            got = await dice(self.SPEC, times=given)
+
+            assert '\n' not in got['angle'], f'{given!r} дало серию'
+
+    async def test_the_series_has_a_ceiling(self):
+        """⚠ Потолок: опечатка в настройке иначе уехала бы списком на тысячу."""
+        got = await dice(self.SPEC, times=10_000)
+
+        assert len(got['angle'].split('\n')) == 50
+
+    async def test_repeats_inside_a_series_are_allowed(self):
+        """⚠⚠ Доли заданы человеком, и «без повторов» исказило бы их молча.
+
+        При 50 бросках трёх вариантов повторы неизбежны — проверяем, что
+        инструмент их не прячет и серию не укорачивает.
+        """
+        got = await dice(self.SPEC, times=50)
+
+        assert len(got['angle'].split('\n')) == 50
+
+
 async def _shares(spec: dict, name: str) -> dict:
     """Частоты значений одной переменной в процентах."""
     got = collections.Counter()
