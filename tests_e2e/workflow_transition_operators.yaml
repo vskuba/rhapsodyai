@@ -1,0 +1,87 @@
+name: Переходы — список операторов и поле «Значение»
+description: >-
+  Строка перехода в редакторе workflow. Стережёт три числа: оператор
+  not_empty есть в списке, список собран из общей константы (ни одного
+  потерянного оператора), и поле «Значение» прячется ровно у тех трёх,
+  которым оно не нужно.
+page: /admin/workflow
+widths: [1440]
+
+# ⚠ Дорогой человека и БЕЗ привязки к конкретному workflow: страница открывает
+# тот, что выбран по умолчанию, а он у каждой установки свой. Выбираем первый
+# шаг и заводим условие кнопкой — так строка перехода появляется всегда.
+steps:
+  - wait_for: 'return document.querySelectorAll("#workflowStepsSortable [data-id]").length > 0'
+  - click: '#workflowStepsSortable [data-id]'
+  - wait_for: 'return !!document.getElementById("addConditionBtnAfter")'
+  - click: '#addConditionBtnAfter'
+  - wait_for: 'return !!document.querySelector(".tr-operator")'
+  # ⚠ Строка перехода лежит ниже сгиба: без прокрутки её меряют числами, но на
+  # кадре её нет — а кадр и есть то, на что смотрит человек.
+  - wait_for: |
+      document.querySelector('.transition-row')
+          .scrollIntoView({block: 'center'});
+      return true;
+  - wait: 400
+
+areas:
+  - name: Строка перехода
+    selector: '.transition-row'
+    rules: [visible, inside]
+  - name: Список операторов
+    selector: '.tr-operator'
+    rules: [visible, inside]
+
+checks:
+  # ⚠⚠ Главный сторож правки. Оператор добавляли ради отсутствующей
+  # переменной: `!= ''` на ней отвечает «не знаю» и переход молча
+  # пропускается, а not_empty отвечает «нет» честно.
+  - name: нет оператора not_empty в списке
+    expect: 0
+    js: |
+      const sel = document.querySelector('.tr-operator');
+      return [...sel.options].some(o => o.value === 'not_empty') ? 0 : 1;
+
+  # Список собирается из одной константы (`state.js`) в трёх местах редактора.
+  # Разойдись копии — оператор появился бы в одном месте и пропал в другом, а
+  # заметно это стало бы уже здесь. Число — на сколько разошлись.
+  - name: расхождение списка с ожидаемым набором операторов
+    expect: 0
+    js: |
+      const owed = ['==', '!=', '>', '<', '>=', '<=', 'contains',
+                    'not_contains', 'regex', 'exists', 'empty', 'not_empty'];
+      const got = [...document.querySelector('.tr-operator').options]
+          .map(o => o.value);
+      const missing = owed.filter(one => !got.includes(one)).length;
+      const extra = got.filter(one => !owed.includes(one)).length;
+      return missing + extra;
+
+  # ⚠ Поле «Значение» этим трём не нужно: они спрашивают про саму переменную.
+  # Прежде признак был записан двумя сравнениями подряд, и третий оператор в
+  # него не попал бы вовсе — поле осталось бы висеть пустым.
+  - name: операторов без значения, у которых поле не спряталось
+    expect: 0
+    js: |
+      const sel = document.querySelector('.tr-operator');
+      const value = sel.closest('.transition-row').querySelector('.tr-value');
+      let bad = 0;
+
+      for (const op of ['exists', 'empty', 'not_empty']) {
+        sel.value = op;
+        sel.dispatchEvent(new Event('change', {bubbles: true}));
+        await new Promise(r => setTimeout(r, 200));
+        if (getComputedStyle(value).visibility !== 'hidden') bad += 1;
+      }
+
+      // И обратно: обычному сравнению поле обязано вернуться.
+      sel.value = '==';
+      sel.dispatchEvent(new Event('change', {bubbles: true}));
+      await new Promise(r => setTimeout(r, 200));
+      if (getComputedStyle(value).visibility !== 'visible') bad += 1;
+
+      // Оставляем not_empty выбранным — чтобы он попал в кадр.
+      sel.value = 'not_empty';
+      sel.dispatchEvent(new Event('change', {bubbles: true}));
+      await new Promise(r => setTimeout(r, 200));
+
+      return bad;
