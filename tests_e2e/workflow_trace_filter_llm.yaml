@@ -1,8 +1,9 @@
 name: Трассы — фильтр по LLM
 description: >-
-  Четвёртый фильтр в колонке слева. Стережёт три числа: список моделей
-  наполнен, отбор сужает ленту прогонов, и выбранное переживает смену ноды
-  — модель записана у шага, а не у агента, и нодой не сужается.
+  Четвёртый фильтр в колонке слева. Стережёт четыре числа: список моделей
+  наполнен, отбор сужает ленту прогонов, выбранное переживает смену ноды
+  (модель записана у шага, а не у агента) и все четыре фильтра колонки
+  остаются одной геометрии.
 page: /admin/workflow_trace
 widths: [1440]
 
@@ -82,3 +83,23 @@ checks:
       await new Promise(r => setTimeout(r, 1500));
 
       return kept ? 1 : 0;
+
+  # ⚠ Близнецы: четыре фильтра в колонке — один виджет, и мерить их надо
+  # разом, а не только новый. Разъехавшаяся ширина или потерянная метка видны
+  # только в сравнении соседей.
+  - name: фильтров с геометрией, отличной от соседей
+    expect: 0
+    js: |
+      const rows = [...document.querySelectorAll('.filter-row')];
+      if (rows.length < 4) return rows.length;
+
+      const widths = rows.map(r => Math.round(r.querySelector('select').getBoundingClientRect().width));
+      const lefts = rows.map(r => Math.round(r.querySelector('select').getBoundingClientRect().left));
+      const labels = rows.map(r => (r.querySelector('.filter-label') || {}).textContent || '');
+
+      let bad = 0;
+      if (new Set(widths).size !== 1) bad += 1;
+      if (new Set(lefts).size !== 1) bad += 1;
+      if (labels.some(one => !one.trim())) bad += 1;
+
+      return bad;
