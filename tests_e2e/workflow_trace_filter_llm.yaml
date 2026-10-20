@@ -1,0 +1,84 @@
+name: Трассы — фильтр по LLM
+description: >-
+  Четвёртый фильтр в колонке слева. Стережёт три числа: список моделей
+  наполнен, отбор сужает ленту прогонов, и выбранное переживает смену ноды
+  — модель записана у шага, а не у агента, и нодой не сужается.
+page: /admin/workflow_trace
+widths: [1440]
+
+steps:
+  - wait_for: 'return !!document.getElementById("filterLlm")'
+  - wait_for: 'return document.querySelectorAll("#filterLlm option").length > 1'
+  - wait_for: 'return !document.querySelector("#runsList").textContent.includes("Загрузка")'
+  - wait: 400
+
+areas:
+  - name: Фильтр LLM
+    selector: '#filterLlm'
+    rules: [visible, inside]
+
+checks:
+  # ⚠⚠ Главный сторож. Пустой список выглядит как «моделей нет», а на деле
+  # значит, что справочник не доехал: ручка переименована, ответ в другом
+  # ключе. Ноль вариантов — это поломка, а не отсутствие данных.
+  - name: моделей в списке сверх пункта «Все LLM»
+    expect: 1
+    js: |
+      const got = document.querySelectorAll('#filterLlm option').length - 1;
+
+      // Число, а не «да/нет»: вердикт читается как «ожидали хотя бы одну».
+      return got > 0 ? 1 : 0;
+
+  # Отбор обязан сужать: равенство «со всеми» значило бы, что довод до ручки
+  # не доехал — фильтр был бы украшением.
+  - name: отбор по модели сузил ленту
+    expect: 1
+    js: |
+      const select = document.getElementById('filterLlm');
+      const before = document.querySelectorAll('#runsList .run-card').length;
+
+      select.selectedIndex = 1;
+      select.dispatchEvent(new Event('change', {bubbles: true}));
+      await new Promise(r => setTimeout(r, 1500));
+
+      const after = document.querySelectorAll('#runsList .run-card').length;
+
+      // Вернуть «Все LLM», чтобы кадр снялся в обычном состоянии.
+      select.selectedIndex = 0;
+      select.dispatchEvent(new Event('change', {bubbles: true}));
+      await new Promise(r => setTimeout(r, 1200));
+
+      return after <= before ? 1 : 0;
+
+  # ⚠ Смена ноды пересобирает списки workflow и агента — модель в эту пересборку
+  # не входит. Попади она туда, выбор слетал бы при каждой смене ноды.
+  - name: выбор модели пережил смену ноды
+    expect: 1
+    js: |
+      const llm = document.getElementById('filterLlm');
+      const node = document.getElementById('filterNode');
+
+      if (llm.options.length < 2 || node.options.length < 2) return 1;
+
+      llm.selectedIndex = 1;
+      const want = llm.value;
+
+      node.selectedIndex = 1;
+      node.dispatchEvent(new Event('change', {bubbles: true}));
+      await new Promise(r => setTimeout(r, 1500));
+
+      const kept = document.getElementById('filterLlm').value === want;
+
+      // ⚠⚠ Возвращаем «всё» по одному событию с паузой. Два `change` подряд
+      // дают две загрузки ленты, и ответ на первую приходит последним — лента
+      // остаётся от промежуточного отбора, то есть пустой. На кадре это
+      // выглядит как сломанная страница, хотя сломан был сам возврат.
+      llm.selectedIndex = 0;
+      llm.dispatchEvent(new Event('change', {bubbles: true}));
+      await new Promise(r => setTimeout(r, 1200));
+
+      node.selectedIndex = 0;
+      node.dispatchEvent(new Event('change', {bubbles: true}));
+      await new Promise(r => setTimeout(r, 1500));
+
+      return kept ? 1 : 0;

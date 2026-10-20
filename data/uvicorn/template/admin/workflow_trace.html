@@ -1204,6 +1204,16 @@
                         <option value="">Все агенты</option>
                     </select>
                 </div>
+
+                <!-- ⚠ Модель НЕ сужается нодой, в отличие от workflow и агента:
+                     она записана у шага прогона, а не у агента, и одна и та же
+                     модель законно встречается в прогонах разных нод. -->
+                <div class="filter-row">
+                    <label for="filterLlm" class="filter-label">LLM</label>
+                    <select id="filterLlm" class="form-control">
+                        <option value="">Все LLM</option>
+                    </select>
+                </div>
             </div>
 
             <div class="runs-list" id="runsList">
@@ -1599,12 +1609,13 @@
 
         // Справочники для фильтров, иконок типов шагов и разбора переменных прогона
         try {
-            const [workflowsRes, agentsRes, nodesRes, typesRes, toolsRes] = await Promise.all([
+            const [workflowsRes, agentsRes, nodesRes, typesRes, toolsRes, llmsRes] = await Promise.all([
                 getData('/workflow/list'),
                 getData('/agent/list'),
                 getData('/node/list'),
                 getData('/workflow_step/list'),
                 getData('/tool/list'),
+                getData('/llm/list'),
             ]);
 
             state.workflows = workflowsRes.result || [];
@@ -1618,6 +1629,16 @@
                 const opt = el('option', null, n.name);
                 opt.value = n.id;
                 nodeSel.appendChild(opt);
+            });
+
+            // ⚠ Список моделей наполняется здесь же, но в `filterOptionsRebuild`
+            // не участвует: модель записана у ШАГА прогона, а не у агента, и
+            // нодой не сужается — одна модель законно встречается у разных нод.
+            const llmSel = document.getElementById('filterLlm');
+            (llmsRes.result || []).forEach(one => {
+                const opt = el('option', null, one.name);
+                opt.value = one.id;
+                llmSel.appendChild(opt);
             });
 
             // Два зависимых селекта наполняет `filterOptionsRebuild` — она же
@@ -1659,16 +1680,19 @@
         filterNode: 'workflow_trace_filter_node',
         filterWorkflow: 'workflow_trace_filter_workflow',
         filterAgent: 'workflow_trace_filter_agent',
+        filterLlm: 'workflow_trace_filter_llm',
     };
 
-    // Значения трёх селектов в query — нужны и списку, и пробе начальной вкладки
+    // Значения селектов в query — нужны и списку, и пробе начальной вкладки
     function filterParams(params) {
         const nd = document.getElementById('filterNode').value;
         const wf = document.getElementById('filterWorkflow').value;
         const ag = document.getElementById('filterAgent').value;
+        const ll = document.getElementById('filterLlm').value;
         if (nd) params.set('node_id', nd);
         if (wf) params.set('workflow_id', wf);
         if (ag) params.set('agent_id', ag);
+        if (ll) params.set('llm_id', ll);
         return params;
     }
 
@@ -1733,6 +1757,9 @@
         filterOptionsRebuild();
         filterRestoreOne('filterWorkflow');
         filterRestoreOne('filterAgent');
+        // ⚠ Модель восстанавливается последней и вне пересборки: её список
+        // нодой не сужается, поэтому и протухнуть от смены ноды он не может.
+        filterRestoreOne('filterLlm');
     }
 
     async function loadRuns() {

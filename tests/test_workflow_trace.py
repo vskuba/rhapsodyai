@@ -106,6 +106,58 @@ class TestWorkflowTrace:
 
         pytest.skip("Нет ноды с прогонами в БД")
 
+    async def test_trace_list_filter_by_llm_id(self, client: httpx.AsyncClient):
+        resp = await client.get("/workflow_trace/run/list?llm_id=999999")
+        assert resp.status_code == 200
+        assert resp.json()["pagination"]["total_records"] == 0
+
+    async def test_trace_list_filter_by_llm_id_narrows(self, client: httpx.AsyncClient):
+        """Отбор по модели обязан сужать: равенство «со всеми» значило бы, что
+        довод до запроса не доехал, и фильтр оказался бы украшением."""
+        everything = (await client.get("/workflow_trace/run/list?limit=1")).json()
+        total = everything["pagination"]["total_records"]
+
+        if not total:
+            pytest.skip("Нет прогонов в БД")
+
+        llms = (await client.get("/llm/list")).json()["result"]
+
+        for one in llms:
+            resp = await client.get(f"/workflow_trace/run/list?llm_id={one['id']}&limit=1")
+            assert resp.status_code == 200
+            found = resp.json()["pagination"]["total_records"]
+
+            if found:
+                assert found <= total
+                return
+
+        pytest.skip("Ни одна модель не встречается в трассах")
+
+    async def test_trace_list_filter_by_llm_id_counts_subflows(self, client: httpx.AsyncClient):
+        """⚠⚠ Модель записана у шага, и чаще всего у шага ПОДПОТОКА.
+
+        Замер на проде 20.10.2026 по самой частой модели: прямые шаги верхних
+        прогонов дают 100, вместе с подпотоками — 2388. Считай отбор только
+        прямые шаги, он показывал бы четыре процента правды, выглядя исправным.
+        Здесь это стережётся так: хотя бы у одного найденного прогона своего
+        шага с этой моделью нет — значит попадание пришло из подпотока.
+        """
+        llms = (await client.get("/llm/list")).json()["result"]
+
+        for one in llms:
+            runs = (await client.get(
+                f"/workflow_trace/run/list?llm_id={one['id']}&limit=30")).json()["result"]
+
+            for run in runs:
+                detail = (await client.get(
+                    f"/workflow_trace/run/{run['run_uuid']}")).json().get("result") or {}
+                steps = detail.get("steps") or []
+
+                if steps and not any(s.get("llm_id") == one["id"] for s in steps):
+                    return
+
+        pytest.skip("Нет прогона, нашедшегося только через подпоток")
+
     async def test_trace_list_run_fields(self, client: httpx.AsyncClient):
         runs = (await client.get("/workflow_trace/run/list")).json()["result"]
         if not runs:

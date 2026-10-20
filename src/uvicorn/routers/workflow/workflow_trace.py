@@ -67,6 +67,7 @@ async def workflow_trace_run_list(
         workflow_id: int | None = None,
         agent_id: int | None = None,
         node_id: int | None = None,
+        llm_id: int | None = None,
         status: str | None = None,
         search: str | None = None,
         page: int = 1,
@@ -126,6 +127,10 @@ async def workflow_trace_run_list(
     if node_id:
         where.append("r.agent_id IN (SELECT id FROM agent WHERE node_id = %s)")
         params.append(node_id)
+    # Модели у прогона нет — она у шага, и чаще всего у шага ПОДПОТОКА.
+    if llm_id:
+        where.append(_trace_llm_where())
+        params.append(llm_id)
     if status in ('running', 'success', 'error', 'stopped'):
         where.append("r.status = %s")
         params.append(status)
@@ -547,6 +552,55 @@ def _trace_search_where() -> str:
         )
         SELECT id FROM hit
     ))"""
+
+
+def _trace_llm_where() -> str:
+    """Условие «прогон обращался к этой модели» — его шаги плюс его подпотоки.
+
+    Модель записана у **шага** (`agent_workflow_trace_step.llm_id`), а в списке
+    показываются только верхние прогоны (`depth = 0`). Подъём от шага к корню
+    идёт рекурсией по `parent_run_id` — тем же приёмом, что у поиска по тексту
+    (`_trace_search_where`), и по той же причине.
+
+    ## ⚠⚠ Без подпотоков фильтр соврал бы в двадцать раз
+
+    Замер на проде 20.10.2026 по самой частой модели (`gx10/qwen-small_nr1`):
+    прямые шаги верхних прогонов дают **100** прогонов, вместе с подпотоками —
+    **2388**. То есть 96% обращений к модели случаются внутри подпотоков, и
+    фильтр «по прямым шагам» показывал бы четыре процента правды, выглядя
+    исправным.
+
+    ## ⚠ Окна здесь нет намеренно, в отличие от поиска по тексту
+
+    Там окно обязательно: без него поиск упирался в потолок времени всегда.
+    Здесь оно почти ничего не даёт — цена сидит в самой рекурсии, а не в
+    просмотре шагов. Тот же замер:
+
+    | окно | прогонов | время |
+    |------|----------|-------|
+    | 5 000 строк | 281 | 1334 мс |
+    | 20 000 строк | 1143 | 1648 мс |
+    | без окна | 2388 | 2121 мс |
+
+    Платить третью долей правды за треть секунды незачем: отбор — это не
+    поиск, и неполный отбор врёт молча. На редких моделях запрос идёт 3 мс.
+
+    ⚠ Условие стоит **после** отбора по ноде, workflow и агенту: те сужают
+    проход, и вместе с ними дорогая рекурсия достаётся меньшему числу строк.
+    """
+    return """r.id IN (
+        WITH RECURSIVE hit AS (
+            SELECT DISTINCT s.run_id AS id
+              FROM agent_workflow_trace_step s
+             WHERE s.llm_id = %s
+            UNION
+            SELECT t.parent_run_id
+              FROM agent_workflow_trace t
+              JOIN hit ON t.id = hit.id
+             WHERE t.parent_run_id IS NOT NULL
+        )
+        SELECT id FROM hit
+    )"""
 
 
 def _trace_search_params(needle: str) -> list:
