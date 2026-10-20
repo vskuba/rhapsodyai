@@ -544,7 +544,19 @@ function _clamp(field, block) {
     if (others + num > DICE_PERCENT_TOTAL) field.value = String(Math.max(0, DICE_PERCENT_TOTAL - others));
 }
 
-/** Подпись с итогом: сколько набрано и что значит недобор. */
+/** Слово «вариант» в нужном числе: 1 вариант, 2 варианта, 5 вариантов. */
+function _optionsWord(qty) {
+    const two = qty % 100;
+    const one = qty % 10;
+
+    if (two > 10 && two < 20) return 'вариантов';
+    if (one === 1) return 'вариант';
+    if (one > 1 && one < 5) return 'варианта';
+
+    return 'вариантов';
+}
+
+/** Подпись с итогом: сколько набрано, сколько вариантов и что значит недобор. */
 function _retotal(block) {
     const fields = [...block.querySelectorAll('.dice-option-share')];
     const marks = fields.filter(one => one.value.trim().startsWith('%')).length;
@@ -573,7 +585,12 @@ function _retotal(block) {
         tail = ` · в остальных ${left}% не выпадает ничего`;
     }
 
-    foot.textContent = `сумма: ${sum}%${tail}`;
+    // ⚠ Счёт вариантов — сразу после процентов, до разговора про остаток:
+    // в переменной их бывает под сотню, и вручную такое не считают. Нужен он
+    // ровно тогда, когда список длинный, то есть когда его не видно целиком.
+    const qty = `${fields.length} ${_optionsWord(fields.length)}`;
+
+    foot.textContent = `сумма: ${sum}% · ${qty}${tail}`;
     foot.style.color = sum > DICE_PERCENT_TOTAL ? '#e53e3e' : '#64748b';
 }
 

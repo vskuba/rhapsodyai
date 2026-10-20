@@ -1,0 +1,83 @@
+name: Жребий — подпись итога под переменной
+description: >-
+  Подпись под списком вариантов жребия. Стережёт два числа: счёт вариантов
+  в подписи совпадает с числом строк на экране, и слово «вариант» стоит в
+  нужном числе — считать их глазами в списке на семь десятков нельзя.
+page: /admin/workflow?workflow_id=67
+widths: [1440]
+
+# ⚠ Дорогой человека: виджет рисуется только у ВЫБРАННОГО шага, поэтому по
+# шагу щёлкаем. Ищем тот, у которого жребий есть: номер шага у каждой
+# установки свой, а шагов в этом workflow немного.
+steps:
+  - wait_for: 'return document.querySelectorAll("#workflowStepsSortable [data-id]").length > 0'
+  - wait_for: |
+      for (const step of document.querySelectorAll('#workflowStepsSortable [data-id]')) {
+        step.click();
+        await new Promise(r => setTimeout(r, 300));
+        if (document.querySelector('.dice-total')) return true;
+      }
+
+      return false;
+  - wait_for: |
+      document.querySelector('.dice-total').scrollIntoView({block: 'center'});
+      return true;
+  - wait: 400
+
+areas:
+  - name: Подпись итога
+    selector: '.dice-total'
+    rules: [visible, inside, filled]
+
+checks:
+  # ⚠⚠ Главный сторож. Счёт в подписи обязан сойтись со строками на экране:
+  # разойдись они — человек поверит подписи, а она соврёт.
+  - name: расхождение счёта в подписи со строками списка
+    expect: 0
+    js: |
+      const blocks = [...document.querySelectorAll('.dice-var')]
+          .filter(one => one.querySelector('.dice-total'));
+
+      // ⚠⚠ Нет блоков — это не «всё сошлось», а «мерить нечего». Верни мы 0,
+      // случай зеленел бы на странице без жребия вовсе.
+      if (!blocks.length) return 1;
+
+      let bad = 0;
+
+      for (const block of blocks) {
+        const rows = block.querySelectorAll('.dice-option-share').length;
+        const said = (block.querySelector('.dice-total').textContent
+            .match(/·\s*(\d+)\s+вариант/) || [])[1];
+
+        if (Number(said) !== rows) bad += 1;
+      }
+
+      return bad;
+
+  # ⚠ Число слова: «1 вариант», «2 варианта», «5 вариантов». Сам счёт без
+  # согласования читается как опечатка и подрывает доверие к подписи.
+  - name: подписей с неверным числом слова «вариант»
+    expect: 0
+    js: |
+      const word = qty => {
+        const two = qty % 100, one = qty % 10;
+        if (two > 10 && two < 20) return 'вариантов';
+        if (one === 1) return 'вариант';
+        if (one > 1 && one < 5) return 'варианта';
+        return 'вариантов';
+      };
+      const blocks = [...document.querySelectorAll('.dice-var')]
+          .filter(one => one.querySelector('.dice-total'));
+
+      if (!blocks.length) return 1;
+
+      let bad = 0;
+
+      for (const block of blocks) {
+        const rows = block.querySelectorAll('.dice-option-share').length;
+        const said = block.querySelector('.dice-total').textContent;
+
+        if (!said.includes(`${rows} ${word(rows)}`)) bad += 1;
+      }
+
+      return bad;
