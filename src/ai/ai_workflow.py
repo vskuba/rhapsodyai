@@ -330,19 +330,35 @@ def ai_workflow_variable_compare(variables: dict, name: str, operator: str,
     стороны пробуются как `float`, и только если не вышло — сравниваются как
     текст.
 
-    ## ⚠ `exists` и `empty` работают и для отсутствующей переменной
+    ## ⚠ `exists`, `empty` и `not_empty` работают и для отсутствующей переменной
 
     Они спрашивают про сам факт наличия, поэтому проверяются до возврата
     `None`. Остальным операторам без значения ответить нечем.
+
+    ## ⚠⚠ `not_empty` — не то же самое, что `!= ''`
+
+    Разница ровно в отсутствующей переменной. `!= ''` на ней отдаёт `None`,
+    то есть «не знаю»: переход такое пропускает с предупреждением, а условный
+    блок остаётся в тексте и достаётся сторожу меток. `not_empty` отвечает
+    `False` — «непустой она быть не может, раз её нет вовсе», и ветка честно
+    не срабатывает.
+
+    ⚠ Отсюда и правило выбора: `!= ''` годится там, где переменная заведомо
+    заведена (её кладёт шаг выше), `not_empty` — там, где её может не быть:
+    результат пропущенного шага, выход подпотока, вход, который не прислали.
     """
     exists = name in variables
     current = variables.get(name)
+    empty = not exists or current is None or str(current).strip() == ''
 
     if operator == 'exists':
         return exists
 
     if operator == 'empty':
-        return not exists or current is None or str(current).strip() == ''
+        return empty
+
+    if operator == 'not_empty':
+        return not empty
 
     if not exists:
         return None

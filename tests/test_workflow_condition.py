@@ -221,3 +221,73 @@ class TestBrokenStaysWhole:
         половина истинна, и проявляется в тот день, когда она станет ложной.
         """
         assert ai_workflow_condition_check('yes or ???', VARIABLES) is None
+
+
+class TestEmptyAndNotEmpty:
+    """`empty` / `not_empty`: что считается содержимым, а что — пустотой.
+
+    ⚠⚠ Эти операторы живут только в **переходах**. В условном блоке их нет и не
+    нужно: `[<if var>]` уже спрашивает истинность, то есть почти то же самое.
+    Почти — потому что `truthy` считает ложью ещё `0` и `false`, а `not_empty`
+    смотрит только на наличие знаков.
+    """
+
+    # ⚠ Пустым считается всё, что `strip()` сводит к нулю: один пробел, пачка
+    # пробелов, табы и переводы строки. Текст из одних разделителей — это
+    # «ничего не написано», и ветка «есть содержимое» на нём срабатывать не
+    # должна.
+    BLANK = ('', ' ', '    ', '\n', '\n\n', '  \n  ', '\t', ' \t\n ')
+
+    @pytest.mark.parametrize('value', BLANK)
+    def test_whitespace_only_is_empty(self, value):
+        assert ai_workflow_variable_compare({'v': value}, 'v', 'empty', '') is True
+
+    @pytest.mark.parametrize('value', BLANK)
+    def test_whitespace_only_is_not_a_content(self, value):
+        assert ai_workflow_variable_compare({'v': value}, 'v', 'not_empty', '') is False
+
+    @pytest.mark.parametrize('value', ['x', ' x ', '0', 'false', '\nтекст\n', '-'])
+    def test_any_character_is_a_content(self, value):
+        """⚠ `0` и `false` — содержимое: пустоту спрашивают, а не истинность."""
+        assert ai_workflow_variable_compare({'v': value}, 'v', 'not_empty', '') is True
+        assert ai_workflow_variable_compare({'v': value}, 'v', 'empty', '') is False
+
+    def test_missing_variable_is_empty(self):
+        """Переменной нет вовсе — она пуста и непустой быть не может."""
+        assert ai_workflow_variable_compare({}, 'нет', 'empty', '') is True
+        assert ai_workflow_variable_compare({}, 'нет', 'not_empty', '') is False
+
+    def test_none_is_empty(self):
+        """⚠ `None` приходит от инструмента, не заполнившего ключ."""
+        assert ai_workflow_variable_compare({'v': None}, 'v', 'empty', '') is True
+        assert ai_workflow_variable_compare({'v': None}, 'v', 'not_empty', '') is False
+
+    def test_not_empty_is_not_the_same_as_ne_empty_string(self):
+        """⚠⚠ Ради этого отличия оператор и заводили.
+
+        `!= ''` на отсутствующей переменной отвечает `None` — «не знаю», и
+        переход молча пропускается. `not_empty` отвечает `False`: ветка не
+        срабатывает честно, без предупреждения в журнале.
+        """
+        assert ai_workflow_variable_compare({}, 'нет', '!=', '') is None
+        assert ai_workflow_variable_compare({}, 'нет', 'not_empty', '') is False
+
+    def test_empty_and_not_empty_are_opposite(self):
+        """Два оператора обязаны отвечать противоположно — всегда."""
+        cases = ({'v': 'x'}, {'v': ''}, {'v': '   '}, {'v': None}, {})
+
+        for variables in cases:
+            empty = ai_workflow_variable_compare(variables, 'v', 'empty', '')
+            filled = ai_workflow_variable_compare(variables, 'v', 'not_empty', '')
+
+            assert empty is not filled, f'{variables}: {empty} и {filled}'
+
+    def test_value_field_is_ignored(self):
+        """⚠ Поле «Значение» редактор у них прячет, но из метаданных не трёт.
+
+        Старый переход мог сохранить текст в `value`, а человек потом сменить
+        оператор — ответ не должен от этого зависеть.
+        """
+        for given in ('', 'мусор', '0', None):
+            assert ai_workflow_variable_compare(
+                {'v': 'x'}, 'v', 'not_empty', given) is True

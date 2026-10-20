@@ -2,7 +2,8 @@
 // widget_json_variable, widget_tool_invoke, widget_variable_conversion
 
 import {showNotification} from '/static/js/notification.js';
-import {state, WORKFLOW_STEP_CONFIG} from './state.js';
+import {state, WORKFLOW_STEP_CONFIG, WORKFLOW_CONDITION_OPERATORS,
+    WORKFLOW_OPERATORS_WITHOUT_VALUE} from './state.js';
 import {parseMetadata, editorWorkflowId} from './utils.js';
 import {getToolOutputKeys} from './variable-group.js';
 import {fillVariablesSelectOptions} from './variables.js';
@@ -664,7 +665,9 @@ export function renderCustomStepFields(step, metadata) {
             const untilOpSelect = document.createElement('select');
             untilOpSelect.className = 'form-control repeat-until-operator';
             untilOpSelect.style = "width: 110px; padding: 4px; font-size: 12px; height: 32px; text-align: center;";
-            ['==', '!=', '>', '<', '>=', '<=', 'contains', 'not_contains', 'regex', 'exists', 'empty'].forEach(op => {
+            // ⚠ Список общий с переходами (`state.js`): разойдись копии,
+            // оператор появился бы в одном месте и пропал в другом.
+            WORKFLOW_CONDITION_OPERATORS.forEach(op => {
                 const opt = document.createElement('option');
                 opt.value = op;
                 opt.textContent = op;
@@ -679,9 +682,9 @@ export function renderCustomStepFields(step, metadata) {
             untilValInput.value = (currentValue?.repeat?.until?.value) || '';
             untilValInput.style = "flex: 1.5; padding: 4px; font-size: 12px; height: 32px;";
 
-            // Прячем поле "Значение", когда оператор его не использует (exists/empty) — как у transitions
+            // Прячем поле "Значение", когда оператор его не использует — как у transitions
             const untilToggleValueVisibility = () => {
-                const hidden = untilOpSelect.value === 'exists' || untilOpSelect.value === 'empty';
+                const hidden = WORKFLOW_OPERATORS_WITHOUT_VALUE.includes(untilOpSelect.value);
                 untilValInput.style.visibility = hidden ? 'hidden' : 'visible';
             };
 

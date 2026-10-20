@@ -3,7 +3,8 @@
 
 import {getData, putData, postData, deleteData} from '../api.js';
 import {showNotification} from '/static/js/notification.js';
-import {state} from './state.js';
+import {state, WORKFLOW_CONDITION_OPERATORS,
+    WORKFLOW_OPERATORS_WITHOUT_VALUE} from './state.js';
 import {parseMetadata, getDragAfterElement, editorWorkflowId} from './utils.js';
 import {renderWorkflowVariables, extractVariablesFromSteps, fillVariablesSelectOptions,
     highlightStepToolVariables, highlightStepWorkflowVariables} from './variables.js';
@@ -313,11 +314,26 @@ export function selectStep(step, element) {
     highlightStepWorkflowVariables(step);
 }
 
-// Прячем поле "Значение", когда оператор его не использует (exists/empty).
+// Прячем поле "Значение", когда оператор его не использует.
 // visibility (а не display), чтобы строка перехода не «прыгала» по ширине
 function toggleTransitionValueVisibility(opSelect, valInput) {
-    const hidden = opSelect.value === 'exists' || opSelect.value === 'empty';
+    const hidden = WORKFLOW_OPERATORS_WITHOUT_VALUE.includes(opSelect.value);
     valInput.style.visibility = hidden ? 'hidden' : 'visible';
+}
+
+// Пункты списка операторов разметкой — для строки перехода, которую собирают
+// через innerHTML.
+//
+// ⚠⚠ Экранируется **текст пункта, но не значение**: внутри кавычек атрибута
+// `>` и `<` законны, и так они и стояли в рабочей разметке до того, как список
+// переехал в константу. Уйди сущность в `value`, в метаданные перехода попало
+// бы `&gt;` вместо `>`, и движок такого оператора не знает.
+function operatorOptionsHtml() {
+    const shown = op => op.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    return WORKFLOW_CONDITION_OPERATORS
+        .map(op => '<option value="' + op + '">' + shown(op) + '</option>')
+        .join('');
 }
 
 function renderTransitions(step, allSteps, type) {
@@ -337,8 +353,7 @@ function renderTransitions(step, allSteps, type) {
         sel.className = 'form-control tr-operator';
         sel.style = "width: 110px; padding: 4px; font-size: 12px; height: 32px; text-align: center;";
 
-        const ops = ['==', '!=', '>', '<', '>=', '<=', 'contains', 'not_contains', 'regex', 'exists', 'empty'];
-        ops.forEach(op => {
+        WORKFLOW_CONDITION_OPERATORS.forEach(op => {
             const opt = document.createElement('option');
             opt.value = op;
             opt.textContent = op;
@@ -565,17 +580,7 @@ document.getElementById('stepToNextStep').onchange = () => {
         row.innerHTML =
             '<select class="form-control tr-variable" style="flex: 1.5; padding: 4px; font-size: 12px; height: 32px;"></select>' +
             '<select class="form-control tr-operator" style="width: 110px; padding: 4px; font-size: 12px; height: 32px; text-align: center;">' +
-            '<option value="==">==</option>' +
-            '<option value="!=">!=</option>' +
-            '<option value=">">&gt;</option>' +
-            '<option value="<">&lt;</option>' +
-            '<option value=">=">&gt;=</option>' +
-            '<option value="<=">&lt;=</option>' +
-            '<option value="contains">contains</option>' +
-            '<option value="not_contains">not_contains</option>' +
-            '<option value="regex">regex</option>' +
-            '<option value="exists">exists</option>' +
-            '<option value="empty">empty</option>' +
+            operatorOptionsHtml() +
             '</select>' +
             '<input type="text" class="form-control tr-value" placeholder="Значение" style="flex: 1.5; padding: 4px; font-size: 12px; height: 32px;">' +
             '<span style="color: #a0aec0; font-size: 12px; margin: 0 2px;">➔</span>' +
