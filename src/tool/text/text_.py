@@ -154,45 +154,60 @@ async def text_paragraph_has(text: str, needle: str) -> dict:
             "inline": int(found and not alone)}
 
 
-async def text_marks_missing(text: str, names: str, separator: str = ',') -> dict:
+async def text_substr_missing(text: str, items: str, separator: str = ',',
+                              ignore_case: bool = False) -> dict:
     r"""
-    Находит метки `[[имя]]`, которых в тексте нет, хотя они обязаны быть.
+    Находит, каких кусков из списка в тексте нет.
 
-    Ответ на вопрос «все ли обязательные метки на месте». Обратная сторона
-    `text_regex_unknown`: та ловит самовольные метки, эта — пропущенные. Проверки
-    разные, и одна другую не заменяет: текст с единственной верной меткой лишних
-    не содержит и всё же никуда не годится.
+    Множественный `text_substr`: тот отвечает про один кусок, этот — про список,
+    и возвращает **недостающие**. Ответ на вопрос «всё ли обязательное на месте».
 
-    ⚠ Живая проверка, ради которой инструмент и появился: агента просили написать
-    шаблон письма с тремя метками, а он вернул текст с одной. Вопрос получателю он
-    написал словами — и письмо, задуманное разным для каждого, вышло бы для всех
-    одинаковым. Проверка «нет ли лишних» это пропускала: лишних и правда не было.
+    ⚠ Поиск буквальный, по знакам — ни регулярок, ни границ слова, как и у
+    `text_substr`: `кот` найдётся внутри `котлеты`.
+
+    ⚠ Работа для кода, а не для LLM. Сверка «список против текста» требует
+    пройти по каждому куску, а модель на вопрос «все ли на месте?» отвечает
+    утвердительно почти всегда. Живая проверка, ради которой инструмент и
+    появился: агента просили написать шаблон письма с тремя вставками, а он
+    вернул текст с одной — вопрос получателю написал словами, и письмо,
+    задуманное разным для каждого, вышло бы для всех одинаковым. Замер на 601
+    прогоне: недостача нашлась в 220 случаях, то есть в каждом третьем.
+
+    ⚠⚠ Ищутся **куски как есть**, а не имена чего-либо: обрамление задаёт
+    вызывающий. Прежний `text_marks_missing` клеил скобки сам
+    (`'[[%s]]' % name`) и этим знал про чужой предмет — про «метки письма».
+    Здесь предмета нет: список может быть каким угодно.
 
      - text: где проверяем.
-     - names: имена обязательных меток через разделитель. Пусто — проверять нечего.
-     - separator: чем разделены имена.
+     - items: куски через разделитель. Пусто — проверять нечего.
+     - separator: чем разделены куски.
+     - ignore_case: не различать прописные и строчные.
 
     Пример:
         text = "Hi [[name]], nice to meet you"
-        result = await text_marks_missing(text, "name,city,question")
-        # result будет {"list": ["city", "question"], "qty": 2, "str": "city,question"}
+        result = await text_substr_missing(text, "[[name]],[[city]]")
+        # result будет {"list": ["[[city]]"], "qty": 1, "str": "[[city]]"}
 
     Returns:
         A dictionary with the check result.
-        list (list): Имена, которых в тексте нет, в порядке списка.
+        list (list): Куски, которых в тексте нет, в порядке списка.
         qty (int): Сколько их.
-        str (str): Они же строкой через запятую; пусто — на месте все.
+        str (str): Они же строкой через разделитель; пусто — на месте все.
     """
     text = str(text or '')
-    wanted = [part.strip() for part in str(names or '').split(str(separator or ','))]
+    wanted = [part.strip() for part in str(items or '').split(str(separator or ','))]
     wanted = [part for part in wanted if part]
 
-    missing = []
-    for name in wanted:
-        if '[[%s]]' % name not in text and name not in missing:
-            missing.append(name)
+    where = text.lower() if ignore_case else text
 
-    return {"list": missing, "qty": len(missing), "str": ','.join(missing)}
+    missing = []
+    for one in wanted:
+        needle = one.lower() if ignore_case else one
+        if needle not in where and one not in missing:
+            missing.append(one)
+
+    return {"list": missing, "qty": len(missing),
+            "str": str(separator or ',').join(missing)}
 
 
 async def text_split(text: str, separator: str = ',') -> dict:

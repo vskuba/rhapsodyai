@@ -21,7 +21,9 @@ import pytest
 
 from src.tool.text.text_ import text_paragraph_has
 
-pytestmark = pytest.mark.asyncio
+# ⚠ Две метки: `core` — группа прогона (без неё файл не попадает ни в один
+# маркер и молча не запускается, `test_marks.py`), `asyncio` — род самих тестов.
+pytestmark = [pytest.mark.core, pytest.mark.asyncio]
 
 
 class TestTheMarkStandsAlone:
