@@ -228,6 +228,64 @@ async def text_split(text: str, separator: str = ',') -> dict:
     return {"list": items, "qty": len(items)}
 
 
+async def text_chunk_unique(text: str, separator: str = ',',
+                      ignore_case: bool = False) -> dict:
+    """
+    Убирает повторы из текста, разрезанного разделителем, и склеивает обратно.
+
+    Ответ на вопрос «не повторяется ли что-то в этом списке». Разрезает по
+    `separator`, выбрасывает повторные вхождения, склеивает тем же разделителем.
+
+    ⚠⚠ Остаётся **первое** вхождение, порядок прочих не меняется. Иначе текст
+    перетасовался бы: у нумерованного списка сбилась бы нумерация, у пачки
+    реплик — соответствие «строка N — приём N».
+
+    ⚠ Сравнение буквальное, знак в знак. Перефразированный повтор («I bet
+    you're trouble» против «You look like trouble») для него разный текст: это
+    другая задача и другая цена, здесь её нет намеренно.
+
+     - text: что чистим.
+     - separator: чем разрезано — им же склеивается обратно. Пустой
+       разделитель резать нечем: текст возвращается как есть одним элементом.
+     - ignore_case: не различать прописные и строчные при сравнении. На сам
+       текст не влияет — в ответе остаётся исходное написание первого вхождения.
+
+    Пример:
+        text = "да---нет---да"
+        result = await text_chunk_unique(text, separator="---")
+        # result будет {"str": "да---нет", "list": ["да", "нет"],
+        #               "qty": 2, "dropped": 1}
+
+    Returns:
+        A dictionary with the cleaned text.
+        str (str): Текст без повторов, склеенный тем же разделителем.
+        list (list): Он же массивом — первые вхождения, в исходном порядке.
+        qty (int): Сколько элементов осталось.
+        dropped (int): Сколько повторов выброшено. Ноль — чистить было нечего.
+    """
+    # ⚠⚠ Пустые элементы отбрасываются, края обрезаются — то же, что делает
+    # соседний `text_split`. Инструменты, режущие один и тот же текст, обязаны
+    # резать его одинаково: разойдись они, `qty` у них перестали бы сходиться.
+    line = str(separator) if separator else ''
+    parts = str(text or '').split(line) if line else [str(text or '')]
+    parts = [one.strip() for one in parts]
+    parts = [one for one in parts if one]
+
+    seen, kept = set(), []
+
+    for one in parts:
+        mark = one.lower() if ignore_case else one
+
+        if mark in seen:
+            continue
+
+        seen.add(mark)
+        kept.append(one)
+
+    return {"str": line.join(kept), "list": kept, "qty": len(kept),
+            "dropped": len(parts) - len(kept)}
+
+
 async def text_substr(text: str, substr: str, ignore_case: bool = False) -> dict:
     """
     Ищет подстроку в тексте: отдаёт позицию первого вхождения или признак «нет».
