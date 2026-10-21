@@ -74,7 +74,22 @@ STEPS = [
     {'id': 787, 'metadata': json.dumps({
         'llm_to_json_variable': [{'variable': 'talk_topic', 'text': 'о себе'}]},
         ensure_ascii=False)},
+    # ⚠⚠ Шаг с циклом и присваиванием. `k`, `v` и `n` он связывает ПРЯМО В
+    # ТЕКСТЕ, и в списке переменных им не место: они живут внутри одного поля
+    # промпта, а не в прогоне. Источник цикла — наоборот, настоящее чтение, и
+    # пропасть он не должен.
+    #
+    # ⚠ Источником взято имя, которое шаги читают и без цикла: возьми мы
+    # нетронутое, оно выпало бы из `SILENT` и сломало соседний случай про
+    # «0→0» — тот стережёт совсем другое.
+    {'id': 788, 'metadata': json.dumps({
+        'prompt_user': '[<for k,v in companion_bio_524_result_bio, start=1>]%k%. %v%'
+                       '[<endfor>][<set n = 1>]%n%'},
+        ensure_ascii=False)},
 ]
+
+# Имена, связанные текстом шага: ни одного из них в списке быть не должно.
+BOUND = ('k', 'v', 'n')
 
 TOOLS = [{'name': 'companion_bio',
           'args': json.dumps({'output': {'keys': {'bio': 'string'}}})}]
@@ -136,6 +151,37 @@ class TestTheListIsWhole:
         names = [row['name'] for row in _rows()]
 
         assert names == sorted(names), f'список графа разъехался по алфавиту: {names}'
+
+
+class TestTheLoopNamesStayInTheirText:
+    """⚠⚠⚠ Счётчик цикла и присваивание в списке переменных НЕ показываются.
+
+    `[<for k,v in …>]` и `[<set n = …>]` заводят имя внутри одного текстового
+    поля; движок считает их в копии словаря и в прогон не отдаёт
+    (`ai_workflow_set_render`). Показать их списком значило бы предложить
+    человеку переменную, которой нигде, кроме строки промпта, не существует, —
+    и ту ещё можно завести в реестре, молча перекрыв собою счётчик цикла.
+
+    Поймано на живом: в `dating_mail_write` после первого же цикла в списке
+    графа появилась строка `v` со значком «∅ не объявлена».
+    """
+
+    def test_no_bound_name_reaches_the_list(self):
+        got = {row['name'] for row in _rows()}
+
+        leaked = sorted(one for one in BOUND if one in got)
+
+        assert not leaked, (
+            f'имена, связанные текстом, протекли в список графа: {leaked}. '
+            'Их вычитает `variablesTrace` пошагово — проверьте, что она зовёт '
+            '`stepBoundVariables`.')
+
+    def test_the_loop_source_is_still_read(self):
+        """⚠ Вычитаются только связанные: источник цикла — обычное чтение."""
+        got = {row['name'] for row in _rows()}
+
+        assert 'companion_bio_524_result_bio' in got, (
+            'вместе со счётчиком пропал источник цикла — вычитание задело лишнее')
 
 
 class TestEveryRowCarriesItsIcon:

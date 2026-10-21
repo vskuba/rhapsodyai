@@ -417,20 +417,22 @@ async def llm_ping(llm_id: int, user=Depends(AuthChecker([AuthPermission.LLM_UPD
     }
 
     provider = ai_llm_provider(llm['name'])
+    env_suffix = '_API_URL'
 
     if provider == 'gx10':
         model_name = llm['name'].split('/')[-1]
         model_size = model_name.split('-')[-1].upper()
-        base_url = config_get(provider.upper() + f'_{model_size}_API_URL') if provider else ''
+        env_suffix = f'_{model_size}{env_suffix}'
+        base_url = config_get(provider.upper() + env_suffix) if provider else ''
     else:
-        base_url = config_get(provider.upper() + '_API_URL') if provider else ''
+        base_url = config_get(provider.upper() + env_suffix) if provider else ''
 
     api_key = config_get(provider.upper() + '_API_KEY') if provider else ''
 
     if not provider:
         ping['error'] = 'Провайдер не определен по имени модели'
     elif not base_url:
-        ping['error'] = f'В .env нет {provider.upper()}_API_URL'
+        ping['error'] = f'В .env нет {provider.upper()}{env_suffix}'
     else:
         url = base_url.rstrip('/') + '/models'
         headers, params = {}, {}

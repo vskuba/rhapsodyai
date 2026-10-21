@@ -390,8 +390,24 @@ export function variablesTrace(steps) {
     };
 
     (Array.isArray(steps) ? steps : []).forEach(step => {
-        stepMadeVariables(step).forEach(name => put(name, step, 'made'));
-        stepReadVariables(step).forEach(name => put(name, step, 'used'));
+        // ⚠⚠ Имена, связанные текстом (`[<for k,v in …>]`, `[<set …>]`),
+        // вычитаются — и вычитаются ПОШАГОВО, а не одним списком на весь
+        // workflow. Счётчик `v` живёт внутри одного поля и переменной workflow
+        // не является; попади он сюда, список графа показал бы строку «∅ не
+        // объявлена», а человек пошёл бы заводить её в реестре — и заведённая
+        // пустой, она перекрыла бы собою счётчик цикла.
+        //
+        // ⚠ Пошагово, потому что имя законно бывает и тем и другим: цикл
+        // связывает `v` в одном шаге, а в соседнем `%v%` — настоящая
+        // переменная прогона. Вычти мы одним списком — пропала бы вторая.
+        const bound = stepBoundVariables(step);
+
+        stepMadeVariables(step).forEach(name => {
+            if (!bound.has(name)) put(name, step, 'made');
+        });
+        stepReadVariables(step).forEach(name => {
+            if (!bound.has(name)) put(name, step, 'used');
+        });
     });
 
     return new Map([...trace.entries()].sort((a, b) => a[0].localeCompare(b[0])));
