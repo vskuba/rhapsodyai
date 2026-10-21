@@ -7,6 +7,8 @@ venv/
 ssh/
 __pycache__/
 *.pyc
+.tmp
+.dsh
 
 # Конфиги и секреты
 .env
