@@ -656,6 +656,40 @@ function pickVariable(name, container) {
 }
 
 /**
+ * Строка «по умолчанию» в панели переменной — если у имени есть запись реестра.
+ *
+ * ⚠⚠ Прочерк при пустом умолчании ставится **намеренно**: «запись есть, а
+ * умолчания нет» и «записи нет вовсе» — разные ответы, и молчание сливало бы их
+ * в один. Первое значит «не пришлют — будет пусто», второе — «ищи, кто кладёт».
+ *
+ * ⚠ Значение показывается целиком, с переносом: у переменной письма это
+ * регулярка, и обрезанная она не отвечает ни на один вопрос. Полный текст
+ * дублируется подсказкой — для копирования мышью.
+ */
+function _appendDefault(box, name) {
+    const entry = (state.allCurrentVariables || [])
+        .find(one => String(one?.name) === String(name));
+
+    if (!entry) return;
+
+    const label = document.createElement('div');
+    label.className = 'trace-role';
+    label.textContent = 'ПО УМОЛЧАНИЮ:';
+    box.appendChild(label);
+
+    const value = entry.default;
+    const empty = value === undefined || value === null || String(value) === '';
+
+    const row = document.createElement('div');
+    row.className = empty ? 'trace-none' : 'trace-default';
+    row.textContent = empty ? '—' : String(value);
+
+    if (!empty) row.title = String(value);
+
+    box.appendChild(row);
+}
+
+/**
  * Трасса словами: кто кладёт, кто читает. Щелчок по шагу открывает его в редакторе.
  */
 function renderVariableTrace(name, cell, container) {
@@ -679,6 +713,17 @@ function renderVariableTrace(name, cell, container) {
     head.className = 'trace-head';
     head.textContent = `%${name}%`;
     box.appendChild(head);
+
+    // ⚠⚠ Умолчание — **ответ на главный вопрос панели**. У переменной реестра
+    // «КЛАДУТ: —» означает «её никто не кладёт шагом», и без умолчания рядом
+    // человек не понимает, откуда вообще берётся значение: строка выглядит как
+    // «пусто и непонятно». Со значением она читается до конца — «приходит
+    // снаружи, а не придёт — будет вот это».
+    //
+    // ⚠ Только для имён, у которых есть запись в реестре. У результата
+    // инструмента и динамической умолчания не бывает по устройству, и пустая
+    // строка у них была бы шумом.
+    _appendDefault(box, name);
 
     const part = (title, steps) => {
         const label = document.createElement('div');

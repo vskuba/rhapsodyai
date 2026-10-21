@@ -891,17 +891,20 @@ def ai_workflow_variables_render(source: Any, variables: dict) -> Any:
         if WORKFLOW_SET_OPEN in rendered_str:
             return ai_workflow_set_render(rendered_str, variables)
 
+        # ⚠⚠ Умная типизация: строка ровно из одной метки (`"%id%"`) возвращает
+        # значение СВОЕГО типа — число числом, список списком. Иначе `inputs_map`
+        # отдавал бы инструменту строку `"5"` там, где объявлен `int`.
+        #
+        # ⚠ Проверяется ДО подстановки и отдельно от неё: сама замена одинакова
+        # для всех, а это — исключение из неё, и мешать их в один цикл значит
+        # держать два правила в одном месте.
+        # ⚠ Сравнение точное, без обрезки пробелов: `" %id% "` — это текст с
+        # меткой внутри, а не значение. Обрезка тихо расширила бы правило.
         for key, val in variables.items():
-            placeholder = f"%{key}%"
-
-            # Умная замена типов: если строка состоит ТОЛЬКО из плейсхолдера (н-р, "%id%")
-            # возвращаем исходный тип значения (int, bool, list и т.д.), а не строку
-            if rendered_str == placeholder:
+            if rendered_str == f'%{key}%':
                 return val
 
-            if placeholder in rendered_str:
-                rendered_str = rendered_str.replace(placeholder, str(val))
-        return rendered_str
+        return _marks_substitute(rendered_str, variables)
 
     elif isinstance(source, dict):
         # Теперь рекурсивный вызов работает правильно

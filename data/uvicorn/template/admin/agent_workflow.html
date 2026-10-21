@@ -1913,6 +1913,22 @@
         word-break: break-all;
     }
 
+    /* Значение по умолчанию: моноширинный, переносится целиком.
+       ⚠ Не обрезаем: у переменной письма это регулярка, и обрезанная она не
+       отвечает ни на один вопрос — ради неё строка и заведена. */
+    .graph-vars-trace .trace-default {
+        font-family: monospace;
+        font-size: 10px;
+        color: #0f766e;
+        background: #f0fdfa;
+        border: 1px solid #ccfbf1;
+        border-radius: 3px;
+        padding: 2px 5px;
+        margin-top: 2px;
+        word-break: break-all;
+        white-space: pre-wrap;
+    }
+
     .graph-vars-trace .trace-role {
         margin-top: 6px;
         font-size: 10px;

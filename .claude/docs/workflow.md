@@ -1667,19 +1667,19 @@ pos -1  id=155  return_response_text  «🚫 Тестовые прогоны wor
 **Шаги мастера и цикла (нода Dev, workflow 9, position 0+ — не сдвинуты, заглушка выше добавлена с отрицательным position):**
 
 Мастер построен на универсальных инструментах — конвейер «выборка → колонка → чипсы»:
-`mysql_find_by(table, criteria)` → `dict_column(rows, 'name')` → `list_render(names,
+`mysql_find_by(table, criteria)` → `dict_column(rows, 'name')` → `list_implode(names,
 '[[%s]]', ' ')`. Параметры выборки задаются шагом `variable_conversion` перед каждым
 вызовом (переменные `find_table`, `find_criteria`).
 
 ```
 -- Мастер выбора цели (каждый вопрос — continue_workflow, ответ приходит следующим сообщением)
 pos 0-4   ноды:     conversion(node, {}) → mysql_find_by → dict_column(name)
-                    → list_render → return «Спросить ноду» [continue]
+                    → list_implode → return «Спросить ноду» [continue]
 pos 5-11  workflow: conversion({name: prompt_user}) → mysql_find_one_by(node) →
                     conversion({node_id: X, subflow: 0}) → mysql_find_by → dict_column
-                    → list_render → return «Спросить workflow» [continue]
+                    → list_implode → return «Спросить workflow» [continue]
 pos 12-18 агенты:   mysql_find_one_by(agent_workflow по имени) → test_workflow_id →
-                    mysql_find_by(agent по workflow_id) → dict_column → list_render
+                    mysql_find_by(agent по workflow_id) → dict_column → list_implode
                     → return «Спросить агента» [continue]
 pos 19-23 конфиг:   mysql_find_one_by(agent по имени) → dict_column(workflow_variable,
                     document_id) → conversion(target_agent_*, document_id)
@@ -1729,7 +1729,7 @@ pos 30 return_response_text           — стенограмма диалога 
   (src/tool/mysql/) — выборка записей; criteria — dict, значение-список → IN, None → IS NULL,
   имена таблицы/колонок валидируются, datetime приводится к строке;
   `dict_column(data, column_name)` (src/tool/dict/) — значения по ключу из списка словарей,
-  словаря или JSON-строки; `list_render(items, template, separator)` — форматирование списка
+  словаря или JSON-строки; `list_implode(items, template, separator)` — форматирование списка
   ("[[%s]]" + " " = чипсы чата); `counter_increment(value, step)` — счетчик циклов;
   `session_message_add(session_uuid, user_message, agent_response, agent_id, user_id)` —
   запись пары сообщений в сессию.
@@ -1809,21 +1809,21 @@ Step 0: return_response_text (continue_workflow=false)
 
 **Важно:** в greeting и prompt_user команды пишутся как `[[/command]]`; значения в `transitions_before/after` (`"value": "/command"`) остаются без скобок — это то, что чип отправляет.
 
-### 13.5 Генерация чипсов программно (list_render)
+### 13.5 Генерация чипсов программно (list_implode)
 
-Инструмент `list_render(items, template, separator)` (`src/tool/dict/`):
+Инструмент `list_implode(items, template, separator, limit)` (`src/tool/list/list_.py`):
 - `items` — JSON-строка или список значений
 - `template` — `%s` = элемент, пример: `[[%s]]`
 - `separator` — разделитель, пример: ` ` (пробел между чипсами)
 
-Результат: `list_render_{step_id}_result_str` — строка чипсов для подстановки в `prompt_user`.
+Результат: `list_implode_{step_id}_result_str` — строка чипсов для подстановки в `prompt_user`.
 
 **Конвейер «таблица → чипсы»:**
 ```
 variable_conversion  → mysql_find_by(table, criteria)
                      → dict_column(rows, 'name')      ← column_name по ключу
-                     → list_render(names, '[[%s]]', ' ')
-                     → return_response_text(%list_render_{id}_result_str%, continue=true)
+                     → list_implode(names, '[[%s]]', ' ')
+                     → return_response_text(%list_implode_{id}_result_str%, continue=true)
 ```
 
 Пример из dating_bot: список девушек для удаления → `%agent_list_111_result_chips%`.

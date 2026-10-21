@@ -50,8 +50,12 @@ STATE = './data/uvicorn/public/js/workflow/state.js'
 # Шаги открытого в редакторе workflow (`.id`/`.metadata`, не прогонные
 # `step_id`/`metadata_rendered`) и реестр переменных. Имена нарочно из всех
 # групп сразу — половина их не встречается ни в одном следе шага.
+# ⚠ Умолчание нарочно длинное и со спецзнаками — это настоящая регулярка из
+# `dating_mail_write`, на которой беду и заметили: обрезка делала её бесполезной.
+DEFAULT_SAMPLE = r'\[\[([A-Za-z_][A-Za-z0-9_]*)\]\]'
+
 REGISTRY = [
-    {'id': 901, 'name': 'girl_name', 'type': 'input'},
+    {'id': 901, 'name': 'girl_name', 'type': 'input', 'default': DEFAULT_SAMPLE},
     {'id': 902, 'name': 'talk_history_chat', 'type': 'workflow'},
     {'id': 903, 'name': 'timezone', 'type': 'global'},
     {'id': 904, 'name': 'agent_title', 'type': 'node'},
@@ -124,6 +128,10 @@ SILENT = [name for name in EXPECTED
 STEPNUMS_FROM = '* Номер шага так, как его видит человек'
 LIST_FROM = '* Рисует список переменных workflow и вешает выбор'
 LIST_TILL = 'Выбрать переменную: показать трассу'
+# Кусок панели переменной: строка «по умолчанию». ⚠ Режется отдельно от списка —
+# между ними лежит выбор переменной, которому нужен живой граф.
+DEFAULT_FROM = '* Строка «по умолчанию» в панели переменной'
+DEFAULT_TILL = '* Трасса словами: кто кладёт, кто читает'
 
 
 class TestTheListIsWhole:
@@ -239,6 +247,65 @@ class TestEveryRowCarriesItsIcon:
                 f'у «{row["name"]}» значок снова расписан текстом: {row["icon"]!r}'
 
 
+class TestThePanelTellsWhereTheValueComesFrom:
+    """⚠⚠⚠ У переменной реестра панель показывает ЗНАЧЕНИЕ ПО УМОЛЧАНИЮ.
+
+    Без него строка «КЛАДУТ: —» оставляла вопрос без ответа: никто не кладёт, а
+    значение откуда-то берётся. Поймано на живом — `mail_var_pattern` в
+    `dating_mail_write`: умолчание есть, видно его было только на вкладке
+    «Шаги», и то обрезанным до десяти знаков.
+
+    ⚠ Три случая, и все три разные: значение есть, записи нет, запись есть —
+    умолчания нет. Сливать последние два нельзя: «не пришлют — будет пусто» и
+    «ищи, кто кладёт» чинятся по-разному.
+    """
+
+    def test_the_value_is_shown_whole(self):
+        """⚠ Целиком, без обрезки: у переменной письма это регулярка."""
+        got = _default_rows('girl_name')
+        value = next((r for r in got if r['cls'] == 'trace-default'), None)
+
+        assert value is not None, (
+            f'панель не показала умолчание переменной реестра: {got}')
+        assert value['text'] == DEFAULT_SAMPLE, (
+            f'умолчание показано не целиком: {value["text"]!r} '
+            f'вместо {DEFAULT_SAMPLE!r}')
+
+    def test_a_registry_name_without_default_gets_a_dash(self):
+        """⚠⚠ Прочерк, а не молчание: «записи нет» — другой ответ, не этот."""
+        got = _default_rows('talk_history_chat')
+        labels = [r['text'] for r in got if r['cls'] == 'trace-role']
+
+        assert 'ПО УМОЛЧАНИЮ:' in labels, (
+            f'у переменной реестра пропала сама строка умолчания: {got}')
+        assert any(r['cls'] == 'trace-none' for r in got), (
+            f'пустое умолчание показано не прочерком: {got}')
+
+    def test_the_panel_actually_calls_it(self):
+        """⚠⚠ Что строка РИСУЕТСЯ, а не просто умеет рисоваться.
+
+        Случаи выше зовут `_appendDefault` напрямую — они стерегут саму строку.
+        Убери кто-нибудь её вызов из панели, и они останутся зелёными, а
+        человек снова не узнает, откуда берётся значение. Поэтому вызов
+        проверяется отдельно и текстом: вырезать сюда `renderVariableTrace`
+        целиком дороже — ему нужен живой граф и обработчики щелчка.
+        """
+        code = _read(GRAPH)
+        panel = code[code.index(DEFAULT_TILL):]
+
+        assert '_appendDefault(box, name)' in panel, (
+            'панель переменной больше не зовёт `_appendDefault` — строка '
+            '«ПО УМОЛЧАНИЮ» пропала с экрана, и «КЛАДУТ: —» снова оставляет '
+            'вопрос без ответа')
+
+    def test_a_name_outside_the_registry_gets_no_row(self):
+        """⚠ У результата инструмента умолчания не бывает — строки нет вовсе."""
+        got = _default_rows('companion_bio_524_result_bio')
+
+        assert got == [], (
+            f'панель завела строку умолчания имени без записи в реестре: {got}')
+
+
 class TestOneRuleForBothPages:
     """⚠ Graph берёт готовую карту групп, а не заводит свою четвёрку `state.*`."""
 
@@ -327,6 +394,8 @@ def _base_script() -> str:
             + '/**\n'
             + _slice(GRAPH, STEPNUMS_FROM, LIST_FROM)
             + _slice(GRAPH, LIST_FROM, LIST_TILL)
+            + '\n*/\n/**\n'
+            + _slice(GRAPH, DEFAULT_FROM, DEFAULT_TILL)
             + '\n*/')
 
 
@@ -344,6 +413,13 @@ def _node(script: str, expr: str):
     assert done.returncode == 0, f'node: {done.stderr}'
 
     return json.loads(done.stdout)
+
+
+def _default_rows(name: str) -> list:
+    """Что кладёт в панель строка «по умолчанию» для этого имени."""
+    return _node(_base_script() + f"\nconst box = document.getElementById('probe');"
+                 f"\n_appendDefault(box, {json.dumps(name)});",
+                 "boxes['probe'].kids.map(k => ({cls: k.className, text: k.textContent}))")
 
 
 def _rows() -> list:
