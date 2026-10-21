@@ -9,6 +9,7 @@ __pycache__/
 *.pyc
 .tmp
 .dsh
+.superpowers
 
 # Конфиги и секреты
 .env
