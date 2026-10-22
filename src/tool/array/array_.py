@@ -92,7 +92,7 @@ async def array_diff_assoc(array1, array2) -> dict:
     видели: регулярка меток ищет только `[[…]]`, а поиск по голому имени
     находит его и внутри метки.
 
-    Ловится парой счётов (`text_substr` со списком): сколько раз имя
+    Ловится парой счётов (`substr_count`): сколько раз имя
     встречается голым и сколько — в скобках. Числа обязаны совпасть, потому что
     каждое вхождение имени должно быть внутри метки. Этот инструмент сводит два
     ответа и называет, **какая именно** метка оформлена неверно.
@@ -280,9 +280,7 @@ async def array_keys(array1) -> dict:
         qty (int): Сколько их.
         str (str): Они же строкой через запятую — так их читает промпт.
     """
-    keys = [str(key) for key, _ in _array_pairs(array1)]
-
-    return {'list': keys, 'qty': len(keys), 'str': ','.join(keys)}
+    return _array_answer([(key, str(key)) for key, _ in _array_pairs(array1)])
 
 
 async def array_values(array1) -> dict:
@@ -299,10 +297,7 @@ async def array_values(array1) -> dict:
         qty (int): Сколько их.
         str (str): Они же строкой через запятую.
     """
-    values = [value for _, value in _array_pairs(array1)]
-
-    return {'list': values, 'qty': len(values),
-            'str': ','.join(_array_text(one) for one in values)}
+    return _array_answer(list(_array_pairs(array1)))
 
 
 async def array_flip(array1) -> dict:
@@ -459,7 +454,7 @@ async def array_search(array1, needle: str) -> dict:
 
     ⚠⚠ Судить о находке — **по `found`, а не по `key`**: первый элемент имеет
     ключ `0`, а условие на пустое значение считает ноль за «пусто» — и
-    найденное прочиталось бы как ненайденное. Та же грабля, что у `text_substr`.
+    найденное прочиталось бы как ненайденное. Та же грабля, что у `substr_position`.
 
      - array1: где ищем.
      - needle: что ищем.
@@ -470,11 +465,12 @@ async def array_search(array1, needle: str) -> dict:
         key (str): Ключ первого вхождения; пусто — не нашлось.
     """
     igla = _array_text(needle)
-    for key, value in _array_pairs(array1):
-        if _array_text(value) == igla:
-            return {'found': '1', 'key': str(key)}
+    found = [(key, value) for key, value in _array_pairs(array1)
+             if _array_text(value) == igla]
 
-    return {'found': '0', 'key': ''}
+    # ⚠ Только первое вхождение, как в PHP: `array_search` отвечает «где
+    # лежит», а не «сколько их» — на это есть `array_count_values`.
+    return _array_answer(found[:1])
 
 
 async def array_count_values(array1) -> dict:
@@ -516,7 +512,7 @@ async def array_count(array1) -> dict:
         A dictionary with the count.
         qty (int): Сколько элементов. Пустой массив — 0.
     """
-    return {'qty': len(_array_pairs(array1))}
+    return _array_answer(list(_array_pairs(array1)))
 
 
 
@@ -564,11 +560,35 @@ def _array_int(value, default: int) -> int:
 
 
 def _array_answer(found: list) -> dict:
-    """Ответ в трёх видах: списком, словарём и счётом.
+    """Ответ семьи — **всегда одной формы**, что бы инструмент ни делал.
 
-    ⚠ Оба вида нужны: `list` читает цикл промпта, `dict` показывает **какой
-    ключ** сломался — ради него инструмент и звали.
+    ## ⚠⚠⚠ Один набор ключей на все `array_*`
+
+    Форм было четыре: `list/dict/qty` у большинства, `list/qty/str` у `keys` и
+    `values`, `found/key` у `search`, один `qty` у `count`. Вызывающий не мог
+    знать, что придёт, и в workflow это всплывало переменной в «Undefined».
+
+    Теперь ключи одни:
+
+        list   значения — их читает цикл промпта
+        dict   они же с ключами — по нему видно, ЧТО именно сломалось
+        str    значения строкой через запятую — так их подставляют в промпт
+        qty    сколько элементов
+        found  '1' — ответ непуст, '0' — пуст; судить в условии по нему
+        key    ключ первого элемента; пусто — элементов нет
+
+    ⚠ `found` и `key` заведены ради `array_search`, но есть у всех: «нашлось
+    ли» — вопрос к любому ответу, а два разных способа его задать и были бедой.
+
+    ⚠⚠ Судить в workflow — **по `found` или `qty`, а не по `key`**: у первого
+    элемента ключ `0`, и условие на пустое значение считает ноль за «пусто».
     """
-    return {'list': [value for _, value in found],
+    keys = [str(key) for key, _ in found]
+    values = [value for _, value in found]
+
+    return {'list': values,
             'dict': {str(key): value for key, value in found},
-            'qty': len(found)}
+            'str': ','.join(str(one) for one in values),
+            'qty': len(found),
+            'found': '1' if found else '0',
+            'key': keys[0] if keys else ''}

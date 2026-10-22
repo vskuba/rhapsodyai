@@ -163,18 +163,29 @@ class TestBuild:
 
 class TestLookup:
     async def test_search_finds_the_key(self):
-        assert await A.array_search(['a', 'b'], 'b') == {'found': '1', 'key': '1'}
+        got = await A.array_search(['a', 'b'], 'b')
+
+        assert (got['found'], got['key'], got['list']) == ('1', '1', ['b']), got
 
     async def test_the_first_element_is_not_empty(self):
         """⚠⚠ Судить — по `found`, а не по `key`: у первого элемента ключ `0`,
         а условие на пустое значение считает ноль за «пусто». Та же грабля,
-        что у `text_substr`."""
+        что у `substr_position`."""
         got = await A.array_search(['a'], 'a')
 
-        assert got == {'found': '1', 'key': '0'}, got
+        assert (got['found'], got['key']) == ('1', '0'), got
 
     async def test_search_absent(self):
-        assert await A.array_search(['a'], 'z') == {'found': '0', 'key': ''}
+        got = await A.array_search(['a'], 'z')
+
+        assert (got['found'], got['key'], got['qty']) == ('0', '', 0), got
+
+    async def test_search_takes_only_the_first(self):
+        """⚠ Как в PHP: `array_search` отвечает «где лежит», а не «сколько
+        их» — на это есть `array_count_values`."""
+        got = await A.array_search(['a', 'b', 'a'], 'a')
+
+        assert got['qty'] == 1 and got['key'] == '0', got
 
     async def test_count_values(self):
         got = await A.array_count_values(['a', 'b', 'a'])
@@ -182,7 +193,62 @@ class TestLookup:
         assert got['dict'] == {'a': 2, 'b': 1}, got
 
     async def test_count(self):
-        assert await A.array_count(['a', 'b']) == {'qty': 2}
+        assert (await A.array_count(['a', 'b']))['qty'] == 2
+
+
+class TestTheShapeIsAlwaysOne:
+    """⚠⚠⚠ Ответ одной формы у **всей** семьи.
+
+    Форм было четыре: `list/dict/qty` у большинства, `list/qty/str` у `keys` и
+    `values`, `found/key` у `search`, один `qty` у `count`. Вызывающий не мог
+    знать, что придёт, и в workflow это всплывало переменной в «Undefined».
+
+    ⚠ Проверяем **каждую** функцию: добавится двадцатая со своим набором
+    ключей — покраснеет здесь.
+    """
+
+    KEYS = ['dict', 'found', 'key', 'list', 'qty', 'str']
+
+    CASES = {
+        'array_diff': (['a'], ['b']),
+        'array_diff_key': ({'a': 1}, {'b': 1}),
+        'array_diff_assoc': ({'a': 1}, {'a': 2}),
+        'array_intersect': (['a'], ['a']),
+        'array_intersect_key': ({'a': 1}, {'a': 9}),
+        'array_intersect_assoc': ({'a': 1}, {'a': 1}),
+        'array_merge': (['a'], ['b']),
+        'array_unique': (['a', 'a'],),
+        'array_keys': ({'a': 1},),
+        'array_values': ({'a': 1},),
+        'array_flip': ({'a': 'x'},),
+        'array_column': ([{'n': 'a'}], 'n'),
+        'array_combine': (['a'], [1]),
+        'array_fill_keys': (['a'], 'z'),
+        'array_slice': (['a', 'b'], 0, 1),
+        'array_reverse': (['a', 'b'],),
+        'array_search': (['a'], 'a'),
+        'array_count_values': (['a', 'a'],),
+        'array_count': (['a'],),
+    }
+
+    async def test_every_tool_answers_the_same_keys(self):
+        for name, args in self.CASES.items():
+            got = await getattr(A, name)(*args)
+
+            assert sorted(got) == self.KEYS, (name, sorted(got))
+
+    async def test_an_empty_answer_keeps_the_shape(self):
+        """⚠ Пустой ответ — те же ключи, а не их отсутствие."""
+        got = await A.array_diff([], ['a'])
+
+        assert sorted(got) == self.KEYS, got
+        assert (got['found'], got['key'], got['qty']) == ('0', '', 0), got
+
+    async def test_found_tells_emptiness(self):
+        """⚠⚠ В условии workflow судят по `found` или `qty`: у первого элемента
+        ключ `0`, и проверка на пустоту сочла бы его отсутствием."""
+        assert (await A.array_diff(['a'], []))['found'] == '1'
+        assert (await A.array_diff([], ['a']))['found'] == '0'
 
 
 class TestTheEdges:
