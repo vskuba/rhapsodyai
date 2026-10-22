@@ -1,3 +1,4 @@
+import json
 import re
 
 from i18n_.i18n_ import i18n_translit_cyr
@@ -346,6 +347,18 @@ async def text_substr(text: str, substr, ignore_case: bool = False,
         `qty` с их количеством.
     """
     text = str(text if text is not None else '')
+
+    # ⚠⚠ Движок workflow хранит ответы шагов **строками**: список, пришедший от
+    # соседнего шага, приезжает как `'["a","b"]'`. Без разбора он считался бы
+    # одной длинной подстрокой, которой в тексте нет, — и проверка молча
+    # отвечала бы «всё чисто». Поймано живым прогоном.
+    if isinstance(substr, str):
+        igla_text = substr.strip()
+        if igla_text.startswith('[') and igla_text.endswith(']'):
+            try:
+                substr = json.loads(igla_text)
+            except (ValueError, TypeError):
+                pass
 
     # ⚠ Список — отвечаем списком, по ответу на каждую подстроку. Порядок тот же,
     # что пришёл, и сама подстрока лежит в ответе: вызывающий читает его, не

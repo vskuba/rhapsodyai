@@ -122,3 +122,33 @@ class TestTheNakedMarkCase:
                                 limit=0)
 
         assert got['list'][0]['qty'] == got['list'][1]['qty'] == 0, got
+
+
+class TestTheEngineGivesStrings:
+    """⚠⚠⚠ Движок workflow хранит ответы шагов **строками**.
+
+    Список, пришедший от соседнего шага, приезжает как `'["a","b"]'`. Без
+    разбора он считался бы одной длинной подстрокой, которой в тексте нет, — и
+    проверка молча отвечала бы «всё чисто».
+
+    Поймано живым прогоном: шаг счёта вернул `found: '0'` при списке из трёх
+    имён, хотя два из них в тексте были.
+    """
+
+    async def test_json_string_is_a_list(self):
+        got = await text_substr('a b', '["a","b"]', limit=0)
+
+        assert got['qty'] == 2, got
+        assert [one['substr'] for one in got['list']] == ['a', 'b'], got
+
+    async def test_a_plain_string_stays_a_needle(self):
+        """⚠ Строка, похожая на метку, остаётся подстрокой: разбираем только
+        то, что и открывается, и закрывается скобкой **и** читается как JSON."""
+        got = await text_substr('a [b] c', '[b]')
+
+        assert got == {'found': '1', 'pos': 2, 'qty': 1}, got
+
+    async def test_broken_json_stays_a_needle(self):
+        got = await text_substr('x [not json] y', '[not json]')
+
+        assert got['found'] == '1', got
