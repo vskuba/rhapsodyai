@@ -93,6 +93,52 @@ AI_FRAMEWORK_INTENTION_TOOL = 'chat_intention_add'
 # Кнопка «Стоп» (/workflow_trace/run/{uuid}/stop) отменяет задачу по run_uuid
 workflow_runs_active: dict[str, asyncio.Task] = {}
 
+# Служебные фразы, которые модель иногда дописывает к ответу вместо текста.
+#
+# ## ⚠⚠ Это мусор движка модели, а не её ответ
+#
+# Живой случай: шаблон письма вышел целиком из одной такой строки —
+# «...reasoning budget complete. Return final response now», семь слов и ни
+# одной метки. Письмо уходит получателю как есть, а ни одна проверка шаблона
+# его не ловит: лишних меток нет, кириллицы нет, абзац не нарушен.
+#
+# ⚠ Чистим **точными строками**, а не узором: фраза приходит от самой модели и
+# неизменна, а узор вроде «reasoning.*» однажды съел бы живое предложение
+# письма — там человек вправе рассуждать о чём угодно.
+#
+# ⚠⚠ Сверка **без учёта регистра и краевых пробелов**, но подстрока ищется
+# целиком: обрывок «budget complete» в середине письма — законный текст.
+AI_FRAMEWORK_LLM_NOISE = (
+    '...reasoning budget complete. Return final response now',
+)
+
+
+def ai_framework_llm_noise_clean(text: str) -> str:
+    """Ответ модели без служебных фраз её движка.
+
+    Зовётся **одной точкой** — `on_step_complete`, через которую проходит ответ
+    каждого шага LLM. Поставь чистку у вызывающих, и завтра третий вызывающий
+    про неё не узнает.
+
+    ⚠ Края подрезаются всегда: прежде здесь стоял голый `.strip()`, и его
+    поведение сохранено.
+
+    Returns:
+        str: Ответ без известных служебных фраз и без краевых пробелов. Если
+        после чистки ничего не осталось — пустая строка, и решает вызывающий:
+        для `llm_to_json` это разбор пустоты, для шага ответа — пустой текст.
+    """
+    said = str(text or '')
+
+    for one in AI_FRAMEWORK_LLM_NOISE:
+        if one.lower() in said.lower():
+            # ⚠ Вырезаем по месту, найденному без учёта регистра: сама строка
+            # может прийти и с заглавной, и со строчной.
+            at = said.lower().find(one.lower())
+            said = said[:at] + said[at + len(one):]
+
+    return said.strip()
+
 
 class AiFrameworkAgentManager(AbstractAiFrameworkManager):
     # Защита sub-workflow (workflow_invoke) от неограниченной рекурсии
@@ -716,7 +762,8 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
                     logger_info(f'🧠 LLM ответ: {response_text}')
                     if not step_future.done():
-                        step_future.set_result(response_text.strip())
+                        step_future.set_result(
+                            ai_framework_llm_noise_clean(response_text))
                     return False
 
                 def on_step_tokens(tokens_in: int | None, tokens_out: int | None) -> None:
