@@ -20,7 +20,7 @@ clicked off» вместо `[[companion_name]]`. Такое письмо ухо�
 
 import pytest
 
-from src.tool.list.list_ import array_diff, array_intersect, array_diff_key
+from src.tool.array.array_ import array_diff, array_diff_key, array_intersect
 
 # ⚠ Две метки: `core` — группа прогона (без неё файл не попадает ни в один
 # маркер и молча не запускается, `test_marks.py`), `asyncio` — род самих тестов.
