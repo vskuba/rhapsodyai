@@ -142,6 +142,86 @@
         text-transform: uppercase;
     }
 
+    /* Кружок «i» у подписи поля: смысл параметра не угадывается по его имени,
+       так что висящая на слове подсказка — часть подписи, а не украшение.
+       Показывается и наведениям, и с фокуса: касанием, мышью и с клавиатуры. */
+    .field-help {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
+        margin-left: 6px;
+        border: 1px solid #b2bec3;
+        border-radius: 50%;
+        font-family: Georgia, serif;
+        font-size: 11px;
+        font-style: italic;
+        font-weight: bold;
+        line-height: 1;
+        color: #95a5a6;
+        text-transform: none;
+        cursor: help;
+        vertical-align: middle;
+    }
+
+    .field-help:hover,
+    .field-help:focus {
+        border-color: #7f8c8d;
+        color: #2c3e50;
+    }
+
+    .field-help-bubble {
+        position: absolute;
+        top: calc(100% + 9px);
+        left: -10px;
+        z-index: 40;
+        display: none;
+        width: 320px;
+        padding: 10px 12px;
+        background: #2c3e50;
+        border-radius: 6px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+        color: #fff;
+        font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+        font-size: 12px;
+        font-style: normal;
+        font-weight: 400;
+        line-height: 1.55;
+        letter-spacing: normal;
+        text-align: left;
+        text-transform: none;
+        white-space: normal;
+        cursor: default;
+    }
+
+    .field-help-bubble::before {
+        content: '';
+        position: absolute;
+        bottom: 100%;
+        left: 14px;
+        border: 6px solid transparent;
+        border-bottom-color: #2c3e50;
+    }
+
+    /* Мостик под кружком: пока курсор идёт к пузырьку, он не выходит за
+       пределы `.field-help` — иначе пузырьок гаснет в зазоре. Висит на самом
+       кружке: псевдоэлемент скрытого пузырька не участвует в проверке курсора. */
+    .field-help::after {
+        content: '';
+        position: absolute;
+        top: 100%;
+        left: -10px;
+        width: 354px;
+        height: 9px;
+    }
+
+    .field-help:hover .field-help-bubble,
+    .field-help:focus .field-help-bubble {
+        display: block;
+    }
+
     .form-group-name {
         min-width: 250px;
     }
@@ -270,7 +350,7 @@
                                placeholder="Напр: Workflow Engine">
                     </div>
                     <div class="form-group">
-                        <label>Параллельных LLM на агент (llm_parallel_per_agent_max)</label>
+                        <label>Параллельных LLM на агент (llm_parallel_per_agent_max)<span class="field-help" tabindex="0" role="button" aria-label="Что означает параметр">i<span class="field-help-bubble">Сколько верхних LLM распределяют запросы одновременно между собой. Свободный слот берёт первую модель списка, ещё не занятую другим слотом. Это не лимит запросов к одной модели: если строка в списке одна, все слоты пойдут в неё. Когда все слоты заняты, новый запрос ждёт в очереди до 60 с, затем молча отбрасывается.</span></span></label>
                         <select id="llmParallelMax" class="form-control" style="max-width:120px">
                             <option value="1">1</option>
                             <option value="2">2</option>
