@@ -35,6 +35,8 @@ async def node_create(request: Request, data: dict, user=Depends(AuthChecker([Au
     node_id = await repo.add({
         "name": data.get("name"),
         "position": data.get("position"),
+        # Колонка NOT NULL DEFAULT 1 — подставляем единицу явно, иначе None уронит вставку.
+        "llm_parallel_per_agent_max": data.get("llm_parallel_per_agent_max") or 1,
     })
 
     llm_ids = data.get("llm_ids") or []
@@ -48,8 +50,11 @@ async def node_create(request: Request, data: dict, user=Depends(AuthChecker([Au
 @router.put("/node/{node_id}")
 async def node_update(request: Request, node_id: int, data: dict, user=Depends(AuthChecker([AuthPermission.NODE_UPDATE]))):
     repo = NodeRepository()
-    # Обновляем только переданные поля: drag-and-drop сортировка шлет только position
-    update_data = {key: data[key] for key in ("name", "position") if key in data}
+    # Обновляем только переданные поля: drag-and-drop сортировка шлет только position.
+    # ⚠ Список белый: поле, которого здесь нет, форма отправит, а сервер молча
+    # выбросит — ни ошибки, ни следа. Так потерялся llm_parallel_per_agent_max:
+    # значение «сбрасывалось» на прежнее при каждом сохранении.
+    update_data = {key: data[key] for key in ("name", "position", "llm_parallel_per_agent_max") if key in data}
     result = await repo.update(node_id, update_data)
 
     if "llm_ids" in data:
