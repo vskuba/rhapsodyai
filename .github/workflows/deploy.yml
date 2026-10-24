@@ -16,10 +16,42 @@ jobs:
       contents: read
       packages: write
     steps:
+      # ⚠⚠⚠ Ключ ставится ДО checkout, потому что подмодуль `dashboard`
+      # **приватный**, а `GITHUB_TOKEN`, которым checkout тянет подмодули,
+      # действует только на СВОЙ репозиторий. Без ключа сборка падает на
+      # `Permission denied` ровно там, где раньше работала молча.
+      #
+      # ⚠ Ключ — read-only deploy key самого `dashboard` (один на три проекта),
+      # а не личный токен: украденный из раннера, он не даёт ни записи, ни
+      # доступа к чему-либо ещё.
+      - name: Ключ к приватному подмодулю dashboard
+        # ⚠ Секрет приходит переменной окружения, а не подстановкой в тело
+        # команды: многострочный ключ в `${{ }}` внутри `run` разваливает
+        # скрипт на строках, а подстановка в shell — общий источник инъекций.
+        env:
+          DASHBOARD_DEPLOY_KEY: ${{ secrets.DASHBOARD_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DASHBOARD_DEPLOY_KEY" > ~/.ssh/dashboard_deploy
+          chmod 600 ~/.ssh/dashboard_deploy
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          cat >> ~/.ssh/config <<'CONF'
+          Host github.com
+            IdentityFile ~/.ssh/dashboard_deploy
+            IdentitiesOnly yes
+          CONF
+          # ⚠ Подмена адреса точечная — только `dashboard`. Общая подмена
+          # `https://github.com/` увела бы по ssh и сам репозиторий, и
+          # публичный `py_modules`, которым ssh не нужен вовсе.
+          git config --global \
+            url."git@github.com:vskuba/dashboard".insteadOf \
+            "https://github.com/vskuba/dashboard"
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          # py_modules — git-сабмодуль: без него образ соберется без половины кода
+          # py_modules и dashboard — git-сабмодули: без них образ соберётся без
+          # половины кода
           submodules: recursive
 
       - name: Set up QEMU
@@ -60,10 +92,16 @@ jobs:
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          DASHBOARD_DEPLOY_KEY: ${{ secrets.DASHBOARD_DEPLOY_KEY }}
         with:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
+          # ⚠⚠ Ключ к приватному `dashboard` обязан доехать и СЮДА: сервер
+          # тянет подмодули сам (`git submodule update` ниже), и `GITHUB_TOKEN`
+          # в `REPO_URL` на чужой репозиторий прав не даёт.
+          envs: DASHBOARD_DEPLOY_KEY
           # Первая сборка uvicorn-образа на ARM (torch, модели) занимает далеко
           # больше дефолтных 10 минут
           command_timeout: 60m
@@ -103,7 +141,28 @@ jobs:
             git reset --hard origin/master
             git clean -fd
 
-            echo "Обновляем сабмодуль py_modules..."
+            # ⚠⚠⚠ `dashboard` — ПРИВАТНЫЙ подмодуль, и достать его токеном из
+            # `REPO_URL` нельзя: `GITHUB_TOKEN` действует только на свой
+            # репозиторий. Поэтому на сервере лежит read-only deploy key
+            # самого `dashboard`, и адрес подменяется на ssh — точечно, только
+            # для него: общая подмена увела бы по ssh и публичный `py_modules`.
+            #
+            # ⚠ Пишется на каждую выкладку заново: ключ могли подменить, а шаг
+            # обязан быть идемпотентным — сервер не хранит состояния, которого
+            # workflow не умеет восстановить.
+            echo "Ставим ключ к приватному подмодулю dashboard..."
+            mkdir -p "$HOME/.ssh" && chmod 700 "$HOME/.ssh"
+            printf '%s\n' "$DASHBOARD_DEPLOY_KEY" > "$HOME/.ssh/dashboard_deploy"
+            chmod 600 "$HOME/.ssh/dashboard_deploy"
+            ssh-keyscan -t ed25519 github.com >> "$HOME/.ssh/known_hosts" 2>/dev/null
+            sort -u "$HOME/.ssh/known_hosts" -o "$HOME/.ssh/known_hosts"
+            git config --global core.sshCommand \
+              "ssh -i $HOME/.ssh/dashboard_deploy -o IdentitiesOnly=yes"
+            git config --global \
+              url."git@github.com:vskuba/dashboard".insteadOf \
+              "https://github.com/vskuba/dashboard"
+
+            echo "Обновляем сабмодули py_modules и dashboard..."
             git submodule sync --recursive
             git submodule update --init --recursive --force
 

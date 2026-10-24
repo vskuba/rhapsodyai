@@ -107,6 +107,49 @@ TEST_AGENT_PREFIX = "test_agent_"
 TEST_ROLE_NAMES = ("test_role", "updated_role")
 
 
+@pytest.fixture(autouse=True)
+def throttle_clear():
+    """Снять счёт заслона входа **перед каждым** случаем.
+
+    ## ⚠⚠⚠ Зачем это нужно всей сюите, а не одному файлу
+
+    Заслон (`panel_auth_throttle.py`) после каждой неудачи входа удваивает
+    паузу, а счёт ведётся **по логину** — своим адресом от него не
+    отгородиться, в этом и смысл. Любой случай, промахнувшийся под тестовой
+    учёткой, оставляет её под `429` для всех следующих.
+
+    Куплено: `test_auth_password` меняет пароль, `test_login` проверяет отказ
+    на неверном, `test_auth_throttle` промахивается нарочно — и в общем
+    прогоне они валили друг друга (4 упавших, 5 ошибок), а по одиночке каждый
+    проходил. Такую связь ищут долго: виноват всегда «последний запущенный».
+
+    ## ⚠⚠ Почему синхронно и мимо пула
+
+    `mysql_get_db_async` держит пул, привязанный к циклу событий, а
+    `pytest-asyncio` даёт случаю свой цикл: запрос отсюда падает
+    `RuntimeError: got Future attached to a different loop`. `mysql_conn_get`
+    — отдельное синхронное соединение мимо пула, и закрывает его вызывающий;
+    ровно этот случай описан в его докстринге.
+
+    ⚠ Сбой уборки молчит: не вышло — случай просто пойдёт как раньше, а
+    падение фикстуры скрыло бы настоящую беду теста за своей.
+    """
+    from mysql_.mysql_ import mysql_conn_get
+
+    try:
+        conn = mysql_conn_get()
+        try:
+            with conn.cursor() as cur:
+                cur.execute('DELETE FROM auth_attempt')
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+    yield
+
+
 @pytest.fixture(scope="session", autouse=True)
 async def cleanup_test_users() -> AsyncGenerator[None, None]:
     """Session-scoped fixture to clean up test users before and after all tests."""
@@ -346,6 +389,15 @@ def cleanup_test_tasks():
 
             await db.execute(
                 "DELETE FROM project WHERE title LIKE %s", (TEST_TITLE_LIKE,))
+
+            # Счёт заслона от подбора пароля — то, что осталось от последнего
+            # случая.
+            #
+            # ⚠ Перед каждым случаем его снимает `throttle_clear`; здесь
+            # только хвост, чтобы прогон не оставлял учётку под паузой до
+            # следующего. Правило одно и то же — снести счёт целиком, — и
+            # записано оно в двух местах нарочно: разные моменты, одна форма.
+            await db.execute("DELETE FROM auth_attempt")
             await db.connection.commit()
 
     def _run() -> None:

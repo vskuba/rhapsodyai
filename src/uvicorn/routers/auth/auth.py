@@ -5,6 +5,10 @@ from fastapi import APIRouter, Request, HTTPException
 from event_.event_ import event_emit
 from mysql_.mysql_ import mysql_get_db_async
 from dashboard.src.panel.panel_auth import panel_auth_user_check
+from dashboard.src.panel.panel_auth_throttle import (panel_auth_throttle_fail,
+                                                     panel_auth_throttle_ip,
+                                                     panel_auth_throttle_reset,
+                                                     panel_auth_throttle_wait)
 from setting_.setting_ import setting_get, setting_set
 from i18n_.i18n_ import i18n_languages_parse
 from src.tool.setting.setting_ import setting_value_get
@@ -66,9 +70,28 @@ async def auth_login(request: Request, data: dict):
     #
     # ⚠ Правило «пользователь №1 — админ» тоже уехало: оно живёт в хранилище
     # (`auth_store.py`), и вторая копия разошлась бы с первой на первой правке.
+    #
+    # ⚠⚠ Заслон от подбора — **общий со скелетом** (`panel_auth_throttle.py`).
+    # Дверей входа две: эта и `/api/auth/login` панели, а счёт попыток у них
+    # обязан быть один. Заведи здесь свой — перебор просто шёл бы через вторую
+    # дверь, и заслон на первой оказался бы украшением.
+    #
+    # ⚠ Спрашивается ДО сверки пары: `bcrypt` дорог, и запрещённая попытка не
+    # должна до него доходить.
+    ip = panel_auth_throttle_ip(request)
+    wait = await panel_auth_throttle_wait(username, ip)
+
+    if wait:
+        raise HTTPException(status_code=429,
+                            detail=f'Too many attempts, retry in {wait}s',
+                            headers={'Retry-After': str(wait)})
+
     checked = await panel_auth_user_check(username, password)
     if not checked:
+        await panel_auth_throttle_fail(username, ip)
         raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    await panel_auth_throttle_reset(username, ip)
 
     user_id = checked.user_id
     role = checked.role
