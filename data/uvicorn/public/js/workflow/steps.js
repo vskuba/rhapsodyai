@@ -45,7 +45,7 @@ function renderWorkflowSteps(steps) {
                 <span class="step-number-badge">${index + 1}</span>
                 <span class="step-type-icon" style="font-size: 16px; margin-right: 10px;">${step.icon || ''}</span>
                 <span class="step-title-text" style="flex:1;">${step.title}</span>
-                <span class="step-id-badge" style="font-size:10px;color:#94a3b8;margin-right:6px;white-space:nowrap;">#${step.id}</span>
+                <span class="step-id-badge" style="font-size:10px;color:#2b7571;margin-right:6px;white-space:nowrap;">#${step.id}</span>
                 <button type="button" class="btn-delete-step" title="Удалить">&times;</button>
             </div>
             <div class="step-flow-info" style="margin-left: 62px; width: 100%;">
