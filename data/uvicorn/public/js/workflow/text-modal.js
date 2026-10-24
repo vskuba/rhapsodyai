@@ -17,6 +17,10 @@
 // `text-translate.js`: он про разговор с моделью и защиту меток, а это окно —
 // про показ текста. Общего у них ровно одно поле.
 
+import {TEXT_INDENT_STEP, textIndentFormat} from './text-indent.js';
+import {textModalBlocksAtCaret, textModalBlocksScan} from './text-modal-blocks.js';
+import {TEXT_MODAL_COND_SRC, TEXT_MODAL_HEAD_RE,
+        TEXT_MODAL_OLD_RE} from './text-modal-syntax.js';
 import {textTranslateSection} from './text-translate.js';
 
 // Сколько места занимает окно. ⚠ Не 100%: рамка экрана нужна, чтобы «щёлкнуть в
@@ -58,12 +62,17 @@ export function textModalIcon(textarea, title = '') {
 }
 
 export function textModalOpen(textarea, title = '') {
+    // ⚠ Имена классов — не для стилей (оформление здесь всё в `style`), а для
+    // приёмки: E2E называет областью то, что умеет выбрать селектором, а окно
+    // целиком лежало безымянным в `document.body`.
     const back = document.createElement('div');
+    back.className = 'text-modal';
     back.style = 'position: fixed; inset: 0; background: rgba(15, 23, 42, .45);'
         + ' display: flex; align-items: center; justify-content: center;'
         + ' z-index: 9999;';
 
     const box = document.createElement('div');
+    box.className = 'text-modal-box';
     box.style = `width: ${TEXT_MODAL_SIZE}; height: ${TEXT_MODAL_HEIGHT};`
         + ' background: #fff; border-radius: 8px; padding: 14px;'
         + ' display: flex; flex-direction: column; gap: 10px;'
@@ -110,14 +119,22 @@ export function textModalOpen(textarea, title = '') {
     // Нижний слой — цвета. ⚠ `aria-hidden`: для читающих с экрана это дубль того же
     // текста, который лежит в поле выше.
     const paint = document.createElement('pre');
+    paint.className = 'text-modal-paint';
     paint.setAttribute('aria-hidden', 'true');
     paint.style = `position: absolute; inset: 0; overflow: auto; ${HL_FONT}`
         + ' color: #1f2937; pointer-events: none;';
 
     // Верхний слой — настоящее поле. ⚠ Текст прозрачный, а курсор нет: набирают
     // здесь, а видят нижний слой.
+    //
+    // ⚠⚠ Текст входит в окно **через лестницу отступов** (`text-indent.js`):
+    // вложенный блок отодвигается на ступень вместе с содержимым. Это правка
+    // текста, а не показ — она уедет в поле шага при закрытии, как любая
+    // другая. Делать её только для вида нельзя: слои обязаны совпадать до
+    // пикселя, и отступ, нарисованный мимо поля, увёл бы цвет от буквы.
     const big = document.createElement('textarea');
-    big.value = textarea.value;
+    big.className = 'text-modal-area';
+    big.value = textIndentFormat(textarea.value);
     big.spellcheck = false;
     big.style = `position: absolute; inset: 0; ${HL_FONT}`
         + ' width: 100%; height: 100%; resize: none; border: none; outline: none;'
@@ -132,12 +149,35 @@ export function textModalOpen(textarea, title = '') {
     };
 
     const repaint = () => {
-        paint.innerHTML = textModalHighlight(big.value);
+        paint.innerHTML = textModalHighlight(big.value, big.selectionStart);
         follow();
+    };
+
+    // ⚠ Перерисовка через кадр: курсор ходит стрелками, и на зажатой клавише
+    // событий приходит больше, чем экран успевает показать. Второй вызов до
+    // кадра не делает ничего — рисуется последнее положение, а не каждое.
+    let frame = 0;
+    const repaintSoon = () => {
+        if (frame) return;
+
+        frame = requestAnimationFrame(() => {
+            frame = 0;
+            repaint();
+        });
     };
 
     big.addEventListener('scroll', follow);
     big.addEventListener('input', repaint);
+
+    // ⚠⚠ Подсветка пары зависит от **курсора**, а не только от текста, поэтому
+    // перерисовку заводят и события, текст не меняющие. `selectionchange` ловит
+    // то, чего не ловят остальные: ход курсора с зажатой клавишей и правку
+    // выделения мышью за краем поля.
+    for (const kind of ['click', 'keyup', 'select']) {
+        big.addEventListener(kind, repaintSoon);
+    }
+
+    document.addEventListener('selectionchange', repaintSoon);
 
     // ⚠ Раздел перевода заводится **здесь**, а не вместе с шапкой: ему нужно
     // само поле `big` и уже готовая перерисовка `repaint`.
@@ -169,6 +209,12 @@ export function textModalOpen(textarea, title = '') {
         textarea.dispatchEvent(new FocusEvent('focusout', {bubbles: true}));
 
         document.removeEventListener('keydown', onKey);
+        // ⚠ Слушатель `selectionchange` висит на документе, а не на поле:
+        // останься он после закрытия — дёргал бы перерисовку снятого со
+        // страницы слоя на каждое выделение где угодно.
+        document.removeEventListener('selectionchange', repaintSoon);
+        if (frame) cancelAnimationFrame(frame);
+
         back.remove();
     };
 
@@ -248,12 +294,25 @@ export function textModalOpen(textarea, title = '') {
 // нутро у всех трёх красится одинаково, и отдельного правила им не нужно.
 //
 // ⚠ Условие не содержит `>` перед `]` — то же правило, что у движка
-// (`WORKFLOW_IF_BLOCK_RE`): иначе `[<if count > 5>]` обрывался бы на операторе.
+// (`WORKFLOW_IF_BLOCK_RE`). Само правило лежит отдельно
+// (`text-modal-syntax.js`): его читает ещё и лестница отступов, а две копии
+// одной записи расходятся.
+//
+// ⚠⚠ Порядок альтернатив — не вкус, а разбор. Старый синтаксис обязан стоять
+// **раньше метки**: `%endif%` подходит под шаблон `%имя%` слово в слово, и
+// встань метка первой — прежний блок красился бы переменной, то есть именно
+// тем, чем он не является. Заголовок раньше метки по той же причине наоборот:
+// метка внутри заголовка должна остаться меткой, и красит её `_heading`.
 const HL_RE = new RegExp(
-    '(\\[<\\s*(?:if|for|set)\\s+)((?:[^>\\[]|>(?!\\]))+?)(\\s*>\\])'  // открывающая, по частям
+    `(\\[<\\s*(?:if|for|set)\\s+)(${TEXT_MODAL_COND_SRC})(\\s*>\\])`  // открывающая, по частям
     + '|(\\[<\\s*(?:else|endif|endfor)\\s*>\\])'   // [<else>], [<endif>], [<endfor>]
+    + `|(${TEXT_MODAL_OLD_RE.source})`             // прежний синтаксис — движок его не читает
+    + `|(${TEXT_MODAL_HEAD_RE.source})`            // === заголовок секции ===
     + '|(%[a-zA-Z_][a-zA-Z0-9_]*%)',                       // метка в тексте
     'g');
+
+// Метка внутри заголовка: тот же шаблон, что в последней альтернативе `HL_RE`.
+const HL_MARK_RE = /%[a-zA-Z_][a-zA-Z0-9_]*%/g;
 
 // Токены внутри условия: строка в кавычках, имя (или слово связки), оператор.
 // Что не поймано — разметка.
@@ -283,6 +342,53 @@ const HL_MARK = 'color: #1d4ed8; background: #eff6ff; border-radius: 3px;';
 const HL_BLOCK = 'color: #047857; background: #ecfdf5; border-radius: 3px;'
     + ' font-weight: 700;';
 
+// Заголовок секции. ⚠ Приглушённый, а не четвёртый яркий цвет: заголовков в
+// промпте больше, чем меток, и крикни они громче — метка, ради которой
+// подсветка и заводилась, потерялась бы среди них. Задача заголовка — дать
+// промпту оглавление боковым зрением, а не спорить за внимание.
+// ⚠⚠ Фон розовый, но **бледнее, чем у сломанной разметки** (`#fee2e2`), и это
+// не оттенок ради оттенка: заголовков в промпте десятки, ошибок — ноль или
+// одна. Сравняйся они по насыщенности — красное перестало бы выделяться среди
+// розового, то есть подсветка ошибки обнулилась бы заголовками. Иерархия
+// держится числом: заголовок к белому 1.18, ошибка 1.22.
+//
+// ⚠⚠ Разводятся они ещё и **тоном**: у заголовка 340°, у ошибки 0°. Первая
+// попытка развести только светлотой (`#fdf2f4`, 1.09) на кадре провалилась —
+// краснота была видна в числах и не видна глазами.
+//
+// ⚠ Текст остался холодным серо-синим нарочно: у ошибки он красный и с волной
+// под словом. Заголовок и ошибку различает не фон, а именно это.
+const HL_HEAD = 'color: #334155; background: #fae8ee; border-radius: 3px;'
+    + ' font-weight: 700;';
+
+// Сломанная разметка. ⚠⚠ Красный **с волной**, а не только цветом: цветом уже
+// заняты метка и блок, и четвёртый оттенок читался бы как ещё один их род.
+// Волна под словом не означает ничего, кроме «тут ошибка», и означает это в
+// любом редакторе, который человек видел.
+// ⚠ Фон насыщеннее, чем у соседей по палитре, и это не прихоть: бледно-розовый
+// `#fef2f2` на кадре неотличим от белого — ошибку выдавала одна волна под
+// словом. Красный **фон** виден боковым зрением, не вчитываясь, а ради этого
+// подсветка ошибки и заводилась.
+const HL_BAD = 'color: #b91c1c; background: #fee2e2; border-radius: 3px;'
+    + ' font-weight: 700; text-decoration: underline wavy #dc2626;';
+
+// Пара под курсором. ⚠ Обводка, а не иной цвет: метка остаётся той же меткой,
+// меняется только «вот её вторая половина».
+//
+// ⚠⚠ `outline`, а не `border` и не `box-shadow: inset`, и обе замены проверены
+// кадром. `border` сдвинул бы букву на пиксель и увёл слой цвета от поля —
+// места `outline` не занимает. `box-shadow: inset` места тоже не занимает, но
+// рисуется **под** содержимым: у метки внутри свои `<span>` с фоном, и они
+// закрывали тень родителя целиком — на кадре обводки не было видно вовсе.
+// `outline` рисуется поверх, и фон потомка ему не помеха.
+const HL_PAIR = 'outline: 1px solid #047857; outline-offset: -1px;'
+    + ' border-radius: 3px;';
+
+// Направляющая уровня вложенности — левая черта на каждой ступени отступа.
+// ⚠ Тем же `inset`-приёмом и по той же причине: ступень это четыре настоящих
+// пробела текста, и подмешивать к ним ширину нельзя.
+const HL_GUIDE = 'box-shadow: inset 1px 0 0 #cbd5e1;';
+
 // Оформление, общее обоим слоям. ⚠ Одной строкой на оба: две копии разъезжаются, и
 // разъехавшись, сдвигают цвет относительно буквы.
 const HL_FONT = 'font-family: ui-monospace, SFMono-Regular, Menlo, monospace;'
@@ -291,26 +397,58 @@ const HL_FONT = 'font-family: ui-monospace, SFMono-Regular, Menlo, monospace;'
     + ' box-sizing: border-box;';
 
 
-export function textModalHighlight(text) {
+/** Текст поля → HTML нижнего слоя.
+ *
+ * @param {string} text Текст как есть.
+ * @param {number} caret Положение курсора; `-1` — курсора нет (пара не
+ *     подсвечивается). Довод необязателен: звать с одним текстом законно.
+ * @returns {string} HTML для `<pre>`.
+ *
+ * ⚠⚠ Весь текст проходит через `_escape`, и это **единственная** защита при
+ * `innerHTML`: промпт пишет человек, но попадает он и из перевода, и из базы.
+ * Любая новая ветка обязана звать `_paint`/`_escape`, а не класть текст в
+ * разметку своими руками.
+ */
+export function textModalHighlight(text, caret = -1) {
+    const source = String(text ?? '');
+    const {broken, mates} = textModalBlocksScan(source);
+    const lit = new Set(textModalBlocksAtCaret(source, caret, mates));
+
     let out = '';
     let at = 0;
 
-    for (const found of String(text ?? '').matchAll(HL_RE)) {
-        out += _escape(text.slice(at, found.index));
+    for (const found of source.matchAll(HL_RE)) {
+        out += _plain(source.slice(at, found.index), at === 0);
+
+        const bad = broken.has(found.index);
+        const pair = lit.has(found.index);
 
         if (found[1]) {
             // Открывающая метка: разметка — своим цветом, имена — цветом
             // переменной. ⚠ Условие красится по частям (`_condition`): в нём
-            // теперь и имена, и операторы, и строки в кавычках.
-            out += _condition(found[1], found[2], found[3]);
+            // и имена, и операторы, и строки в кавычках.
+            //
+            // ⚠⚠ Сломанная метка на части **не разбирается**: красить имена
+            // внутри блока, который не соберётся, значит обещать, что он
+            // работает. Красный целиком честнее.
+            out += bad ? _paint(HL_BAD, found[0])
+                : _wrap(pair ? HL_PAIR : '', _condition(found[1], found[2], found[3]));
+        } else if (found[4]) {
+            out += _wrap(pair ? HL_PAIR : '', _paint(bad ? HL_BAD : HL_BLOCK, found[0]));
+        } else if (found[5]) {
+            // Прежний синтаксис. ⚠ Всегда красный, без оговорок: движок его не
+            // читает, и такой блок уедет в модель словами.
+            out += _paint(HL_BAD, found[0]);
+        } else if (found[6]) {
+            out += _heading(found[0]);
         } else {
-            out += _paint(found[4] ? HL_BLOCK : HL_MARK, found[0]);
+            out += _paint(HL_MARK, found[0]);
         }
 
         at = found.index + found[0].length;
     }
 
-    out += _escape(String(text ?? '').slice(at));
+    out += _plain(source.slice(at), at === 0);
 
     // ⚠ Хвостовой перевод строки `<pre>` съедает, а `textarea` — нет: без этого
     // последняя пустая строка сдвигала бы слои друг относительно друга.
@@ -372,8 +510,78 @@ function _condition(open, text, close) {
 }
 
 
+/** Заголовок секции: сам он приглушённый, а метка внутри остаётся меткой.
+ *
+ * ⚠ `=== %companion_title% writes ===` — заголовок с именем переменной, и имя
+ * обязано читаться именем: это единственное, что в заголовке подставляется, и
+ * выкрасься оно заодно с остальным, человек потерял бы его из виду там, где
+ * как раз и надо проверить, та ли переменная.
+ */
+function _heading(text) {
+    const source = String(text ?? '');
+    let out = '';
+    let at = 0;
+
+    for (const mark of source.matchAll(HL_MARK_RE)) {
+        out += _paint(HL_HEAD, source.slice(at, mark.index));
+        out += _paint(HL_MARK, mark[0]);
+        at = mark.index + mark[0].length;
+    }
+
+    return out + _paint(HL_HEAD, source.slice(at));
+}
+
+
+/** Обычный текст между метками — плюс направляющие в отступах строк.
+ *
+ * @param {string} text Кусок текста без разметки.
+ * @param {boolean} head Кусок начинается с начала всего текста.
+ *
+ * ⚠⚠ Отступ всегда лежит **в таком куске**: метки переводов строк не содержат,
+ * значит `\n` и пробелы за ним достаются сюда целиком. Поэтому направляющие
+ * считаются здесь, а не отдельным проходом по строкам — второй проход пришлось
+ * бы сводить с этим по индексам.
+ *
+ * ⚠ Первая строка текста — особый случай: перед ней `\n` нет, и без `head`
+ * ступени у неё не нарисовались бы вовсе.
+ */
+function _plain(text, head = false) {
+    const source = _escape(String(text ?? ''));
+    const out = source.replace(/\n( +)/g, (all, lead) => '\n' + _guides(lead));
+
+    return head ? out.replace(/^( +)/, (all, lead) => _guides(lead)) : out;
+}
+
+
+/** Ведущие пробелы строки → ступени с левой чертой.
+ *
+ * ⚠ Черта ставится только на **целых** ступенях; остаток уходит пробелами как
+ * был. Иначе отступ в два пробела — чужой, не от лестницы — получал бы черту и
+ * читался уровнем вложенности, которого нет.
+ */
+function _guides(lead) {
+    const step = ' '.repeat(TEXT_INDENT_STEP);
+    const full = Math.floor(lead.length / TEXT_INDENT_STEP);
+
+    return `<span style="${HL_GUIDE}">${step}</span>`.repeat(full)
+        + ' '.repeat(lead.length % TEXT_INDENT_STEP);
+}
+
+
 function _paint(style, text) {
+    if (!text) return '';
+
     return `<span style="${style}">${_escape(text)}</span>`;
+}
+
+
+/** Обёртка вокруг уже готовой разметки. Пустой стиль — вернуть как было.
+ *
+ * ⚠ Нужна там, где метку красят по частям, а отметить надо её целиком: пара
+ * под курсором обводит всю `[<if …>]`, не вмешиваясь в цвета внутри неё.
+ */
+function _wrap(style, html) {
+    return style ? `<span style="${style}">${html}</span>` : html;
 }
 
 

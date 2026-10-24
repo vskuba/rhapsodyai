@@ -1,0 +1,158 @@
+name: Промпт — лестница отступов и подсветка
+description: >-
+  Большое окно промпта (иконка ⛶ у поля шага). Стережёт то, что лестница и
+  подсветка могут сломать: цвет обязан стоять ровно под буквой, разметка
+  движка — пережить правку текста, а метрика — не поехать от обводок и
+  направляющих. Расхождение слоёв на кадре выглядит опечаткой в промпте,
+  а пропавшая метка не выглядит ничем.
+page: /admin/workflow?workflow_id=5
+widths: [1440]
+
+# ⚠ Дорогой человека: окно открывается иконкой у ВЫБРАННОГО шага, поэтому по
+# шагу щёлкаем. Ищем тот, у чьего промпта есть вложенный блок, — номер шага у
+# каждой установки свой, а на промпте без вложенности лестнице нечего делать.
+steps:
+  - wait_for: 'return document.querySelectorAll("#workflowStepsSortable [data-id]").length > 0'
+  - wait_for: |
+      const deep = (text) => {
+        const re = /\[<\s*(if|for)\s+(?:[^>\[]|>(?!\]))+?\s*>\]|\[<\s*(else|endif|endfor)\s*>\]/g;
+        let at = 0, max = 0;
+
+        for (const tag of text.matchAll(re)) {
+          if (tag[1]) max = Math.max(max, ++at);
+          else if (tag[2] !== 'else') at = Math.max(0, at - 1);
+        }
+
+        return max;
+      };
+
+      for (const step of document.querySelectorAll('#workflowStepsSortable [data-id]')) {
+        step.click();
+        await new Promise(r => setTimeout(r, 300));
+
+        const area = [...document.querySelectorAll('#stepDetailsView textarea')]
+            .find(one => deep(one.value) >= 2);
+
+        if (area) {
+          // ⚠ Исходный текст запоминается ДО открытия окна: лестница правит
+          // поле шага при закрытии, и после него сверять было бы не с чем.
+          window.__source = area.value;
+          area.parentElement
+              .querySelector('button[title="Открыть в большом окне"]').click();
+          return true;
+        }
+      }
+
+      return false;
+  - wait_for: 'return Boolean(document.querySelector(".text-modal-area"))'
+  # ⚠ Доводим кадр до вложенного блока. Нижний слой — ведомый, он повторяет
+  # прокрутку поля; промотай мы `<pre>`, кадр показал бы цвет без букв.
+  - wait_for: |
+      const area = document.querySelector('.text-modal-area');
+      const at = area.value.split('\n').findIndex(one => /^ {4,}\[</.test(one));
+
+      if (at < 0) return false;
+
+      const line = area.scrollHeight / area.value.split('\n').length;
+      area.scrollTop = Math.max(0, (at - 2) * line);
+      area.dispatchEvent(new Event('scroll'));
+
+      return true;
+  - wait: 400
+
+areas:
+  - name: Окно промпта
+    selector: '.text-modal-box'
+    rules: [visible, inside]
+  - name: Поле текста
+    selector: '.text-modal-area'
+    rules: [visible, inside, whole]
+  - name: Слой цвета
+    selector: '.text-modal-paint'
+    rules: [visible, inside]
+
+checks:
+  # ⚠⚠ Главный сторож окна. Цвет рисует `<pre>` ПОЗАДИ прозрачной `textarea`:
+  # разойдись слои хоть одним знаком — подсветка встанет мимо буквы, и человек
+  # будет править промпт по неверным цветам.
+  - name: знаков расхождения между слоями окна
+    expect: 0
+    js: |
+      const area = document.querySelector('.text-modal-area');
+      const paint = document.querySelector('.text-modal-paint');
+
+      if (!area || !paint) return 1;
+
+      // ⚠ Хвостовой перевод строки подсветка добавляет нарочно — `<pre>` его
+      // съедает, а `textarea` нет. Сверяем без него.
+      const shown = paint.textContent.replace(/\n$/, '');
+
+      return shown === area.value ? 0 : Math.abs(shown.length - area.value.length) || 1;
+
+  # ⚠⚠⚠ Разметку движка читает `ai_workflow.py`. Лестница добавляет пробелы —
+  # и обязана добавлять ТОЛЬКО их: порченая метка не сработает молча.
+  - name: строк промпта, изменённых не отступом
+    expect: 0
+    js: |
+      const area = document.querySelector('.text-modal-area');
+      const source = window.__source;
+
+      if (!area || typeof source !== 'string') return 1;
+
+      // ⚠⚠ Отступ снимается с ОБЕИХ сторон, и это не придирка к записи:
+      // сверка с голой стороной против исходной считала расхождением каждую
+      // строку, которую автор промпта и так начал с пробела. Первый прогон
+      // этого случая покраснел ровно так — на 4 знака, и это были пробелы
+      // автора, а не правка лестницы.
+      const bare = (text) => text.split('\n')
+          .map(one => one.replace(/^[ \t]+/, '')).join('\n');
+
+      if (bare(area.value) === bare(source)) return 0;
+
+      const now = bare(area.value).split('\n'), was = bare(source).split('\n');
+
+      return now.filter((one, i) => one !== was[i]).length || 1;
+
+  # ⚠⚠ Высота слоёв. Подсветка не имеет права менять метрику текста: обводка
+  # пары и направляющие уровней нарочно сделаны `outline` и `box-shadow`,
+  # которые места не занимают. Поставь кто-нибудь вместо них `border` — слой
+  # цвета начнёт переносить строки не там, где поле, и разойдётся с ним тем
+  # сильнее, чем ниже смотришь. Числом это видно сразу, глазами — не вдруг.
+  - name: пикселей расхождения высоты слоёв
+    expect: 0
+    js: |
+      const area = document.querySelector('.text-modal-area');
+      const paint = document.querySelector('.text-modal-paint');
+
+      if (!area || !paint) return 1;
+
+      return Math.abs(paint.scrollHeight - area.scrollHeight);
+
+  # ⚠⚠⚠ Красное на живом промпте. Ноль — норма; больше нуля значит, что в
+  # workflow лежит блок, который движок не соберёт, и уедет он в модель
+  # словами, без единой ошибки в журнале.
+  - name: меток сломанной разметки в промпте
+    expect: 0
+    js: |
+      const paint = document.querySelector('.text-modal-paint');
+
+      if (!paint) return 1;
+
+      return paint.querySelectorAll('[style*="#b91c1c"]').length;
+
+  # ⚠ Отступ должен быть виден, а не только посчитан: на промпте с вложенным
+  # блоком хотя бы одна строка обязана уехать вправо. Ноль здесь значит, что
+  # окно открылось, а лестница не сработала.
+  - name: вложенных блоков без отступа
+    expect: 0
+    js: |
+      const area = document.querySelector('.text-modal-area');
+
+      if (!area) return 1;
+
+      // Открывающая метка на строке, но не в начале текста — значит она
+      // вложена: корневых блоков без отступа тут быть не может.
+      const nested = area.value.split('\n')
+          .filter(one => /^\s*\[<if\s/.test(one) && /^ {4,}/.test(one));
+
+      return nested.length ? 0 : 1;
