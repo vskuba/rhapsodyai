@@ -2596,8 +2596,9 @@
         // там человек назвал сайт, а первая живая сессия может быть от другого — и
         // её адрес затирал строку. Открывали LadaDate, в строке оставался
         // goldenbride.net. Такое открытие доводит до конца сам `siteOpen`.
-        if (name === 'session' && !currentId && sessions.length && !_siteOpening) {
-            viewOpen(sessions[0].session_id, sessions[0].url);
+        if (name === 'session' && !currentId && !_siteOpening) {
+            const mine = sessionsOfSite();
+            if (mine.length) viewOpen(mine[0].session_id, mine[0].url);
         }
     }
 
@@ -2638,7 +2639,7 @@
         }
 
         sessions = data.sessions || [];
-        countSet('session', sessions.length);
+        countSet('session', sessionsOfSite().length);
         sessionSelectFill();
         sessionTabsRender();
         poolRender(pool);
@@ -2647,8 +2648,9 @@
 
         // Первый ответ приходит уже после выбора вкладки, поэтому окно открываем
         // и здесь: страница пережила перезагрузку админки, показать её надо сразу.
-        if (!currentId && sessions.length && document.getElementById('tab-session').classList.contains('active')) {
-            viewOpen(sessions[0].session_id, sessions[0].url);
+        if (!currentId && document.getElementById('tab-session').classList.contains('active')) {
+            const mine = sessionsOfSite();
+            if (mine.length) viewOpen(mine[0].session_id, mine[0].url);
         }
     }
 
@@ -2681,10 +2683,18 @@
     }
 
     function sessionsOfSite() {
-        const site = siteCurrent();
-        if (!site) return sessions;
+        // Выбор из шапки (`_browserSiteId`), а не `siteCurrent()`: список
+        // карточек грузит вкладка «Сайты», и на остальных он пуст — тогда
+        // `siteCurrent()` возвращает null, и полоса показывала страницы всех
+        // сайтов подряд.
+        //
+        // Отбор строгий: без метки сессия ничья — её завёл прогон без сайта
+        // или прямой вызов API. На страницу сайта она не просится, для неё
+        // есть общий список: раньше ничьи страницы лезли под каждую
+        // закладку, и «Сессии» сайта показывали чужие вкладки.
+        if (!_browserSiteId) return sessions;
 
-        return sessions.filter(row => !row.site_id || Number(row.site_id) === site.id);
+        return sessions.filter(row => Number(row.site_id) === _browserSiteId);
     }
 
     function _sessionTabEl(title, url, active, sessionId) {
@@ -2742,9 +2752,13 @@
         }
         await sessionsLoad();
 
-        // Гасли последнюю — открывать нечего; иначе переходим на соседнюю, чтобы
-        // окно не осталось пустым при живых страницах.
-        if (!currentId && sessions.length) viewOpen(sessions[0].session_id, sessions[0].url);
+        // Гасли последняя — открывать нечего; иначе переходим на соседнюю, чтобы
+        // окно не осталось пустым при живых страницах. Соседняя — этого сайта:
+        // чужую страницу в окно этой закладки подставлять нельзя.
+        if (!currentId) {
+            const mine = sessionsOfSite();
+            if (mine.length) viewOpen(mine[0].session_id, mine[0].url);
+        }
     }
 
     // ---------- Запись сценария ----------
@@ -4305,12 +4319,14 @@
     }
 
     // Живые сессии в шапке вкладки: сценарий чаще всего гонят по уже открытой
-    // странице — там, где вход уже сделан руками.
+    // странице — там, где вход уже сделан руками. Свои, сайта закладки:
+    // гнать его сценарий на чужой странице — это сломать прогон и чужую вкладку.
     function sessionSelectFill() {
+        const mine = sessionsOfSite();
         const chosen = scenarioSessionPinned ? scenarioSessionEl.value : currentId;
         scenarioSessionEl.innerHTML = '<option value="">временная сессия</option>';
 
-        for (const session of sessions) {
+        for (const session of mine) {
             const option = document.createElement('option');
             option.value = session.session_id;
             option.textContent = session.name + ' · ' + session.session_id.slice(0, 8);
@@ -4319,7 +4335,7 @@
 
         // Погашенная сессия не выбирается: молча гнать сценарий во временной
         // вместо той, что человек видел в списке, — худший вид сюрприза.
-        scenarioSessionEl.value = sessions.some(session => session.session_id === chosen) ? chosen : '';
+        scenarioSessionEl.value = mine.some(session => session.session_id === chosen) ? chosen : '';
         // Подпись врала бы про «погаснет», пока стоит галка: временную сессию с ней
         // держат живой ровно ради того, чтобы посмотреть, чем кончился прогон.
         scenarioSessionHintEl.textContent = scenarioSessionEl.value

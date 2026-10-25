@@ -273,6 +273,9 @@ async def browser_scenario_run_one(scenario_id: int, session_id: str, variables:
         # и шифруют.
         'secrets': {**site_secret, **_filled(secrets)},
         'keep_session': keep_session,
+        # Метка сайта на временную вкладку прогона: страница закладки
+        # отбирает свои страницы по ней. Сценарий без сайта — 0, ничей.
+        'site_id': int(row.get('site_id') or 0),
         # Выход временной вкладки. Разворачиваем номер в адрес здесь: реестр наш,
         # и пароль канала не должен ездить через сеть ради того, что мы знаем.
         'proxy': await browser_proxy_net_url(proxy_id) if proxy_id and not session_id else '',
