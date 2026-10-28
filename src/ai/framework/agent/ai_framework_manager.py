@@ -1069,9 +1069,32 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     else:
                         raw_args[arg_key] = variables.get(var_name, None)
 
+                # ⚠⚠ Инструменту, которому нужна модель, её называет **нода**, а
+                # не окружение. Кладём первую модель ноды, умеющую изображения,
+                # в порядке позиций — тем же отбором, что у шагов
+                # (`ai_llm_filter_by_type`).
+                #
+                # Цена прежнего устройства измерена: зрение брало модель из
+                # `AI_VISION_MODEL_NAME`, на проде она не задана, и общий слой
+                # уходил на своё умолчание `gx10/qwen-large` — порт, которого на
+                # проде нет вовсе. 80 прогонов `dating_gallery_describe` подряд
+                # умерли на `All connection attempts failed`, хотя рядом, в
+                # списке той же ноды, стояла живая модель с `input_type`
+                # `text,image`.
+                #
+                # ⚠⚠ Передаётся **подсказкой**, а не аргументом: инструмент
+                # получит её, только если объявил такой параметр и workflow не
+                # назвал его сам. Клади мы это прямо в `raw_args`, каждый
+                # инструмент без `model_name` падал бы на неожиданном
+                # аргументе — лишнее из `raw_args` не отбрасывается, а едет
+                # в вызов (`ai_tool_args_prepare`).
+                _vision = ai_llm_filter_by_type(model.entities_llm, input_type='image')
+                tool_hints = {'model_name': (_vision[0].get('name') or '')} if _vision else {}
+
                 try:
                     # Вызов функции парсинга и кастинга аргументов
-                    func, tool_args = ai_tool_args_prepare(tool_path, tool_name, raw_args)
+                    func, tool_args = ai_tool_args_prepare(tool_path, tool_name, raw_args,
+                                                           hints=tool_hints)
 
                     if func is None:
                         raise ValueError(f"Не удалось подготовить функцию {tool_name} к запуску.")

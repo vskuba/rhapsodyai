@@ -231,11 +231,21 @@ async def ai_tool_get(tool_name: str) -> dict:
     return tool_data
 
 
-def ai_tool_args_prepare(tool_path: str, tool_name: str, raw_args: dict) -> tuple:
+def ai_tool_args_prepare(tool_path: str, tool_name: str, raw_args: dict,
+                         hints: dict | None = None) -> tuple:
     """
     Загружает функцию инструмента и приводит сырые аргументы
     к ожидаемым типам на основе аннотаций.
     Возвращает кортеж: (func, tool_args) или (None, raw_args) в случае ошибки.
+
+    `hints` — то, что вызывающий может предложить инструменту, но не обязан:
+    значение доезжает, **только если инструмент объявил такой параметр** и
+    workflow не назвал его сам. Так движок сообщает модель ноды тем
+    инструментам, которым она нужна (`model_name`), не ломая остальные.
+
+    ⚠ Проверка по сигнатуре здесь не ради аккуратности: лишний ключ из
+    `raw_args` не отбрасывается, а едет в вызов, и инструмент без такого
+    параметра упал бы на `unexpected keyword argument`.
     """
     try:
         import importlib.util
@@ -258,6 +268,12 @@ def ai_tool_args_prepare(tool_path: str, tool_name: str, raw_args: dict) -> tupl
             raise AttributeError(f"В модуле {tool_path} не найдена вызываемая функция с именем '{tool_name}'")
 
         func_signature = inspect.signature(func)
+
+        # Подсказки — только объявленным параметрам и только поверх пустого
+        # места: названное workflow сильнее того, что предлагает движок.
+        for hint_name, hint_value in (hints or {}).items():
+            if hint_name in func_signature.parameters and raw_args.get(hint_name) in (None, ''):
+                raw_args[hint_name] = hint_value
     except Exception as e:
         # Корректный возврат кортежа при ошибке, чтобы не ломать распаковку данных
         backtrace = traceback.format_exc()

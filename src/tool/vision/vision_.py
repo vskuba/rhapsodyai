@@ -33,7 +33,7 @@ from ai.vision.ai_vision_json import ai_vision_json
 VISION_SHOW_MAX = 80
 
 
-async def vision_describe(image: str, prompt: str) -> dict:
+async def vision_describe(image: str, prompt: str, model_name: str = '') -> dict:
     """
     Описывает изображение и возвращает названные в просьбе поля как JSON.
 
@@ -45,6 +45,8 @@ async def vision_describe(image: str, prompt: str) -> dict:
        файлу или ссылка не работают: сервер за картинками не ходит.
      - prompt: о чём спрашиваем. **Перечисли нужные поля прямо в тексте** —
        не назовёшь, модель придумает свои, и каждый раз другие.
+     - model_name: какой моделью смотреть. Называть не нужно: движок сам
+       подставляет первую модель **этой ноды**, умеющую изображения.
 
     Returns:
         dict: Словарь с результатом, содержащий:
@@ -57,8 +59,20 @@ async def vision_describe(image: str, prompt: str) -> dict:
         return {'ok': '0', 'json': '',
                 'error': f'нужен data:-URI картинки, пришло: {picture[:VISION_SHOW_MAX]}'}
 
+    # ⚠⚠ Модель называет нода, а не окружение. Пусто здесь значит, что у ноды
+    # нет ни одной модели со зрением, — и это ответ человеку, а не повод взять
+    # умолчание общего слоя. Прежде брали именно его (`AI_VISION_MODEL_NAME`,
+    # иначе `gx10/qwen-large`), и на проде, где такой модели нет, 80 прогонов
+    # подряд умерли на «All connection attempts failed» — при живой модели со
+    # зрением в списке той же ноды.
+    if not str(model_name or '').strip():
+        return {'ok': '0', 'json': '',
+                'error': 'у ноды агента нет модели со зрением: добавьте модель '
+                         'с input_type «image» в её список'}
+
     try:
-        got = await ai_vision_json(_bytes(picture), str(prompt or ''))
+        got = await ai_vision_json(_bytes(picture), str(prompt or ''),
+                                   model_name=str(model_name).strip())
     except (RuntimeError, ValueError) as err:
         # Ошибку возвращаем результатом, а не исключением: шаг workflow должен
         # дойти до конца и дать следующему шагу прочитать причину
