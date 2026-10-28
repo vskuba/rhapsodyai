@@ -362,13 +362,22 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 # Отмена: кнопка «Стоп» либо таймаут ожидающего прогон (конвейер задач
                 # отменяет задачу, не дождавшись ответа). Закрываем журнал и отвечаем
                 # без ошибки — ждущий свою причину назовёт сам.
+                #
+                # ⚠⚠ Ответ — пустота, по тому же правилу, что у тупика ниже («Тупик
+                # отвечает пустотой, а не словами»). Здесь так не было, и строка
+                # статуса доехала живому адресату: «⏹ Workflow остановлен» ушла
+                # письмами (dating: favorite_mail id 801, 1005). Вызывающий ответ
+                # не разбирает, он его отправляет; пустой ответ он читает как
+                # «агент решил промолчать» — единственный безопасный для человека
+                # исход. Причина останова остаётся в журнале и трассе
+                # (status='stopped'), а не в тексте ответа.
                 logger_info(f"⏹ Workflow остановлен (run {run_uuid})")
                 await ai_workflow_trace_run_finish(
                     trace_run_id, 'stopped', error='Прогон отменён: «Стоп» или таймаут ожидающего',
                     duration_ms=int((time.monotonic() - run_started) * 1000)
                 )
                 if not future.done():
-                    loop.call_soon_threadsafe(future.set_result, '⏹ Workflow остановлен')
+                    loop.call_soon_threadsafe(future.set_result, '')
                 return
             except Exception as e:
                 await ai_workflow_trace_run_finish(
@@ -385,8 +394,15 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             )
 
             if not future.done():
+                # ⚠ Тот же контракт, что у отмены и тупика: ответа нет — пустая
+                # строка. Сюда приходит прогон, дорезавший до конца списка шагов
+                # без return-шага; раньше он отвечал вызывающему фразой об
+                # успешном конце — строкой журнала, которую отправляющий канал
+                # принял бы за текст и отправил человеку.
+                # Успех без текста и есть «промолчать»; журнал (result=NULL) и
+                # трасса различают это с stopped.
                 loop.call_soon_threadsafe(
-                    future.set_result, result if result is not None else "Воркфлоу успешно завершен."
+                    future.set_result, result if result is not None else ''
                 )
 
         except Exception as e:
