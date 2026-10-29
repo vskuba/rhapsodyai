@@ -89,6 +89,15 @@ AI_FRAMEWORK_SESSION_TOOL = 'companion_session_add'
 # под сторожем в `tests/test_chat_intentions.py`.
 AI_FRAMEWORK_INTENTION_TOOL = 'chat_intention_add'
 
+# Инструмент сбора контекста намерения: сказанный им объект движок кладёт в тот
+# же накопитель, под ключ намерения.
+#
+# ⚠ Связка та же и с той же ценой, что у метки выше: держится на одном строковом
+# имени, и переименуй инструмент — движок промолчит, контекст просто перестанет
+# доезжать. Ошибки не будет: пустой контекст законен. Поэтому связка под
+# сторожем в `tests/test_chat_intentions.py`.
+AI_FRAMEWORK_INTENTION_CONTEXT_TOOL = 'chat_intention_context_set'
+
 # Реестр живых запусков workflow: run_uuid -> asyncio.Task.
 # Кнопка «Стоп» (/workflow_trace/run/{uuid}/stop) отменяет задачу по run_uuid
 workflow_runs_active: dict[str, asyncio.Task] = {}
@@ -1107,6 +1116,16 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 _vision = ai_llm_filter_by_type(model.entities_llm, input_type='image')
                 tool_hints = {'model_name': (_vision[0].get('name') or '')} if _vision else {}
 
+                # ⚠⚠ **Накопитель намерений — подсказкой, и иначе никак.**
+                # Инструменту не дают ни модель, ни сессию, а накопитель живёт
+                # на модели (`chat_intentions`). Переменной workflow он тоже не
+                # доезжает: `%intentions%` — это выход ветки намерений, другая
+                # вещь, и подпоток получает чистую область видимости.
+                #
+                # ⚠ Подсказка, а не аргумент: доедет только тому, кто объявил
+                # параметр `intentions`, — прочие инструменты её не увидят.
+                tool_hints['intentions'] = model.chat_intentions
+
                 try:
                     # Вызов функции парсинга и кастинга аргументов
                     func, tool_args = ai_tool_args_prepare(tool_path, tool_name, raw_args,
@@ -1168,11 +1187,32 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     #
                     # ⚠ Подпоток ничего не требует: ребёнку отдаётся ТОТ ЖЕ
                     # `model` (`_workflow_child_run`), и намерение с глубины
-                    # лежит в списке родителя.
+                    # лежит в словаре родителя. На этом же стоит сбор контекста:
+                    # его собирает подпоток, а кладёт — сюда же.
                     if tool_name == AI_FRAMEWORK_INTENTION_TOOL and isinstance(raw_result, dict):
                         intention = str(raw_result.get('intention') or '').strip()
                         if intention and intention not in model.chat_intentions:
-                            model.chat_intentions.append(intention)
+                            # ⚠ Пустой контекст, а не `None`: «намерение помечено,
+                            # контекст ещё не собран» — законное состояние, и
+                            # отличать его от «ключа нет» принимающей стороне
+                            # незачем.
+                            model.chat_intentions[intention] = {}
+
+                    # ⚠⚠ Контекст намерения — **второй шаг того же дела**, и
+                    # потому лежит рядом: инструмент собирает его в подпотоке,
+                    # а движок кладёт в тот же накопитель. Своё хранилище у
+                    # инструмента завести нельзя (ему не дают ни модель, ни
+                    # сессию) — та же причина, по которой здесь живёт и метка.
+                    #
+                    # ⚠ Контекст для **неизвестного** намерения не теряется: он
+                    # заводит ключ сам. Иначе порядок шагов в workflow стал бы
+                    # значимым молча — собрал контекст раньше метки, и он исчез.
+                    if tool_name == AI_FRAMEWORK_INTENTION_CONTEXT_TOOL \
+                            and isinstance(raw_result, dict):
+                        intention = str(raw_result.get('intention') or '').strip()
+                        context = raw_result.get('context')
+                        if intention and isinstance(context, dict):
+                            model.chat_intentions.setdefault(intention, {}).update(context)
 
                     # Запись выполнения в историю сессии
                     await ai_session_message_add(
