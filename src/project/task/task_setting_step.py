@@ -49,22 +49,51 @@ TASK_SETTING_STEP_MIN = 30
 TASK_SETTING_STEP_MAX = 86400
 
 
-def task_setting_step_timeout_of(metadata: dict) -> int | None:
-    """Срок шага по его метаданным.
+def task_setting_step_timeout_of(metadata: dict, variables: dict = None) -> int | None:
+    """Срок шага по его метаданным и переменным его потока.
+
+    Args:
+        metadata: метаданные шага.
+        variables: переменные потока — `{имя: умолчание}`. Нужны, когда шаг
+            ссылается на переменную; без них такая ссылка читается как «своего
+            срока нет».
 
     Returns:
         None — шаг ничего не ждёт (не ходит в оболочку), срока у него нет вовсе;
         0 — шаг ждёт, но своего срока не задал: значение возьмётся из настройки
         `timeout_shell_call` (так же поступит и сам инструмент);
-        иначе — секунды из литерала `_const_N`.
+        иначе — секунды.
+
+    ## ⚠⚠ Два вида записи, и второй вытесняет первый
+
+    Исторически срок стоял литералом `_const_600` прямо в карте входов.
+    Значение при этом лежало в метаданных шага: в списке переменных потока его
+    нет, на странице оно видно только раскрыв шаг, и правится вслепую. Теперь
+    шаг ссылается на **объявленную переменную** — у неё есть имя, подпись и
+    одно место правки.
+
+    ⚠ Литерал читается по-прежнему: он ещё стоит в чужих потоках
+    (`planning_*`), и переезд идёт по одному потоку. Перестань мы его понимать
+    раньше времени — карточка показала бы ноль там, где шаг ждёт два часа, и
+    человек правил бы настройку, которая ничего не решает.
+
+    ⚠ Функция остаётся **чистой**: переменные приходят доводом, а не читаются
+    из базы. Иначе её нельзя было бы звать из `team_progress`, который считает
+    прогресс в цикле и в базу за этим не ходит.
     """
     invoke = (metadata or {}).get('tool_invoke') or {}
     if invoke.get('tool_name') != TASK_SETTING_STEP_TOOL:
         return None
 
     raw = str((invoke.get('inputs_map') or {}).get('timeout') or '').strip()
+
     if raw.startswith(TASK_SETTING_STEP_CONST_PREFIX):
         raw = raw[len(TASK_SETTING_STEP_CONST_PREFIX):]
+    elif raw:
+        # ⚠ Имя переменной — не число: значение берём из умолчаний потока.
+        # Нет такой переменной — отвечаем нулём, то есть «своего срока нет»:
+        # это честнее выдуманного числа, и инструмент поступит так же.
+        raw = str((variables or {}).get(raw) or '').strip()
 
     return int(raw) if raw.isdigit() else 0
 
@@ -90,9 +119,15 @@ async def task_setting_step_all() -> list[dict]:
     if not workflow_role:
         return []
 
+    # ⚠ Переменные читаем **одним запросом на все потоки**: шагов у карточки
+    # четыре десятка, и поход за каждым означал бы сорок запросов на открытие.
+    variables = await _variables_load(list(workflow_role))
+
     items = []
     for row in await _steps_load(list(workflow_role)):
-        seconds = task_setting_step_timeout_of(json_from_string(row.get('metadata')))
+        seconds = task_setting_step_timeout_of(
+            json_from_string(row.get('metadata')),
+            variables.get(int(row['workflow_id']), {}))
         if not seconds:
             continue
         items.append(_item_build(row, workflow_role[int(row['workflow_id'])], seconds))
@@ -126,11 +161,25 @@ async def task_setting_step_set(key: str, value) -> dict:
 
     row = await _step_load(int(step_id))
     metadata = json_from_string((row or {}).get('metadata'))
-    if task_setting_step_timeout_of(metadata) is None:
+    flow = int(row['workflow_id'])
+    variables = (await _variables_load([flow])).get(flow, {})
+
+    if task_setting_step_timeout_of(metadata, variables) is None:
         raise ValueError(f'Шаг {step_id} не ждёт ответа оболочки — срока у него нет')
 
-    metadata['tool_invoke']['inputs_map']['timeout'] = f'{TASK_SETTING_STEP_CONST_PREFIX}{number}'
-    await _metadata_save(int(step_id), metadata)
+    # ⚠⚠ Пишем **туда, откуда прочитали**. Шаг, ссылающийся на переменную,
+    # правится в ней: перепиши мы его на литерал, значение вернулось бы в
+    # метаданные — то есть правка карточки откатывала бы перевод, и делала бы
+    # это молча, по одному шагу за нажатие.
+    name = str((metadata['tool_invoke'].get('inputs_map') or {})
+               .get('timeout') or '').strip()
+
+    if name.startswith(TASK_SETTING_STEP_CONST_PREFIX) or not name:
+        metadata['tool_invoke']['inputs_map']['timeout'] = (
+            f'{TASK_SETTING_STEP_CONST_PREFIX}{number}')
+        await _metadata_save(int(step_id), metadata)
+    else:
+        await _variable_save(flow, name, number)
 
     role = next((name for name, data in (await team_agent_by_role()).items()
                  if int(data.get('workflow_id') or 0) == int(row['workflow_id'])), '')
@@ -186,6 +235,59 @@ async def _step_load(step_id: int) -> dict:
         raise ValueError(f'Шаг {step_id} не найден')
 
     return dict(row)
+
+
+async def _variables_load(workflow_ids: list[int]) -> dict:
+    """Умолчания переменных перечисленных потоков: `{поток: {имя: значение}}`.
+
+    ⚠ Одним запросом на все потоки: шагов у карточки четыре десятка, и поход
+    за каждым означал бы сорок запросов на одно её открытие.
+    """
+    if not workflow_ids:
+        return {}
+
+    marks = ', '.join(['%s'] * len(workflow_ids))
+    sql = ('SELECT workflow_id, name, `default` FROM agent_workflow_variable'
+           f' WHERE workflow_id IN ({marks})')
+
+    async with mysql_get_db_async() as db:
+        await db.execute(sql, tuple(workflow_ids))
+        rows = await db.fetchall()
+
+    got: dict[int, dict] = {}
+    for row in (rows or []):
+        got.setdefault(int(row['workflow_id']), {})[
+            str(row['name'] or '').strip()] = row['default']
+
+    return got
+
+
+async def _variable_save(workflow_id: int, name: str, value: int) -> None:
+    """Записать срок в умолчание переменной потока.
+
+    ⚠ Переменной может не оказаться — например, её удалили со страницы, а шаг
+    на неё ссылается. Тогда заводим: отказ оставил бы карточку без способа
+    поправить срок, который шаг всё равно спросит.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            'SELECT id FROM agent_workflow_variable'
+            ' WHERE workflow_id = %s AND name = %s', (workflow_id, name))
+
+        if await db.fetchone():
+            await db.execute(
+                'UPDATE agent_workflow_variable SET `default` = %s'
+                ' WHERE workflow_id = %s AND name = %s',
+                (str(value), workflow_id, name))
+        else:
+            await db.execute(
+                'INSERT INTO agent_workflow_variable'
+                "  (workflow_id, name, type, `default`, description)"
+                " VALUES (%s, %s, 'workflow', %s, %s)",
+                (workflow_id, name, str(value),
+                 'Срок ожидания оболочки на этом шаге, секунды'))
+
+        await db.connection.commit()
 
 
 async def _metadata_save(step_id: int, metadata: dict) -> None:

@@ -85,6 +85,10 @@ async def team_progress_running() -> dict[tuple[str, int], dict]:
     totals        = await _totals_by_workflow({int(run['workflow_id'] or 0) for run in runs})
     defined       = await _steps_defined({int(run['workflow_id'] or 0) for run in runs})
     shell_default = await task_setting_timeout_get(TASK_SETTING_TIMEOUT_SHELL_CALL)
+    # ⚠ Срок шага бывает задан переменной потока, а не литералом в его
+    # метаданных: разбирает оба вида `task_setting_step_timeout_of`, но
+    # значение переменной надо ему подать.
+    flow_vars     = await _variables_defined({int(run['workflow_id'] or 0) for run in runs})
 
     progress: dict[tuple[str, int], dict] = {}
     for run in runs:
@@ -99,7 +103,8 @@ async def team_progress_running() -> dict[tuple[str, int], dict]:
         # `exec_index` считает с единицы, так что это уже «сколько шагов пройдено».
         index = int(step.get('exec_index') or 0)
         running = _step_running_find(defined.get(int(run['workflow_id'] or 0)) or [], step)
-        timeout = _step_timeout_get(running, shell_default)
+        timeout = _step_timeout_get(running, shell_default,
+                                    flow_vars.get(int(run['workflow_id'] or 0)) or {})
         progress[key] = {
             'percent':    min(TEAM_PROGRESS_MAX_PERCENT, round(100 * index / total)),
             'step_index': index,
@@ -172,6 +177,30 @@ async def _steps_defined(workflow_ids: set[int]) -> dict[int, list[dict]]:
         steps.setdefault(int(row['workflow_id']), []).append(row)
 
     return steps
+
+
+async def _variables_defined(workflow_ids: set[int]) -> dict[int, dict]:
+    """Умолчания переменных потоков: `{поток: {имя: значение}}`.
+
+    ⚠ Нужны затем, что срок шага бывает задан **ссылкой на переменную**, а не
+    литералом в метаданных. Читатель у обоих видов один
+    (`task_setting_step_timeout_of`), но значение переменной лежит не в шаге, и
+    подать его обязан вызывающий.
+    """
+    ids = [wid for wid in workflow_ids if wid]
+    if not ids:
+        return {}
+
+    marks = ', '.join(['%s'] * len(ids))
+    sql = ('SELECT workflow_id, name, `default` FROM agent_workflow_variable'
+           f' WHERE workflow_id IN ({marks})')
+
+    got: dict[int, dict] = {}
+    for row in await _rows_fetch(sql, tuple(ids)):
+        got.setdefault(int(row['workflow_id']), {})[
+            str(row['name'] or '').strip()] = row['default']
+
+    return got
 
 
 # Посчитанный знаменатель: `{workflow_id: (шагов, до какого момента годен)}`.
@@ -320,15 +349,20 @@ def _step_running_find(defined: list[dict], step: dict) -> dict:
     return {}
 
 
-def _step_timeout_get(step: dict, default: int) -> int:
+def _step_timeout_get(step: dict, default: int, variables: dict = None) -> int:
     """Срок шага в секундах; 0 — шаг ничего не ждёт и срока у него нет.
 
-    Разбор литерала — в `task_setting_step`: то же значение правится с карточки
+    Args:
+        variables: умолчания переменных потока — шаг может задавать срок
+            ссылкой на переменную, а не литералом.
+
+    Разбор — в `task_setting_step`: то же значение правится с карточки
     команды, и читать его двумя способами значит однажды разойтись. Ноль оттуда
     означает «шаг ждёт, но срока не задал», и тогда берётся настройка — ровно то,
     чем инструмент подменяет незаданный таймаут.
     """
-    seconds = task_setting_step_timeout_of(json_from_string(step.get('metadata')))
+    seconds = task_setting_step_timeout_of(json_from_string(step.get('metadata')),
+                                           variables)
 
     return 0 if seconds is None else (seconds or int(default))
 
