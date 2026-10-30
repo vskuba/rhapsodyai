@@ -99,6 +99,22 @@ const VAR_WRITE_ARRAYS = ['llm_to_json_variable', 'variable_conversion'];
 // переменную, а не создаёт её.
 const VAR_READ_ARRAYS = ['transitions_before', 'transitions_after'];
 
+// Объекты, где ключ `variable` тоже означает чтение. ⚠ Их отличает от массивов
+// выше только форма записи: `repeat.until` — один объект, а не список.
+//
+// ## ⚠⚠ Почему это важнее, чем кажется
+//
+// `until` читает переменную, которую тот же шаг и кладёт через `outputs_map`:
+// подпоток возвращает признак «есть ещё работа», и условие по нему решает,
+// звать ли его снова. Не знай трасса про `until` — она честно пишет
+// «ЧИТАЮТ: —», и человек, увидев это, снимает `outputs_map` как ненужный.
+//
+// Цена измерена 30.10.2026 на `intention_context`: без карты выходов признак
+// не доезжает до родителя, условие не выполняется ни разу, и подпоток
+// крутится до потолка — **десять прогонов вместо одного**, все зелёные. В
+// трассе это выглядит исправной работой.
+const VAR_READ_OBJECTS = ['until'];
+
 // Две разные записи, и обе означают чтение переменной.
 //
 // ⚠⚠ Списка «слова разметки, которые выглядят меткой» здесь больше нет, и его
@@ -330,7 +346,8 @@ export function stepReadVariables(step) {
 
         Object.entries(node).forEach(([name, value]) => {
             if (name === 'variable' && typeof value === 'string' && value
-                    && VAR_READ_ARRAYS.includes(key)) {
+                    && (VAR_READ_ARRAYS.includes(key)
+                        || VAR_READ_OBJECTS.includes(key))) {
                 read.add(value);
 
                 return;

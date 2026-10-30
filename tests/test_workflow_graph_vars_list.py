@@ -450,3 +450,63 @@ def _rows() -> list:
                     'icon_before_name': head['kids'].index(icon) < head['kids'].index(name)})
 
     return out
+
+
+class TestTheRepeatConditionIsARead:
+    """⚠⚠ Переменная из `repeat.until` — прочитанная, и граф обязан это видеть.
+
+    Шаг вызова подпотока кладёт признак «есть ещё работа» через `outputs_map`
+    и **сам же** читает его условием повтора. Условие лежит не в
+    `transitions_*`, а в объекте `repeat.until`, и прежде трасса его не
+    замечала: писала «ЧИТАЮТ: —».
+
+    ## ⚠⚠ Чем это кончается
+
+    Человек видит «кладут, никто не читает» и снимает `outputs_map` как
+    ненужный. После этого признак не доезжает до родителя, условие не
+    выполняется ни разу, и подпоток крутится до потолка.
+
+    Цена измерена 30.10.2026 на `intention_context`: **десять прогонов вместо
+    одного**, все зелёные. В трассе это выглядит исправной работой, и найти
+    такое можно только счётом прогонов.
+    """
+
+    STEP = {
+        'id': 9197, 'title': 'Намерение контекст',
+        'metadata': json.dumps({
+            'workflow_invoke': {
+                'workflow_id': 78,
+                'inputs_map': {'talk_history_chat': 'talk_history_chat'},
+                'outputs_map': {'chat_intention_get_9198_result_more':
+                                'intention_more'},
+                'repeat': {'until': {'variable': 'intention_more',
+                                     'operator': '!=', 'value': '1'},
+                           'max_iterations': 10},
+            },
+            'to_next_step': True,
+        }, ensure_ascii=False),
+    }
+
+    def _reads(self, step: dict) -> list:
+        return _node(
+            f"import {{stepReadVariables}} from '{GROUP}';",
+            f'[...stepReadVariables({_json(step)})].sort()')
+
+    def test_the_until_variable_counts_as_read(self):
+        assert 'intention_more' in self._reads(self.STEP), (
+            'переменную условия повтора граф не считает прочитанной — на '
+            'карточке будет «ЧИТАЮТ: —», и `outputs_map` снимут как ненужный')
+
+    def test_the_input_map_is_still_read(self):
+        """⚠ Правка не должна заслонить то, что считалось раньше."""
+        assert 'talk_history_chat' in self._reads(self.STEP)
+
+    def test_a_step_without_repeat_gains_nothing(self):
+        """⚠ Чтений не выдумываем: ключ `variable` вне условия остаётся тем,
+        чем был."""
+        step = {'id': 1, 'title': 'Переменные', 'metadata': json.dumps({
+            'variable_conversion': [{'variable': 'intention_more',
+                                     'text': 'что-то'}]}, ensure_ascii=False)}
+
+        assert 'intention_more' not in self._reads(step), (
+            'цель подстановки засчитана чтением — это запись, а не чтение')
