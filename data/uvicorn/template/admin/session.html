@@ -8,11 +8,13 @@
 
 {% block content %}
 {# Страница «Сессии» — оболочка с двумя вкладками, и больше ничего.
-   Сессий в системе ДВЕ РАЗНЫЕ: «Агенты» читает `agent_session` (журнал вызова
+   Предметов на странице ТРИ, и они разные: «Агенты» читает `agent_session` (журнал вызова
    LLM: промпт, ответ, инструмент, токены), «Чат» — `companion_session`
-   (разговор пары: обмен «он спросил — мы ответили», с доставкой). Поля,
-   отборы и ленты у них свои, поэтому у каждой вкладки своя панель и свой
-   скрипт; общего здесь — только раскладка в две колонки.
+   (разговор пары: обмен «он спросил — мы ответили», с доставкой),
+   «Намерения» — `companion_intention` (что агент пообещал или заметил за
+   парой, меткой словом и временем). Поля, отборы и ленты у них свои, поэтому
+   у каждой вкладки своя панель и свой скрипт; общего здесь — только раскладка
+   в две колонки.
 
    Устройство: `.claude/docs/session.md`.
    Соседняя вкладка добавляется кнопкой сюда и панелью `#tab-<имя>` ниже. #}
@@ -21,10 +23,12 @@
     <div class="page-tabs" id="sessionTabs">
         <button type="button" class="page-tab active" data-tab="agent">🤖 Агенты</button>
         <button type="button" class="page-tab" data-tab="chat">💬 Чат</button>
+        <button type="button" class="page-tab" data-tab="intention">✦ Намерения</button>
     </div>
 
     {% include "admin/session/agent.html" %}
     {% include "admin/session/chat.html" %}
+    {% include "admin/session/intention.html" %}
 
 </div>
 {% endblock %}

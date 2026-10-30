@@ -176,3 +176,23 @@ export function labelOf(entity, id) {
     return entity.title || entity.name || entity.unique_id || entity.username
         || `#${id}`;
 }
+
+/** Слово в числе по счёту: `pluralOf(1, 'намерение', 'намерения', 'намерений')`.
+ *
+ * ⚠ Формы приходят доводами, а не зашиты: правило счёта одно на язык, а слов
+ * много. Третье такое место (у жребия своё `_optionsWord`, приватное в чужой
+ * подсистеме) — повод вынести именно **правило**, оставив слова вызывающему.
+ *
+ * ⚠⚠ Одиннадцать–четырнадцать проверяются ПЕРВЫМИ: по последней цифре они
+ * выглядят как «1», «2», «3», и без этой ветки получилось бы «11 намерение».
+ */
+export function pluralOf(qty, one, few, many) {
+    const tail100 = Math.abs(qty) % 100;
+    const tail10 = Math.abs(qty) % 10;
+
+    if (tail100 > 10 && tail100 < 20) return many;
+    if (tail10 === 1) return one;
+    if (tail10 > 1 && tail10 < 5) return few;
+
+    return many;
+}

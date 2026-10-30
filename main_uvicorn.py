@@ -98,6 +98,9 @@ from src.uvicorn.routers.session import session
 # Вкладка «Чат» страницы «Сессии»: разговоры пары (`companion_session`).
 # Подключается РАНЬШЕ соседа — см. комментарий у `include_router`.
 from src.uvicorn.routers.session import session_companion
+# Вкладка «Намерения» той же страницы: что агент пообещал или заметил
+# (`companion_intention`). Подключается РАНЬШЕ соседа — та же причина.
+from src.uvicorn.routers.session import session_intention
 from src.uvicorn.routers.setting import setting
 from src.uvicorn.routers.telegram_app import telegram_app
 from src.uvicorn.routers.telegram_app import telegram_app_chat
@@ -614,6 +617,7 @@ app.include_router(gx10.router, include_in_schema=False)
 # ручка под `/session/companion/` с методом DELETE попала бы не туда. Тот же
 # порядок и по той же причине, что у подвкладок журнала.
 app.include_router(session_companion.router, include_in_schema=False)
+app.include_router(session_intention.router, include_in_schema=False)
 app.include_router(session.router, include_in_schema=False)
 app.include_router(node.router, include_in_schema=False)
 app.include_router(role.router, include_in_schema=False)

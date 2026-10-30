@@ -9,6 +9,7 @@
 
 import {sessionAgentInit} from './agent.js';
 import {sessionChatInit} from './chat.js';
+import {sessionIntentionInit} from './intention.js';
 import {filterLoad, filterSave} from './util.js';
 
 // Ключ запомненной вкладки. Хранилище — то же, что у отборов вкладок
@@ -25,6 +26,7 @@ const SESSION_TAB_KEY = 'tab';
 const tabStarters = {
     agent: sessionAgentInit,
     chat: sessionChatInit,
+    intention: sessionIntentionInit,
 };
 
 // Какие вкладки уже заведены. Инициализация ленивая: каждая вкладка тянет свои

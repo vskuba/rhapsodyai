@@ -811,3 +811,132 @@
     background: #cbd5e0;
     border-radius: 10px;
 }
+
+/* ===================== Вкладка «Намерения» =====================
+   Лента здесь — не переписка, а след работы агента: метка словом и время.
+   Поэтому строка плоская и узкая, без пузырей и половин, — разговор читают
+   глазами, а намерения просматривают списком.
+
+   ⚠ Классы свои, а не общие с «Чатом»: там строка это обмен из двух половин,
+   и переиспользуй мы `.session-exchange`, первая же правка пузырей поехала бы
+   сюда. Общего у вкладок только раскладка (`.session-stream` и соседи). */
+
+/* Сводка «что вообще за этой парой»: виды намерений с числом и разбросом дат.
+   ⚠ Стоит НАД лентой и считается сервером отдельно: лента обрезана `limit`,
+   и сводка, посчитанная по показанному, врала бы тем сильнее, чем длиннее
+   история. */
+.intention-kinds {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    /* ⚠⚠ Ширина по СОДЕРЖИМОМУ, а не доля ленты. Лента широкая (949 px на
+       1440), а строка намерения короткая: растянутая строка уводила дату к
+       правому краю, и между меткой и датой оставалось полполосы пустоты —
+       глаз терял связь между ними.
+
+       Первая попытка ставила потолок числом (`max-width: 760px`) и дефект не
+       вылечила, только уменьшила: кадр показал 455 px разрыва. Видно это
+       только на снимке — в коде «потолок стоит» выглядит сделанной работой. */
+    width: fit-content;
+    min-width: min(100%, 420px);
+    max-width: 100%;
+    margin-bottom: 14px;
+    padding: 10px 12px;
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+}
+
+.intention-kind {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+}
+
+.intention-kind-count {
+    font-weight: 700;
+    color: #334155;
+}
+
+.intention-kind-span {
+    color: #64748b;
+    font-size: 11px;
+}
+
+/* Запись ленты. ⚠ Номер и время по краям, метка посередине: взгляд идёт по
+   меткам сверху вниз, и дата, стоя перед ними, каждый раз сбивала бы его на
+   себя. */
+.intention-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 10px;
+    /* Та же ширина по содержимому, что у сводки выше: строки обязаны стоять
+       одной колонкой, иначе дата сводки и дата записи окажутся на разной
+       высоте по горизонтали и перестанут читаться как один столбец. */
+    width: fit-content;
+    min-width: min(100%, 420px);
+    max-width: 100%;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.intention-row:last-child {
+    border-bottom: none;
+}
+
+.intention-row:hover {
+    background-color: #f8fafc;
+}
+
+.intention-row-id {
+    color: #94a3b8;
+    font-size: 11px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    min-width: 46px;
+}
+
+/* Ячейка метки. ⚠ Наименьшая ширина задана ей, а не чипу: чип красит слово и
+   обязан быть по слову, а колонку держит ячейка. Метка длиннее — ячейка
+   растёт, дата едет вправо, и это честнее обрезки: имя намерения читают
+   целиком. */
+.intention-row-mark {
+    display: inline-flex;
+    min-width: 260px;
+}
+
+/* ⚠ Без `margin-left: auto`: он отжимал дату к правому краю строки, то есть
+   ровно создавал пустоту, которую лечит ширина по содержимому выше. Колонку
+   дат держит `min-width` ячейки метки. */
+.intention-row-at {
+    color: #64748b;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+/* Сама метка. ⚠ Моноширинным и без `uppercase`: внутри технические имена с
+   подчёркиваниями (`she_promised_send_photo`), и капс делает их нечитаемыми —
+   та же причина, что у `.chip-source` выше. */
+.intention-chip {
+    display: inline-block;
+    padding: 2px 8px;
+    background-color: #eef2ff;
+    color: #4338ca;
+    border: 1px solid #c7d2fe;
+    border-radius: 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+/* Шапка ленты: пара и приписка «показано N из M». */
+.detail-pair {
+    font-weight: 600;
+}
+
+.detail-note {
+    color: #718096;
+    font-weight: 400;
+    font-size: 12px;
+}

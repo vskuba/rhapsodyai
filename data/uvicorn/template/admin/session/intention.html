@@ -1,0 +1,76 @@
+{# Вкладка «Намерения»: что агент пообещал или заметил за парой
+   (`companion_intention`). Подключается включением из `admin/session.html`;
+   стили — `css/session.css`, поведение — `js/session/intention.js`.
+
+   Строка здесь — одна находка: метка словом (`she_promised_send_photo`) и
+   время. Канала у намерения нет намеренно: обещание, данное письмом, остаётся
+   тем же обещанием в чате, и делить их по каналам значило бы раздвоить одно
+   намерение (разбор — `session_intention.py`, шапка).
+
+   ⚠⚠ Время у каждой записи стоит на виду не ради порядка: им следующий прогон
+   режет историю разговора надвое и ищет новое намерение только в свежей
+   половине. Человек, пришедший разбираться, почему обещание приехало дважды,
+   смотрит именно на него.
+
+   ⚠ Удаления здесь нет и не предполагается: намерение — след работы агента, а
+   не его ответ человеку. Испортить им ленту нельзя, чинить нечего. #}
+<div class="tab-panel" id="tab-intention">
+    <div class="session-body-container">
+
+        <div class="session-sidebar">
+            <div class="filter-group">
+                <div class="sidebar-title">Фильтры</div>
+
+                <div class="filter-field">
+                    <label for="intentionOwner" class="filter-label">Наша сторона</label>
+                    <select id="intentionOwner" class="form-control">
+                        <option>Загрузка...</option>
+                    </select>
+                </div>
+
+                <div class="filter-field">
+                    <label for="intentionCompanion" class="filter-label">Собеседник</label>
+                    <select id="intentionCompanion" class="form-control">
+                        <option>Загрузка...</option>
+                    </select>
+                </div>
+
+                <div class="filter-field">
+                    <label for="intentionKind" class="filter-label">Намерение</label>
+                    <select id="intentionKind" class="form-control">
+                        <option>Загрузка...</option>
+                    </select>
+                </div>
+
+                <div class="filter-field">
+                    <label for="intentionLimit" class="filter-label">Limit записей</label>
+                    <select id="intentionLimit" class="form-control">
+                        <option value="50">50</option>
+                        <option value="200" selected>200</option>
+                        <option value="1000">1000</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="session-group">
+                <div class="session-group-header">
+                    <div class="sidebar-title" style="margin-bottom: 0;">Пары</div>
+                </div>
+
+                <select id="intentionSelect" class="session-select" size="4"></select>
+            </div>
+        </div>
+
+        <div class="session-detail-view">
+            {# ⚠ Заголовок — свой `div` внутри шапки, как у соседней вкладки:
+               его `innerHTML` переписывается на каждой загрузке ленты. #}
+            <div class="detail-header">
+                <div class="detail-header-text" id="intentionTitle">Выберите пару</div>
+            </div>
+            <div class="session-stream" id="intentionStream">
+                <div class="placeholder">Намерения пары будут отображены здесь</div>
+            </div>
+        </div>
+
+    </div>
+</div>

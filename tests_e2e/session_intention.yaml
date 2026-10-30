@@ -1,0 +1,103 @@
+name: Сессии — вкладка «Намерения»
+description: >-
+  Вкладка «Намерения» страницы «Сессии». Стережёт то, что здесь легко сломать
+  молча: число в шапке обязано сходиться с лентой, сводка по видам — считаться
+  сервером, а не по показанным строкам, и ни одна строка не должна вылезать за
+  ленту. Пустая вкладка на непустой базе выглядит рабочей страницей.
+page: /admin/session
+widths: [1440]
+
+steps:
+  - wait_for: 'return Boolean(document.querySelector(".page-tab[data-tab=\"intention\"]"))'
+  - click: '.page-tab[data-tab="intention"]'
+  # ⚠ Признак прихода — появились варианты пары, а НЕ «список непуст»:
+  # «Загрузка...» сама вариант, и такое условие истинно мгновенно.
+  - wait_for: |
+      const list = document.getElementById('intentionSelect');
+      return list && [...list.options].some(one => !/Загрузка/.test(one.textContent));
+  # Открываем пару с историей: на паре из одной записи сводка не отличается от
+  # ленты, и проверять там нечего.
+  - wait_for: |
+      const list = document.getElementById('intentionSelect');
+      const at = [...list.options].findIndex(one => /✦([2-9]|\d\d)/.test(one.textContent));
+
+      if (at < 0) return false;
+
+      list.selectedIndex = at;
+      list.dispatchEvent(new Event('change'));
+
+      return true;
+  - wait_for: 'return document.querySelectorAll("#intentionStream .intention-row").length > 0'
+  - wait: 400
+
+areas:
+  - name: Вкладка
+    selector: '#tab-intention'
+    rules: [visible, inside]
+  - name: Отбор пар
+    selector: '#intentionSelect'
+    rules: [visible, inside]
+  - name: Лента
+    selector: '#intentionStream'
+    rules: [visible, inside]
+
+checks:
+  # ⚠⚠ Главный сторож. Вкладка, показывающая пустую ленту на непустой базе,
+  # выглядит рабочей страницей — ни ошибки, ни следа в журнале.
+  - name: записей в ленте
+    expect: 1
+    js: |
+      return document.querySelectorAll('#intentionStream .intention-row').length > 0 ? 1 : 0;
+
+  # ⚠⚠⚠ Число в шапке против ленты. Шапка пишет «N намерений» либо «показано N
+  # из M»; разойдись оно со строками — человек поверит подписи, а она соврёт.
+  - name: расхождение счёта в шапке со строками ленты
+    expect: 0
+    js: |
+      const rows = document.querySelectorAll('#intentionStream .intention-row').length;
+      const said = document.getElementById('intentionTitle').textContent;
+      const shown = (said.match(/показано\s+(\d+)\s+из/) || [])[1];
+      const total = (said.match(/·\s*(\d+)\s/) || [])[1];
+
+      return Number(shown ?? total) === rows ? 0 : 1;
+
+  # ⚠ Сводка считается сервером и НЕ обязана совпадать с лентой по числу: лента
+  # обрезана `limit`. Но сумма по видам не может быть МЕНЬШЕ показанного — это
+  # значило бы, что сводка считает по обрезку.
+  - name: сводка по видам меньше ленты
+    expect: 0
+    js: |
+      const rows = document.querySelectorAll('#intentionStream .intention-row').length;
+      const sum = [...document.querySelectorAll('#intentionStream .intention-kind-count')]
+          .reduce((all, one) => all + (parseInt(one.textContent, 10) || 0), 0);
+
+      return sum >= rows ? 0 : 1;
+
+  # ⚠ Вёрстка: строка не должна вылезать за ленту. Числом видно сразу, глазами
+  # — только на длинной метке.
+  - name: строк, вылезших за ленту
+    expect: 0
+    js: |
+      const box = document.getElementById('intentionStream').getBoundingClientRect();
+
+      return [...document.querySelectorAll('#intentionStream .intention-row')]
+          .filter(one => one.getBoundingClientRect().right > box.right + 1).length;
+
+  # ⚠ Склонение: «1 намерений» в шапке — мелочь, которая подрывает доверие к
+  # числу рядом. Правило проверяется само, а не текущая пара: случай не знает,
+  # какая пара окажется открытой.
+  - name: неверное склонение в шапке
+    expect: 0
+    js: |
+      const said = document.getElementById('intentionTitle').textContent;
+      const hit = said.match(/·\s*(\d+)\s+(намерение|намерения|намерений)/);
+
+      if (!hit) return 0;
+
+      const qty = Number(hit[1]);
+      const two = qty % 100, one = qty % 10;
+      const want = (two > 10 && two < 20) ? 'намерений'
+          : one === 1 ? 'намерение'
+          : (one > 1 && one < 5) ? 'намерения' : 'намерений';
+
+      return hit[2] === want ? 0 : 1;
