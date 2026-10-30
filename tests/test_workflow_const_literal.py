@@ -229,18 +229,26 @@ class TestTheEngineRefuses:
     через недели, по невозможности поправить долю жребия.
     """
 
-    def test_the_branch_raises(self):
+    def test_the_branch_is_marked_for_removal(self):
+        """⚠⚠ Переходный заход: литерал ещё читается, но громко.
+
+        Запрет приедет третьим заходом — после того, как данные переведены на
+        проде. Раньше нельзя: между правкой данных и выкладкой кода возникает
+        окно, и оно ломает в обе стороны. Старый код на имени переменной даёт
+        инструменту `None`, а `dice` на таком падает — и зовут его на
+        **каждом** ответе в чате.
+        """
         import inspect
 
         from src.ai.framework.agent import ai_framework_manager as engine
 
         code = inspect.getsource(engine)
         spot = code.find('AI_FRAMEWORK_CONST_PREFIX)')
-        after = code[spot:spot + 1200]
+        after = code[spot:spot + 1600]
 
-        assert 'raise ValueError' in after, (
-            'движок снова подставляет литерал вместо отказа: значение уедет '
-            'в метаданные шага и станет неправимым с виду')
+        assert 'перенесите значение в переменную workflow' in after, (
+            'литерал читается молча: переезд не виден в журнале, и о шаге '
+            'вспомнят только когда запрет его уронит')
 
     def test_the_prefix_is_still_known(self):
         """⚠ Приставка остаётся в коде **ради отказа**: без неё шаг молча
