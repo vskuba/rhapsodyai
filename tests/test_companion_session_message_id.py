@@ -42,7 +42,7 @@ pytestmark = pytest.mark.core
 # ⚠ Набор общий, а не про номер обмена: `intentions` доезжает тем же приёмом —
 # полем модели, которое движок копит по ответу инструмента
 # (`tests/test_chat_intentions.py`), — и пропадает так же тихо.
-CHAT_ASK_KEYS = {'result', 'message_id', 'intentions'}
+CHAT_ASK_KEYS = {'result', 'message_id', 'intentions', 'extra'}
 
 
 def _chat_ask_returns() -> list:

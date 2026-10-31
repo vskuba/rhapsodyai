@@ -124,6 +124,16 @@ AI_FRAMEWORK_INTENTION_TOOL = 'chat_intention_add'
 # сторожем в `tests/test_chat_intentions.py`.
 AI_FRAMEWORK_INTENTION_CONTEXT_TOOL = 'chat_intention_context_set'
 
+# Инструмент решений прогона: сказанную им пару «ключ → значение» движок кладёт
+# в накопитель `model.chat_extra`, и оттуда её забирает ручка `/chat/ask`
+# (`extra`). Так из workflow уезжает наружу то, о чём текст ответа молчит:
+# прикладывать ли снимок, сколько их, задавать ли вопрос.
+#
+# ⚠ Связка та же и с той же ценой, что у трёх имён выше: держится на одном
+# строковом имени, и переименуй инструмент — движок промолчит, решения просто
+# перестанут доезжать. Ошибки не будет: пустой `extra` законен.
+AI_FRAMEWORK_EXTRA_TOOL = 'chat_response_extra_set'
+
 # Реестр живых запусков workflow: run_uuid -> asyncio.Task.
 # Кнопка «Стоп» (/workflow_trace/run/{uuid}/stop) отменяет задачу по run_uuid
 workflow_runs_active: dict[str, asyncio.Task] = {}
@@ -1261,6 +1271,26 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         context = raw_result.get('context')
                         if intention and isinstance(context, dict):
                             model.chat_intentions.setdefault(intention, {}).update(context)
+
+                    # ⚠⚠ **Решения прогона — третий накопитель, и лежит он
+                    # здесь по той же причине**, что метка и контекст:
+                    # инструменту не дают ни модель, ни сессию, и забрать его
+                    # ответ может только движок.
+                    #
+                    # ⚠ В отличие от контекста намерения — **присваивает, а не
+                    # дополняет**. Два вызова с одним ключом значат, что ветка
+                    # workflow переменила решение, и взять надо последнее;
+                    # сложи мы их, переменить решение было бы нечем.
+                    #
+                    # ⚠ Кладём только сказавшее «положил» (`saved`): шаг мог
+                    # отказать (пустой ключ, слишком длинное значение), и
+                    # класть его отказ в ответ значило бы врать вызывающему.
+                    if tool_name == AI_FRAMEWORK_EXTRA_TOOL \
+                            and isinstance(raw_result, dict):
+                        said = str(raw_result.get('key') or '').strip()
+                        if said and int(raw_result.get('saved') or 0):
+                            model.chat_extra[said] = str(
+                                raw_result.get('value') or '')
 
                     # Запись выполнения в историю сессии
                     await ai_session_message_add(
