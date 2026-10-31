@@ -1,4 +1,4 @@
-import {fillVariablesSelectOptions} from './variables.js';
+import {fillVariablesSelectOptions, syncHiddenRow} from './variables.js';
 
 // Редактор жребия: переменные, их варианты и шансы выпадения.
 //
@@ -108,7 +108,27 @@ export function renderDiceWidget(host, current, save, toolName = DICE_TOOL_NAME)
             outputs[name] = name;
         });
 
-        const inputs = {[DICE_ARG]: DICE_CONST + JSON.stringify(spec)};
+        // ⚠⚠⚠ Описание уезжает **в переменную потока**, а не литералом.
+        // Литерал (`_const_{…}`) движок отвергает отказом — значения живут в
+        // переменных, и форма обязана писать туда же, откуда читает.
+        //
+        // ⚠ Имя переменной берём то, что уже стоит в шаге: его завёл человек,
+        // на него ссылаются другие места, и переименование формой было бы
+        // правкой, которой он не просил. Имени нет (шаг только завели) —
+        // пишем литералом, как раньше: лучше запись, которую примет старая
+        // база, чем ссылка на переменную, которой никто не создавал.
+        const wasSpec = String(((current || {}).inputs_map || {})[DICE_ARG] || '');
+        const varName = wasSpec && !wasSpec.startsWith(DICE_CONST) ? wasSpec : '';
+
+        if (varName) {
+            // ⚠ Значение переменной правим **на странице**: виджет её не
+            // сохраняет — это делает общая кнопка «Сохранить workflow»,
+            // одна на все переменные. Своё сохранение здесь означало бы два
+            // писателя одной строки.
+            _specToVariable(varName, spec);
+        }
+
+        const inputs = {[DICE_ARG]: varName || (DICE_CONST + JSON.stringify(spec))};
 
         if (isBatch && timesSelect.value) {
             inputs[DICE_ARG_TIMES] = timesSelect.value;
@@ -164,11 +184,29 @@ export function renderDiceWidget(host, current, save, toolName = DICE_TOOL_NAME)
 
 // ── Внутреннее ──────────────────────────────────────────────────────────────
 
-/** Описание жребия из сохранённого `inputs_map`. Пусто — ничего не настроено. */
+/** Описание жребия из сохранённого `inputs_map`. Пусто — ничего не настроено.
+ *
+ * ## ⚠⚠ Два места, где оно может лежать, и второе — главное
+ *
+ * Исторически описание клалось **литералом** (`_const_{…}`) прямо в
+ * `inputs_map`. Литерал с тех пор запрещён: движок отвечает на него отказом, а
+ * значения переехали в **переменные потока** (`spec: "dice_photo_spec"`).
+ *
+ * ⚠⚠⚠ Читать после переезда виджет не научили, и форма показывала **пустой
+ * жребий у всех шагов во всех workflow** — при живых, работающих описаниях.
+ * Хуже пустоты было то, что сохранение такой формы затирало `inputs_map`
+ * пустым описанием: открыл посмотреть, нажал «Сохранить» — и жребий потерян.
+ *
+ * Поэтому читаем оба вида: имя переменной разворачиваем по списку страницы,
+ * литерал понимаем ради старых баз, которые ещё не переехали.
+ */
 function _specIn(current) {
-    const raw = ((current || {}).inputs_map || {})[DICE_ARG] || '';
-    const text = String(raw).startsWith(DICE_CONST)
-        ? String(raw).slice(DICE_CONST.length) : '';
+    const raw = String(((current || {}).inputs_map || {})[DICE_ARG] || '');
+
+    if (!raw) return {};
+
+    const text = raw.startsWith(DICE_CONST) ? raw.slice(DICE_CONST.length)
+                                            : _specByName(raw);
 
     if (!text) return {};
 
@@ -179,6 +217,57 @@ function _specIn(current) {
         return {};
     }
 }
+
+/** Значение переменной потока по имени. Пусто — такой переменной нет.
+ *
+ * ⚠ Берём из `window.allCurrentVariables` — того же списка, которым нарисована
+ * первая колонка страницы; им же сверяются метки долей ниже. Второй источник
+ * тех же имён разошёлся бы с первым молча.
+ *
+ * ⚠ Имя приезжает как есть (`dice_photo_spec`), но процентные метки внутри
+ * описания пишутся в обёртке (`%percent_setting%`) — поэтому обёртку снимаем:
+ * `inputs_map` обеих записей встречается в живых базах.
+ */
+function _specByName(name) {
+    const want = String(name || '').replace(/^%/, '').replace(/%$/, '');
+    const known = window.allCurrentVariables;
+
+    if (!want || !Array.isArray(known)) return '';
+
+    const found = known.find(one => String(one && one.name) === want);
+
+    return found ? String(found.default ?? found.value ?? '') : '';
+}
+
+/** Положить описание в переменную потока — в память страницы и в её поле.
+ *
+ * ⚠⚠ Пишем **и в список состояния, и в поле на странице**: список читает сам
+ * виджет (следующее открытие формы), а поле — общая кнопка «Сохранить
+ * workflow», которая и уносит правку в базу. Обнови мы одно, человек увидел бы
+ * свои доли в форме и не нашёл их после сохранения.
+ *
+ * ⚠ Поля может не быть (список переменных свёрнут) — тогда довольно списка:
+ * страница перечитывает его при раскрытии.
+ */
+function _specToVariable(name, spec) {
+    const text = JSON.stringify(spec);
+    const known = window.allCurrentVariables;
+
+    if (Array.isArray(known)) {
+        const one = known.find(row => String(row && row.name) === name);
+        if (one) one.default = text;
+    }
+
+    // ⚠⚠ Строку списка обновляет **та же функция**, что и правка переменной
+    // руками (`syncHiddenRow`): общая кнопка «Сохранить workflow» читает
+    // именно её поля. Свой селектор здесь был бы вторым знанием о разметке
+    // списка и разошёлся бы с ним на первой перевёрстке.
+    const found = Array.isArray(known)
+        ? known.find(one => String(one && one.name) === name) : null;
+
+    if (found) syncHiddenRow(found);
+}
+
 
 /** Доля в том виде, в каком уезжает в JSON: число либо метка строкой. */
 function _shareOut(text) {

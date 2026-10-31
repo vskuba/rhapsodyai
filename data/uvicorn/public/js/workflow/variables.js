@@ -429,7 +429,11 @@ function bindSave(el, variable, field) {
  * `state.inputVarPending`, оттуда её и возьмёт `saveInputVariables`. Разметка у
  * неё живёт ровно до ближайшей перерисовки.
  */
-function syncHiddenRow(variable) {
+// ⚠ Открыта наружу ради виджета жребия: он правит значение переменной потока
+// и обязан обновить ту же скрытую строку, иначе общая кнопка «Сохранить
+// workflow» унесёт в базу прежнее значение. Второй селектор на ту же строку
+// разошёлся бы с этим при первой же перевёрстке списка.
+export function syncHiddenRow(variable) {
     if (!variable.id) return;
 
     const row = document.querySelector(
