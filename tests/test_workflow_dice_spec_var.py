@@ -61,6 +61,11 @@ console.log(JSON.stringify(mod._specIn({inputs_map: %s})));
 """
 
 
+SPEC = {'dice_photo_length': {'a paragraph, 70-110 words': 45,
+                              'two or three sentences': 25,
+                              'two paragraphs': 30}}
+
+
 def _spec(inputs: dict, variables: list):
     """Что редактор увидит в этом шаге при таких переменных потока."""
     if not shutil.which('node'):
@@ -74,11 +79,6 @@ def _spec(inputs: dict, variables: list):
     assert done.returncode == 0, f'node: {done.stderr}'
 
     return json.loads(done.stdout)
-
-
-SPEC = {'dice_photo_length': {'a paragraph, 70-110 words': 45,
-                              'two or three sentences': 25,
-                              'two paragraphs': 30}}
 
 
 class TestTheSpecComesFromTheVariable:
