@@ -1,12 +1,16 @@
 from fastapi import APIRouter, Depends
 from mysql_.mysql_ import mysql_get_db_async
 from src.auth.auth import AuthChecker
+from src.auth.auth_permission import AuthPermission
 
 router = APIRouter()
 
 
 @router.get("/detective/case_agents")
-async def detective_case_agents(session_uuid: str, db=Depends(mysql_get_db_async), user=Depends(AuthChecker([]))):
+async def detective_case_agents(
+        session_uuid: str,
+        db=Depends(mysql_get_db_async),
+        user=Depends(AuthChecker([AuthPermission.CHAT_ASK]))):
     """
     Агенты текущего дела игровой сессии detective (подозреваемые + сержант) с их
     id - для PWA-фронтенда (apps/detective): клик по чипсу с именем подозреваемого

@@ -9,6 +9,7 @@ from jinja2 import TemplateNotFound
 from logging_.logging_ import logger_info
 from queue_.queue_ import queue_get_all
 from src.auth.auth import auth_get_current_user
+from src.auth.auth_permission import AuthPermission
 from src.auth.auth_session import AuthSession
 
 router = APIRouter()
@@ -43,10 +44,34 @@ def dashboard_get_template_for_role(path: str, role: str, value: str, jinja2_tem
 
 async def dashboard_require_auth(request: Request) -> AuthSession:
     """Dependency that requires authentication for HTML routes.
-    Redirects to login if not authenticated (401), re-raises 403."""
+    Redirects to login if not authenticated (401), re-raises 403.
+
+    ## ⚠⚠ Мало войти — надо хоть что-то уметь
+
+    Зависимость стоит на 36 страницах панели и до 2026-11-01 спрашивала только
+    «вошёл ли». Этого хватало, пока войти мог лишь свой человек, — но сессию
+    заводит и `POST /auth/guest`, точка публичная и без доказательств. Гость
+    получал все 36 страниц: `/admin/setting`, `/admin/team`, `/admin/backup` —
+    по 120 КБ разметки каждая.
+
+    Данных в той разметке нет (их подгружает JS, а API отвечает ему 403), но
+    отдавать постороннему устройство панели незачем, и «страница открылась, а
+    всё на ней пусто» читается как поломка, а не как отказ.
+
+    ⚠⚠ Спрашиваем именно `panel:view`, а не «есть ли хоть какое-нибудь право».
+    Вторая проверка кажется проще и была здесь первой версией — но гостю правда
+    нужно одно право (`chat:ask`, им живёт игра), и набор у него поэтому не
+    пустой: страницы открылись снова. «Работает в панели» — отдельное
+    утверждение, и выражать его надо отдельным правом.
+
+    ⚠ Что человек увидит **внутри** страницы, решают права по темам
+    (`workflow:view`, `setting:view`, …) на её точках API. Здесь только дверь.
+
+    ⚠ 403, а не редирект на вход: гость **уже** вошёл, отправлять его на
+    `/login` значило бы гонять по кругу.
+    """
     try:
         user = await auth_get_current_user(request)
-        return user
     except HTTPException as e:
         # Only redirect on 401 (not authenticated)
         # Let 403 (forbidden) and other errors propagate
@@ -58,6 +83,12 @@ async def dashboard_require_auth(request: Request) -> AuthSession:
             raise HTTPException(status_code=302, detail="Not authenticated",
                                 headers={"Location": f"/login?next={next_param}"})
         raise
+
+    if not user.can(AuthPermission.PANEL_VIEW):
+        logger_info(f'[auth] панель закрыта для {user}: нет права {AuthPermission.PANEL_VIEW}')
+        raise HTTPException(status_code=403, detail='нет доступа к панели')
+
+    return user
 
 
 @router.get("/login", response_class=HTMLResponse)

@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from logging_.logging_ import logger_info
 from mysql_.mysql_ import mysql_get_db_async
 from src.auth.auth import AuthChecker
+from src.auth.auth_permission import AuthPermission
 from src.auth.auth_session import AuthSession
 from src.mysql_.repository.companion_repository import CompanionRepository
 
@@ -20,8 +21,14 @@ class CompanionJsonRequest(BaseModel):
 async def companion_list(
         request: Request,
         db=Depends(mysql_get_db_async),
-        user: AuthSession = Depends(AuthChecker([]))
+        user: AuthSession = Depends(AuthChecker([AuthPermission.SESSION_VIEW]))
 ) -> dict:
+    """Справочник собеседников целиком.
+
+    ⚠⚠ Закрыт `session:view`, а не пустым списком. Под `AuthChecker([])` сюда
+    проходил всякий вошедший — в том числе анонимный гость с `/auth/guest`, —
+    и получал имена всех собеседников установки разом.
+    """
     repo = CompanionRepository()
     try:
         companions = await repo.find_by({}, order_by='id DESC')
@@ -36,8 +43,14 @@ async def companion_get_or_create(
         request: Request,
         data: CompanionJsonRequest,
         db=Depends(mysql_get_db_async),
-        user: AuthSession = Depends(AuthChecker([]))
+        user: AuthSession = Depends(
+            AuthChecker([AuthPermission.SESSION_COMPANION_WRITE]))
 ) -> dict:
+    """Найти собеседника по ключу либо завести — одной точкой.
+
+    ⚠ Право то же, что у трёх `/chat/message/*`: это запись в справочник, с
+    которого начинается память агента о человеке.
+    """
     repo = CompanionRepository()
     name = data.name.lower()
     title = data.title or name

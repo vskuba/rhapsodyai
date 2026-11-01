@@ -3,7 +3,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from src.auth.auth import AuthChecker
+from src.auth.auth import AuthChecker, auth_claude_secret_need
 from src.auth.auth_permission import AuthPermission
 from src.project.team.team_dsh import TeamDshError, team_dsh_state, team_dsh_switch
 from src.project.team.team_dsh_card import team_dsh_card_add, team_dsh_card_drop
@@ -164,9 +164,16 @@ async def project_team_list(user=Depends(AuthChecker([AuthPermission.PLANNING_VI
     return members
 
 
-@router.post('/ping')
+@router.post('/ping', dependencies=[Depends(auth_claude_secret_need)])
 async def project_team_ping(request: TeamPingRequest):
-    """Обновить пинг члена команды — оболочка шлёт его, пока жива."""
+    """Обновить пинг члена команды — оболочка шлёт его, пока жива.
+
+    ⚠⚠ Закрыто общим секретом оболочки (`X-Claude-Secret`), а не сессией: у
+    запущенной claude-shell куки нет и быть не может. Раньше точка была
+    публичной совсем — из белого списка `auth_middleware` она проходила заставу,
+    а своей проверки не имела, и `status`/`pid`/`session_uuid` любого члена
+    команды менялись одним curl-ом без всякого ключа.
+    """
     member = await _member_resolve(request)
     await team_member_ping(member['id'], request.session_get())
     await team_project_session_work_dir_sync(request.session_uuid or '', request.work_dir or '')
@@ -491,17 +498,17 @@ async def project_team_cleanup_sessions(user=Depends(AuthChecker([AuthPermission
     return {'result': result}
 
 
-@router.post('/activate')
+@router.post('/activate', dependencies=[Depends(auth_claude_secret_need)])
 async def project_team_activate(member_request: TeamPingRequest):
-    """Активировать члена команды (взять на работу)."""
+    """Активировать члена команды (взять на работу). Секрет — как у `/ping`."""
     member = await _member_resolve(member_request)
     await team_member_activate(member['id'], member_request.session_get())
     return {'success': True, 'member_id': member['id'], 'status': 'active'}
 
 
-@router.post('/deactivate')
+@router.post('/deactivate', dependencies=[Depends(auth_claude_secret_need)])
 async def project_team_deactivate(member_request: TeamPingRequest):
-    """Деактивировать члена команды (отпустить)."""
+    """Деактивировать члена команды (отпустить). Секрет — как у `/ping`."""
     member = await _member_resolve(member_request)
     await team_member_deactivate(member['id'])
     return {'success': True, 'member_id': member['id'], 'status': 'inactive'}

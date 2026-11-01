@@ -1,11 +1,10 @@
 import asyncio
-import hmac
 import uuid
 
 from fastapi import Request, HTTPException
 
 from src.ai.ai_llm import ai_llm_node_get
-from config.config import config_get
+from src.auth.auth import auth_claude_secret_ok
 from json_.json_ import json_from_string
 from mysql_.mysql_ import mysql_get_db_async
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_workflow_variables_defaults_apply
@@ -32,9 +31,9 @@ def _require_telegram_owner(request: Request):
 
 
 def _require_claude_secret(request: Request):
-    expected = config_get("TELEGRAM_TOKEN_RHAPSODY")
-    provided = request.headers.get("X-Claude-Secret")
-    if not expected or not provided or not hmac.compare_digest(provided, expected):
+    """⚠ Сравнение — в `auth_claude_secret_ok`, одно на установку: тот же ключ
+    проверяет застава `auth_middleware`, и две копии условия разошлись бы."""
+    if not auth_claude_secret_ok(request):
         raise HTTPException(status_code=403, detail="Not authorized")
 
 

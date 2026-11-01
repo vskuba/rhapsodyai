@@ -28,9 +28,12 @@
 ничего не проверив.
 """
 
+import hmac
+
 from fastapi import HTTPException, Request, status
 
 from auth_.auth_primitive import auth_token_of
+from config.config import config_get
 from dashboard.src.panel.panel_access import panel_access_use
 from dashboard.src.panel.panel_auth import (PanelUser, panel_auth_need,
                                panel_auth_required as auth_get_current_user,
@@ -78,5 +81,57 @@ async def auth_token_user(token: str) -> PanelUser:
     return user
 
 
-__all__ = ['AuthChecker', 'AuthPermission', 'auth_get_current_user',
-           'auth_token_of', 'auth_token_user']
+async def auth_token_valid(token: str) -> bool:
+    """Настоящий ли это токен — без разговора о том, что владельцу можно.
+
+    Нужна заставе `auth_middleware`: та решает «пускать ли дальше», а права
+    спрашивает роутер. Раньше заставе хватало того, что заголовок **есть**, и
+    `Authorization: Bearer deadbeef` открывал любую точку без `AuthChecker`.
+
+    ⚠ Отдельно от `auth_token_user`, потому что ответы разные: та поднимает
+    401, а заставе нужен ответ «да/нет» — 401 она сочиняет свой, с тем же
+    телом, что и для запроса вовсе без ключа.
+    """
+    return await panel_auth_token_user(token) is not None
+
+
+def auth_claude_secret_ok(request: Request) -> bool:
+    """Пришёл ли верный общий секрет claude-shell (`X-Claude-Secret`).
+
+    Один ключ на всё, чем оболочка ходит сюда без сессии: реестр сессий Mini
+    App, `/event-log`, heartbeat команды.
+
+    ⚠⚠ Падает закрыто: секрет не задан в `.env` — ответ «нет», а не «нечего
+    сравнивать, проходи». Иначе установка без настройки открывалась бы всем.
+
+    ⚠ Сравнение `compare_digest`, а не `==`: по времени ответа секрет иначе
+    подбирается побайтово.
+    """
+    expected = str(config_get('TELEGRAM_TOKEN_RHAPSODY') or '')
+    provided = str(request.headers.get('X-Claude-Secret') or '')
+
+    if not expected or not provided:
+        return False
+
+    return hmac.compare_digest(provided, expected)
+
+
+def auth_claude_secret_need(request: Request) -> None:
+    """Зависимость точек, которыми ходит claude-shell: нет секрета — 403.
+
+    ```python
+    @router.post('/ping', dependencies=[Depends(auth_claude_secret_need)])
+    ```
+
+    ⚠ Зависимостью, а не вызовом в теле: у этих точек довод тела уже зовётся
+    `request` (`project_team_ping`), и второй `request: Request` в сигнатуру не
+    встанет. Заодно видно при чтении объявления, чем точка закрыта.
+    """
+    if not auth_claude_secret_ok(request):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail='Not authorized')
+
+
+__all__ = ['AuthChecker', 'AuthPermission', 'auth_claude_secret_need',
+           'auth_claude_secret_ok', 'auth_get_current_user', 'auth_token_of',
+           'auth_token_user', 'auth_token_valid']

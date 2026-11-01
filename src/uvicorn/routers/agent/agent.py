@@ -123,7 +123,7 @@ async def agent_list_get(
 async def agent_list(
         request: Request,
         data: AgentJsonRequest,
-        user=Depends(AuthChecker([]))
+        user=Depends(AuthChecker([AuthPermission.AGENT_VIEW]))
 ):
     repo = AgentRepository()
     return {"result": await _agent_list_for_user(repo, user.user_id, data.find_by or {})}

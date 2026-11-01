@@ -199,6 +199,47 @@ class TestUserAccessToken:
             # установки менял бы проверку, ничего не проверяя.
             assert response_invalid.json()["detail"]
 
+
+class TestFakeTokenDoesNotPassGate:
+    """Выдуманный токен не открывает точку, у которой нет `AuthChecker`.
+
+    ⚠⚠ Застава `auth_middleware` пускала дальше по одному факту наличия
+    заголовка, оставляя проверку роутеру. Для 303 точек с `AuthChecker` это
+    работало — их и сторожат проверки выше, — но точка **без** него исполнялась
+    для кого угодно: `Authorization: Bearer deadbeef` отдавал 200 там, где без
+    заголовка был 401. То есть забытый на новой точке `AuthChecker` означал
+    дыру наружу, и ни один тест об этом не говорил.
+
+    ⚠ Точка взята именно такая — без `AuthChecker` в объявлении. Проверять этим
+    классом точку с проверкой бессмысленно: она ответит 401 и при дырявой
+    заставе, и тест зеленел бы впустую.
+    """
+
+    GATE_PROBE_PATH = "/chat/messages"
+    GATE_PROBE_BODY = {"session_uuid": "test-nonexistent-uuid", "limit": 1}
+
+    @pytest.mark.parametrize("headers", [
+        {"Authorization": "Bearer deadbeef"},
+        {"Authorization": "deadbeef"},
+        {"X-API-KEY": "deadbeef"},
+        {"X-Claude-Secret": "deadbeef"},
+    ])
+    async def test_fake_credentials_are_401(self, headers: dict):
+        async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False,
+                                     timeout=10.0) as anon_client:
+            response = await anon_client.post(self.GATE_PROBE_PATH,
+                                              json=self.GATE_PROBE_BODY,
+                                              headers=headers)
+            assert response.status_code == 401, f'{headers}: {response.text}'
+
+    async def test_no_credentials_is_401(self):
+        """Контроль: без заголовков было 401 и прежде — значит, пробу не подменили."""
+        async with httpx.AsyncClient(base_url=BASE_URL, follow_redirects=False,
+                                     timeout=10.0) as anon_client:
+            response = await anon_client.post(self.GATE_PROBE_PATH,
+                                              json=self.GATE_PROBE_BODY)
+            assert response.status_code == 401, response.text
+
             # 3. Query without API key (should fail validation with 401)
             response_no_header = await anon_client.get("/user")
             assert response_no_header.status_code == 401

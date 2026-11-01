@@ -7,10 +7,39 @@ class AuthRole(str, Enum):
     ROLE_ADMIN = "admin"
 
 
-# Базовый набор прав для любой не-админской роли.
-# Роли создаются динамически в таблице `role` (manager_dating, manager_cashier, ...),
-# поэтому права не хардкодятся по имени роли — все не-админы получают view-набор.
-AUTH_PERMISSIONS_DEFAULT = {
+# Роль анонимной гостевой сессии. Её кладёт в сессию `POST /auth/guest` — точка
+# публичная, она заводит учётку без единого доказательства, для публичных PWA
+# (`/play/detective`). В таблице `role` такой строки нет и не будет.
+AUTH_ROLE_GUEST = 'guest'
+
+# ⚠⚠ Набор прав неизвестной роли — ПУСТОЙ. Он достаётся всякому, кого нет в
+# `AUTH_ROLE_PERMISSIONS`, то есть «тому, про кого мы ничего не знаем», и
+# единственный безопасный ответ здесь — «ничего».
+#
+# Прежде тут лежал view-набор (`AUTH_PERMISSIONS_VIEW` ниже), и дорого это
+# обошлось дважды. Сперва в набор попали два права на ЗАПИСЬ —
+# `PLANNING_UPDATE` и `WORKFLOW_VARIABLE_UPDATE`, — и анонимная гостевая сессия
+# получила 71 пишущую точку: слияние ветки задачи, запуск конвейера за наши
+# деньги, удаление блоков дизайна. Потом выяснилось, что и чтения ей хватало
+# с избытком: `/api/users`, `/api/setting`, `/api/team` с `work_dir` и `pid`,
+# все 36 страниц `/admin/*`. Оба раза причина одна — набор по умолчанию
+# **выдавал**, вместо того чтобы отказывать.
+#
+# ⚠ Плата названа честно: роль, заведённая в панели и нигде в коде не
+# упомянутая, не может теперь ничего. Это не недосмотр, а и есть смысл правки —
+# права выдаются решением, а не достаются молча. Новой роли нужен view-набор —
+# добавить строку в `AUTH_ROLE_PERMISSIONS`: `'имя': set(AUTH_PERMISSIONS_VIEW)`.
+AUTH_PERMISSIONS_DEFAULT = frozenset()
+
+# View-набор: смотреть можно всё, менять — ничего. Выдаётся роли **поимённо**
+# (ниже), а не достаётся по умолчанию.
+#
+# ⚠⚠ Только `*_VIEW`. Право на запись здесь означало бы его у каждой роли,
+# которой этот набор выдан, — а выдают его как раз «обычным» людям.
+AUTH_PERMISSIONS_VIEW = {
+    # Первым — вход в саму панель: без него остальные права здесь некому
+    # показать, страницы `/admin/*` ответят 403.
+    AuthPermission.PANEL_VIEW,
     AuthPermission.USER_VIEW,
     AuthPermission.ROLE_VIEW,
     AuthPermission.AGENT_VIEW,
@@ -26,7 +55,6 @@ AUTH_PERMISSIONS_DEFAULT = {
     # ответ на вопрос «что на установке сломалось». Прогон (`E2E_RUN`) в набор
     # не входит — он поднимает браузер и ходит по панели.
     AuthPermission.E2E_VIEW,
-    AuthPermission.WORKFLOW_VARIABLE_UPDATE,
     AuthPermission.NODE_VIEW,
     AuthPermission.TOOL_VIEW,
     AuthPermission.LLM_VIEW,
@@ -34,13 +62,21 @@ AUTH_PERMISSIONS_DEFAULT = {
     AuthPermission.FACT_COLLECTION_VIEW,
     AuthPermission.PLAN_VIEW,
     AuthPermission.PLANNING_VIEW,
-    AuthPermission.PLANNING_UPDATE,
     AuthPermission.BROWSER_VIEW,
     AuthPermission.SESSION_VIEW,
     AuthPermission.SETTING_VIEW,
     AuthPermission.QUEUE_VIEW,
     AuthPermission.DESIGN_VIEW,
     AuthPermission.PROJECT_VIEW,
+    # ⚠ Не `*_VIEW`, но и не запись в предметном смысле: это голосовой ввод и
+    # окно чата на страницах панели (`fixer.js`, `admin/chat.html`,
+    # `admin/project/task.html`). Без него у человека с view-набором молча
+    # перестаёт работать микрофон.
+    AuthPermission.CHAT_ASK,
+    # Тот же довод: переключатель языка и подсказки перевода стоят на страницах
+    # панели (`lang_switcher.js`, `workflow/text-translate.js`). Без права
+    # кнопка языка молча перестала бы работать у всех, кроме админа.
+    AuthPermission.TRANSLATE_CREATE,
 }
 
 # Переопределения прав для конкретных ролей (админ получает все права в AuthChecker)
@@ -71,6 +107,32 @@ AUTH_PERMISSIONS_DEFAULT = {
 # ещё и планирование проектов.
 AUTH_ROLE_PERMISSIONS = {
     'qa': set(AuthPermission),
+    # ⚠⚠ Роли живых людей панели. Раньше view-набор доставался им молча, из
+    # пустого места — теперь выдан строкой. Строки три, потому что ролей в
+    # таблице три (`nelya`, `olga`, `alena`); заведут четвёртую — ей сюда нужна
+    # своя строка, иначе она не увидит ничего. Это и есть цена отказа от
+    # «выдать всем на всякий случай», и платится она один раз на роль.
+    'manager_dating': set(AUTH_PERMISSIONS_VIEW),
+    'manager_cashier': set(AUTH_PERMISSIONS_VIEW),
+    'manager_dating_junior': set(AUTH_PERMISSIONS_VIEW),
+    # ⚠⚠ Гость — пусто, и это записано отдельной строкой, хотя пустой набор он
+    # получил бы и так, через `AUTH_PERMISSIONS_DEFAULT`. Строка стоит ради
+    # того дня, когда в дефолт снова захотят что-нибудь положить «для удобства»:
+    # тогда гость, вход которому открыт публичной точкой без доказательств, это
+    # что-нибудь получит вместе со всеми. Здесь он не получит.
+    AUTH_ROLE_GUEST: {
+        # Единственное право гостя — говорить с агентом. Им открыты ровно
+        # четыре точки, которыми живёт игра (`apps/detective`): спросить,
+        # прочитать свою переписку, надиктовать голосом, узнать агентов дела.
+        #
+        # ⚠⚠ Больше гостю не нужно **ничего** — это проверено по коду игры, а
+        # не предположено: `apps/detective/js/app.js` ходит по пяти адресам,
+        # пятый — сам `/auth/guest`. Всё остальное, что он получал прежде
+        # (список людей, настройки установки, `work_dir` команды, 36 страниц
+        # панели), не было нужно никому — оно просто доставалось вместе с
+        # набором по умолчанию.
+        AuthPermission.CHAT_ASK,
+    },
     'blog_service': {
         # Учётка соседнего проекта **BlogAi**. Черновики, их теги и страница
         # живут там; сюда он ходит ровно за одним — расшифровать голос. Одно
@@ -118,15 +180,45 @@ AUTH_ROLE_PERMISSIONS = {
         # адреса не даёт доступа ни к одному чужому секрету. Управление реестром
         # (завести, править, проверить, удалить) под это право не попадает.
         AuthPermission.BROWSER_PROXY_USE,
+        # `chat:ask` — седьмое право, и оно не новая возможность, а имя старой.
+        #
+        # Сосед гоняет `POST /chat/ask` постоянно: им workflow сочиняет ответы
+        # в переписке (`dating/answer.py`), пишет письма (`mail_agent.py`) и
+        # создаёт девушку. Прежде точка не требовала права вовсе — хватало
+        # сессии, о чём и сказано выше в этом файле. Теперь требует, и без
+        # строки здесь у соседа встало бы всё разом.
+        #
+        # ⚠ Сюда же попадает `POST /agent/create`: он пробрасывает заголовки
+        # вызывающего в свой внутренний вызов `/chat/ask`
+        # (`routers/agent/agent.py`), то есть идёт туда **под учёткой соседа**,
+        # а не от себя.
+        AuthPermission.CHAT_ASK,
+        # `session_companion:write` — восьмое: три точки `/chat/message/*`,
+        # которыми сосед кладёт в память агента доставленную, принятую и
+        # отправленную мимо прогона реплику (`rhapsody/rhapsody_api.py`).
+        # Больше их не зовёт никто — ни страница панели, ни игра.
+        AuthPermission.SESSION_COMPANION_WRITE,
+        # `translate:create` — девятое: сосед переводит через `POST /translate`
+        # (`rhapsody/rhapsody_api.py`). Точка тоже была без права.
+        AuthPermission.TRANSLATE_CREATE,
     },
 }
 
 
 def auth_role_permissions(role: str) -> set:
-    """Права роли. У `admin` — полный набор, он в таблице переопределений не значится."""
+    """Права роли. У `admin` — полный набор, он в таблице переопределений не значится.
+
+    ⚠⚠ Незнакомая роль получает **пусто** (`AUTH_PERMISSIONS_DEFAULT`), а не
+    view-набор, как было до 2026-11-01. Сюда приходит строка из куки, и
+    «не знаю такой» обязано значить «ничего нельзя»: иначе всякий, кто сумел
+    завести себе сессию, получает набор по умолчанию — ровно это и случилось с
+    анонимным гостем (`/auth/guest`).
+
+    ⚠ View-набор роли выдаётся поимённо в `AUTH_ROLE_PERMISSIONS`.
+    """
     if role == AuthRole.ROLE_ADMIN:
         return set(AuthPermission)
-    return AUTH_ROLE_PERMISSIONS.get(role, AUTH_PERMISSIONS_DEFAULT)
+    return set(AUTH_ROLE_PERMISSIONS.get(role, AUTH_PERMISSIONS_DEFAULT))
 
 
 def auth_role_is_full(role: str) -> bool:

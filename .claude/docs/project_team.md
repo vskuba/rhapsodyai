@@ -353,12 +353,29 @@ LiteLLM оболочки, с её собственной сетью. Отказ 
 
 Роутер подключён с префиксом `/api/team` и `include_in_schema=False` (в `/docs` не виден).
 
-**Публичны только три POST-а.** В `public_paths` middleware (`main_uvicorn.py`,
-`exact → POST`) внесены `/api/team/ping`, `/api/team/activate`, `/api/team/deactivate` —
-их дёргает внешняя оболочка, у которой нет браузерной сессии. Читающие
-`GET /api/team` и `GET /api/team/types` закрыты `AuthChecker([AuthPermission.PLANNING_VIEW])`:
-они отдают `work_dir`, `pid` и `session_uuid`, публиковать это незачем. Без сессии
-`GET /api/team` → **401**.
+**Публичных точек у роутера нет.** Три POST-а оболочки — `/api/team/ping`,
+`/api/team/activate`, `/api/team/deactivate` — закрыты общим секретом
+claude-shell: заголовок `X-Claude-Secret` со значением `TELEGRAM_TOKEN_RHAPSODY`,
+зависимость `auth_claude_secret_need`. Сессия им не подходит: у запущенной
+оболочки браузерной куки нет и быть не может.
+
+⚠⚠ **До 2026-11-01 эти три стояли в `public_paths` (`exact → POST`) и своей
+проверки не имели — то есть были открыты совсем.** Они меняют `status`, `pid` и
+`session_uuid` любого члена команды, и сделать это мог кто угодно одним curl-ом
+без всякого ключа. Нашёл аудит API: `POST /api/team/ping` отвечал анониму 404
+«Team member not found», то есть доходил до тела. Из белого списка они убраны.
+
+⚠ Коды отказа разные, и это не придирка: без куки и без секрета запрос
+останавливает застава (**401**), а с сессией человека он до неё доходит и
+получает отказ точки (**403**). Вошедший в панель человек — не оболочка.
+
+⚠⚠ **Оболочку надо перезапустить.** Заголовок шлёт `_team_request` в
+`claude-shell/shell.py`; уже запущенные процессы старого кода шлют пинг без
+секрета и получают 401 — страница `/admin/team` погасит их карточки как мёртвые.
+
+Читающие `GET /api/team` и `GET /api/team/types` закрыты
+`AuthChecker([AuthPermission.PLANNING_VIEW])`: они отдают `work_dir`, `pid` и
+`session_uuid`, публиковать это незачем. Без сессии `GET /api/team` → **401**.
 
 Внести весь префикс в `startswith → ANY` (как было раньше) нельзя ещё и потому, что
 `startswith_patterns` берёт список по методу, а при его отсутствии — `ANY`: любой

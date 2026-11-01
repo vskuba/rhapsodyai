@@ -68,3 +68,43 @@ class TestCronjobFlow:
         data = response.json()
         assert "detail" in data
         assert "Недопустимый путь к cronjob" in data["detail"] or "invalid" in data["detail"].lower()
+
+    @pytest.mark.parametrize("cronjob_path", [
+        "src/cronjob/../../main_telegram.py",
+        "src/cronjob/../../../etc/hosts",
+        "src/cronjob/fact/../../ai/ai_fact.py",
+    ])
+    async def test_path_escape_is_rejected(self, client: httpx.AsyncClient,
+                                           cronjob_path: str):
+        """⚠⚠ Приставка на месте, а файл чужой — через `..`.
+
+        Проверка пути сравнивала начало строки, и `src/cronjob/../../x.py` её
+        проходил: приставка `src/cronjob/` есть. Точка публична (`/cronjob` в
+        белом списке `auth_middleware`), так что это был запуск любого `.py`
+        установки кем угодно. Поймано аудитом: ответ был не «не найден», а
+        «Timeout exceeded» — то есть `main_telegram.py` успел стартовать.
+
+        ⚠ Ждём именно «недопустимый путь», а не «не найден»: файл-то
+        существует, и отказать обязана проверка каталога, а не проверка наличия.
+        """
+        response = await client.post("/cronjob", json={
+            "cronjob_path": cronjob_path,
+            "metadata": {},
+            "timeout": 5,
+        })
+        assert response.status_code == 400, response.text
+        assert "Недопустимый путь к cronjob" in response.json()["detail"]
+
+    async def test_nested_cronjob_path_still_allowed(self, client: httpx.AsyncClient):
+        """Подкаталог внутри разрешённого — можно: там живёт `fact/`.
+
+        Страховка от перегиба: запрет обхода не должен запереть вложенные
+        задания, которых у нас целая папка.
+        """
+        response = await client.post("/cronjob", json={
+            "cronjob_path": "src/cronjob/fact/nonexistent_cronjob.py",
+            "metadata": {},
+            "timeout": 5,
+        })
+        assert response.status_code == 400, response.text
+        assert "не найден" in response.json()["detail"]

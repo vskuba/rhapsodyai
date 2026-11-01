@@ -23,6 +23,7 @@ from mysql_.mysql_ import mysql_get_db_async
 from src.ai.ai_workflow import ai_workflow_variables_global_get
 from src.ai.ai_workflow_trace import ai_workflow_trace_run_contract
 from src.auth.auth import AuthChecker
+from src.auth.auth_permission import AuthPermission
 from src.auth.auth_session import AuthSession
 from src.faster_whisper.faster_whisper_model import faster_whisper_model_transcribe
 from src.mysql_.repository.agent_repository import AgentRepository
@@ -93,7 +94,7 @@ async def chat_ask_ai(
         request: Request,
         json_request: ChatAskJsonRequest,
         db=Depends(mysql_get_db_async),
-        user: AuthSession = Depends(AuthChecker([]))
+        user: AuthSession = Depends(AuthChecker([AuthPermission.CHAT_ASK]))
 ) -> dict:
     logger_info('Чат запрос: ' + str(json_request))
 
@@ -344,7 +345,8 @@ async def chat_ask_ai(
 @router.post("/chat/message/delivered")
 async def chat_message_delivered(
         json_request: ChatMessageDeliveredRequest,
-        user: AuthSession = Depends(AuthChecker([]))
+        user: AuthSession = Depends(
+            AuthChecker([AuthPermission.SESSION_COMPANION_WRITE]))
 ) -> dict:
     """Отметить обмен разговора доставленным.
 
@@ -362,7 +364,8 @@ async def chat_message_delivered(
 @router.post("/chat/message/incoming")
 async def chat_message_incoming(
         json_request: ChatMessageIncomingRequest,
-        user: AuthSession = Depends(AuthChecker([]))
+        user: AuthSession = Depends(
+            AuthChecker([AuthPermission.SESSION_COMPANION_WRITE]))
 ) -> dict:
     """Записать реплику собеседника — сразу, не дожидаясь нашего ответа.
 
@@ -392,7 +395,8 @@ async def chat_message_incoming(
 @router.post("/chat/message/put")
 async def chat_message_put(
         json_request: ChatMessagePutRequest,
-        user: AuthSession = Depends(AuthChecker([]))
+        user: AuthSession = Depends(
+            AuthChecker([AuthPermission.SESSION_COMPANION_WRITE]))
 ) -> dict:
     """Положить в историю обмен, который сочинил не прогон.
 
@@ -420,7 +424,9 @@ async def chat_message_put(
 
 
 @router.post("/chat/messages", include_in_schema=False)
-async def chat_messages(request: Request, json_request: ChatMessagesJsonRequest, db=Depends(mysql_get_db_async)):
+async def chat_messages(request: Request, json_request: ChatMessagesJsonRequest,
+                        db=Depends(mysql_get_db_async),
+                        user: AuthSession = Depends(AuthChecker([AuthPermission.CHAT_ASK]))):
     async with db:
         sql = '''
             SELECT s.role, s.content, s.created_at, s.id
@@ -446,7 +452,9 @@ async def chat_messages(request: Request, json_request: ChatMessagesJsonRequest,
 
 
 @router.post("/chat/voice", include_in_schema=False)
-async def chat_voice_to_text(file: UploadFile = File(...)):
+async def chat_voice_to_text(
+        file: UploadFile = File(...),
+        user: AuthSession = Depends(AuthChecker([AuthPermission.CHAT_ASK]))):
     temp_file = f"temp_{file.filename}.wav"
 
     # Асинхронно читаем и записываем

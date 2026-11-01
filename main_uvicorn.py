@@ -335,11 +335,16 @@ async def auth_middleware(request: Request, call_next):
         "exact": {
             'GET': ['/openapi.json', '/events'],
             'DELETE': ['/events'],
-            # /api/team/{ping,activate,deactivate} — heartbeat внешней claude-shell,
-            # у неё нет сессионной cookie. Читающие GET /api/team и /api/team/types
-            # публичными быть не должны: они отдают work_dir, pid и session_uuid.
-            'POST': ['/agent/list', '/event-log',
-                     '/api/team/ping', '/api/team/activate', '/api/team/deactivate']
+            # ⚠⚠ /api/team/{ping,activate,deactivate} отсюда **убраны**. Они и
+            # правда heartbeat внешней claude-shell, у которой нет куки, — но
+            # публичными от этого не становятся: своей проверки у них не было, и
+            # `status`/`pid`/`session_uuid` любого члена команды менялись одним
+            # curl-ом. Теперь оболочка представляется общим секретом
+            # (`X-Claude-Secret`), его проверяет застава ниже и ещё раз сама
+            # точка (`auth_claude_secret_need`).
+            # ⚠ Читающие GET /api/team и /api/team/types публичными быть не
+            # должны тем более: они отдают work_dir, pid и session_uuid.
+            'POST': ['/agent/list', '/event-log']
         }
     }
 
@@ -359,13 +364,28 @@ async def auth_middleware(request: Request, call_next):
     user_id = request.session.get("user_id")
     if not user_id:
         # Пришёл токен доступа (`Authorization: Bearer …` либо `X-API-KEY`) или
-        # секрет claude-shell — пропускаем, а проверку делает сам роутер
-        # (`AuthChecker` / `_require_claude_secret`). Разбор заголовков — общий с
-        # `AuthChecker`: две копии этого условия разошлись бы, и заголовок,
-        # который роутер принимает, здесь молча отсекался бы (так и было с
-        # `Authorization`: до проверки прав запрос не доходил вовсе).
-        from src.auth.auth import auth_token_of
-        if auth_token_of(request) or request.headers.get("X-Claude-Secret"):
+        # секрет claude-shell. Разбор заголовков — общий с `AuthChecker`: две
+        # копии этого условия разошлись бы, и заголовок, который роутер
+        # принимает, здесь молча отсекался бы (так и было с `Authorization`: до
+        # проверки прав запрос не доходил вовсе).
+        #
+        # ⚠⚠ Токен **проверяется здесь**, а не только в роутере. Раньше хватало
+        # того, что заголовок есть: `Authorization: Bearer deadbeef` проходил
+        # заставу, и точка без `AuthChecker` исполнялась для кого угодно —
+        # `POST /chat/messages` так отдавал чужую переписку по `session_uuid`
+        # (200 с мусорным токеном, 401 без него). Забытый на новой точке
+        # `AuthChecker` означал дыру наружу, и ничто об этом не говорило.
+        #
+        # ⚠ Застава не **даёт** прав: кто пришёл и что ему можно, по-прежнему
+        # решает роутер. Здесь отвечают только на «ключ вообще настоящий ли».
+        from src.auth.auth import (auth_claude_secret_ok, auth_token_of,
+                                   auth_token_valid)
+
+        token = auth_token_of(request)
+        if token:
+            if await auth_token_valid(token):
+                return await call_next(request)
+        elif auth_claude_secret_ok(request):
             return await call_next(request)
 
         # For HTML routes, redirect to login with ?next= for post-login return

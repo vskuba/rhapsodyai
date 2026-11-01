@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from src.ai.ai_llm import ai_llm_node_get
 from src.ai.ai_workflow import ai_workflow_load, ai_workflow_variables_base, ai_workflow_variables_defaults_apply
 from src.auth.auth import AuthChecker
+from src.auth.auth_permission import AuthPermission
 from src.mysql_.repository.agent_repository import AgentRepository
 
 router = APIRouter()
@@ -22,7 +23,7 @@ class TranslateJsonRequest(BaseModel):
 async def translate_translate(
         request: Request,
         json_request: TranslateJsonRequest,
-        user=Depends(AuthChecker([]))
+        user=Depends(AuthChecker([AuthPermission.TRANSLATE_CREATE]))
 ):
     """Автоперевод текста служебным workflow 'translator' (вне ноды — доступен всем).
     Используется кнопкой перевода в переключателе языков форм."""
