@@ -28,9 +28,16 @@ from src.auth.auth_permission import AuthPermission
 from src.auth.auth_session import AuthSession
 from src.faster_whisper.faster_whisper_model import faster_whisper_model_transcribe
 from src.mysql_.repository.agent_repository import AgentRepository
+from src.mysql_.repository.node_repository import NodeRepository
 from src.mysql_.repository.user_repository import UserRepository
 
 router = APIRouter()
+
+# Нода публичной игры (`/play/detective`): единственная, чьих агентов вправе
+# запускать аноним-гость через `/chat/ask`. На ней и `detective_bot`, и
+# динамические `case_*`/`sergeant_*`. Имя — канонический признак игры (см.
+# `_agent_allowed_for`).
+CHAT_PUBLIC_NODE_NAME = 'Detective'
 
 
 class ChatAskJsonRequest(BaseModel):
@@ -114,6 +121,8 @@ async def chat_ask_ai(
     entity_agent = await repo_agent.find_one_by({'id': json_request.agent_id})
     if not entity_agent:
         raise HTTPException(status_code=404, detail="Agent not found by ID: %s" % json_request.agent_id)
+
+    await _agent_allowed_for(user, entity_agent)
 
     workflow_id = entity_agent.get('workflow_id')
     if not workflow_id:
@@ -524,6 +533,47 @@ async def chat_voice_to_text(
             os.remove(temp_file)
         except OSError:
             pass
+
+
+async def _agent_allowed_for(user, entity_agent: dict) -> None:
+    """Вправе ли вызывающий гонять этого агента через `/chat/ask`. Иначе — 403.
+
+    ## ⚠⚠⚠ Зачем: гость жёг токены боевыми workflow
+
+    `/chat/ask` закрыт правом `chat:ask`, и оно есть у гостя — публичная сессия
+    `/auth/guest` нужна игре в детектив (`/play/detective`). Но точка принимала
+    **любой `agent_id`**: пентест 2026-11-02 показал, что аноним дотягивался до
+    боевого дейтинг-агента (id=9) и мог прогонять его workflow за наши деньги, а
+    заодно писать в память и заводить записи побочными действиями шагов.
+
+    Забор — по праву, не по имени роли (как весь наш RBAC): кто **не умеет
+    видеть агентов** (`agent:view`), тот и выбирать их свободно не вправе — ему
+    открыта только игровая нода. У панели (менеджеры, админ) и у `dating_service`
+    право `agent:view` есть — их не касается; у гостя его нет.
+
+    ⚠ Игровая нода — по имени `Detective` (`CHAT_PUBLIC_NODE_NAME`): там и
+    `detective_bot`, и динамические `case_*`/`sergeant_*` одной ноды (проверено).
+    Имя — канонический признак игры, тем же hardcode-ом, что id бота в PWA и
+    шаблоны имён в `detective_.py`. Переименуют ноду — гость не сыграет, и это
+    видно сразу (fail-closed), а не тихо откроет лишнее.
+
+    Args:
+        user: `PanelUser` вызывающего (есть `.can`).
+        entity_agent: запись агента-цели (нужен `node_id`).
+
+    Raises:
+        HTTPException: 403 — агент вне игровой ноды, а права видеть агентов нет.
+    """
+    if user.can(AuthPermission.AGENT_VIEW):
+        return
+
+    node = await NodeRepository().find_one_by({'id': entity_agent.get('node_id')})
+    if not node or str(node.get('name')) != CHAT_PUBLIC_NODE_NAME:
+        logger_info(
+            f'[chat] отказано {user}: агент #{entity_agent.get("id")} вне '
+            f'игровой ноды, а права {AuthPermission.AGENT_VIEW.value} нет')
+        raise HTTPException(status_code=403,
+                            detail='этого агента вам запускать нельзя')
 
 
 async def _variables_allowed(workflow_id: int, sent: dict) -> None:

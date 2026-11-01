@@ -8,12 +8,30 @@
 
 | Метод | Путь | Авторизация | Что делает |
 |-------|------|-------------|-----------|
-| `POST` | `/chat/ask` | `AuthChecker([])` — любой залогиненный | прогон workflow агента, текст ответа |
-| `POST` | `/chat/message/delivered` | `AuthChecker([])` | отметить обмен разговора доставленным |
-| `POST` | `/chat/message/incoming` | `AuthChecker([])` | записать реплику собеседника, не дожидаясь нашего ответа |
-| `POST` | `/chat/message/put` | `AuthChecker([])` | положить обмен, сочинённый не прогоном |
-| `POST` | `/chat/messages` | нет (вне схемы) | последние N сообщений сессии из `agent_session` |
-| `POST` | `/chat/voice` | **нет** | wav → текст через faster-whisper |
+| `POST` | `/chat/ask` | `chat:ask` + забор по ноде (ниже) | прогон workflow агента, текст ответа |
+| `POST` | `/chat/message/delivered` | `session_companion:write` | отметить обмен разговора доставленным |
+| `POST` | `/chat/message/incoming` | `session_companion:write` | записать реплику собеседника, не дожидаясь нашего ответа |
+| `POST` | `/chat/message/put` | `session_companion:write` | положить обмен, сочинённый не прогоном |
+| `POST` | `/chat/messages` | `chat:ask` + владелец (ниже) | последние N сообщений сессии из `agent_session` |
+| `POST` | `/chat/voice` | `chat:ask` | wav → текст через faster-whisper |
+
+### ⚠⚠ Права вместо «любой залогиненный» (аудит 2026-11)
+
+Раньше вся пятёрка стояла под `AuthChecker([])` — «вошёл, и ладно». Войти умеет и
+аноним через публичный `POST /auth/guest` (нужен игре `/play/detective`), и
+пустой список прав открывал ему всё: читать чужую переписку, жечь токены боевыми
+агентами, писать в память. Теперь у каждой точки своё право (`auth.md`), а у
+двух — ещё проверка в теле:
+
+* **`/chat/ask` — забор по ноде** (`_agent_allowed_for`). Кто **не имеет
+  `agent:view`** (гость), тот запускает только агентов ноды `Detective`
+  (`CHAT_PUBLIC_NODE_NAME`) — игры. Боевой агент (дейтинг и прочее) гостю — 403.
+  У панели и `dating_service` `agent:view` есть, их не касается. Забор — по
+  праву, не по имени роли.
+
+* **`/chat/messages` — проверка владельца** (находка IDOR). Кто не инспектор
+  (`session:view`), читает только свои сессии (`agent_session.user_id`); чужая —
+  пустой список. Инспектору (`/admin/chat`) видно всё.
 
 Запрос `/chat/ask`: `{question, agent_id, session_uuid?, variables?}`. Без
 `session_uuid` генерируется новый. Ответ: `{result, message_id, intentions}`.
