@@ -275,15 +275,22 @@ async def catch_exceptions_middleware(request: Request, call_next):
                 }
             )
 
-        # Возвращаем клиенту понятный JSON, чтобы фронтенд не гас
-        return JSONResponse(
-            status_code=500,
-            content={
-                "status": "error",
-                "message": "Внутренняя ошибка сервера",
-                "details": str(e)  # В продакшене лучше скрыть детали
-            }
-        )
+        # Возвращаем клиенту понятный JSON, чтобы фронтенд не гас.
+        #
+        # ⚠⚠ `details` со `str(e)` отдаём только вне прода. На проде текст
+        # исключения выносил наружу внутренние пути и устройство — пентест
+        # вытащил `[Errno 2] … 'temp_../../…'` обычным кривым запросом. Сам
+        # сбой никуда не делся: он уже в журнале ошибок (`logger_exception`
+        # выше), где ему и место, — а клиенту внутренности ни к чему.
+        #
+        # ⚠ «Прод ли» — тем же признаком, что и `env_is_prod` (`src/tool/env`):
+        # `APP_ENV` содержит `prod`. Своей копии значения нет, только та же
+        # проверка на строку — в middleware async-инструмент не позовёшь.
+        content = {"status": "error", "message": "Внутренняя ошибка сервера"}
+        if 'prod' not in config_get('APP_ENV', '').lower():
+            content["details"] = str(e)
+
+        return JSONResponse(status_code=500, content=content)
 
 
 async def session_slide_middleware(request: Request, call_next):

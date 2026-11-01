@@ -1,10 +1,11 @@
 import asyncio
 import os
+import tempfile
 import traceback
 import uuid
 
 from fastapi import APIRouter, Request, HTTPException, Depends
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from fastapi import UploadFile, File
 
 from src.ai.ai_llm import ai_llm_node_get
@@ -41,7 +42,11 @@ class ChatAskJsonRequest(BaseModel):
 
 class ChatMessagesJsonRequest(BaseModel):
     session_uuid: str
-    limit: int = 10
+    # ⚠ Границы, а не голый int. `limit=-1` уходил в SQL как есть и ронял запрос
+    # 500-м (MySQL не берёт отрицательный LIMIT), а `limit=999999999` проходил и
+    # тянул из базы сколько скажут. Теперь оба — 422 на входе: 1..200 покрывает
+    # любой осмысленный экран истории, а числа вне диапазона до SQL не доходят.
+    limit: int = Field(default=10, ge=1, le=200)
 
 
 class ChatMessageDeliveredRequest(BaseModel):
@@ -427,7 +432,42 @@ async def chat_message_put(
 async def chat_messages(request: Request, json_request: ChatMessagesJsonRequest,
                         db=Depends(mysql_get_db_async),
                         user: AuthSession = Depends(AuthChecker([AuthPermission.CHAT_ASK]))):
+    """История разговора по `session_uuid`.
+
+    ## ⚠⚠⚠ Своё — своим, чужое — только инспектору
+
+    Точка отдавала переписку **кому угодно по одному `session_uuid`**, без
+    проверки владельца. Пентест 2026-11-02 вытащил гостём чужой диалог дейтинга
+    (`Please send me your photo…`): защищала только неугадываемость UUID, а он
+    уезжает в URL (`/detective/case_agents?session_uuid=…`) — то есть в логи и
+    `Referer`.
+
+    Владение держится на `agent_session.user_id`: у каждой сессии он один
+    (проверено на данных), и пишет его `/chat/ask` из `user.user_id`
+    вызывающего. Детектив гостя лежит под гостем, дейтинг — под
+    `dating_service`.
+
+    ⚠ Инспектору (`session:view` — админы, менеджеры, QA) оставляем всё: именно
+    им `/admin/chat` показывает чужие разговоры, это его работа. Остальным —
+    только свои.
+
+    ⚠⚠ Не владельцу отвечаем **пустым списком**, а не 403: пустая история и так
+    штатный ответ (новая сессия, нет сообщений), и игре форма от этого не
+    меняется. 403 вдобавок подтверждал бы, что сессия существует.
+    """
+    # ⚠ Обе проверки — в одном `async with db`: зависимость `mysql_get_db_async`
+    # одноразовая, повторный вход за соединением в том же запросе не гарантирован.
     async with db:
+        # Не инспектор — пускаем только к своим сессиям. Чужую (или
+        # несуществующую) закрываем пустым списком, не доходя до выборки.
+        if not user.can(AuthPermission.SESSION_VIEW):
+            await db.execute(
+                "SELECT 1 FROM agent_session WHERE session_uuid = %s"
+                " AND user_id = %s LIMIT 1",
+                (json_request.session_uuid, user.user_id))
+            if not await db.fetchone():
+                return {"result": []}
+
         sql = '''
             SELECT s.role, s.content, s.created_at, s.id
             FROM agent_session s
@@ -455,18 +495,35 @@ async def chat_messages(request: Request, json_request: ChatMessagesJsonRequest,
 async def chat_voice_to_text(
         file: UploadFile = File(...),
         user: AuthSession = Depends(AuthChecker([AuthPermission.CHAT_ASK]))):
-    temp_file = f"temp_{file.filename}.wav"
+    """Распознать речь из загруженного wav.
 
-    # Асинхронно читаем и записываем
+    ## ⚠⚠ Имя файла придумываем сами, убираем в `finally`
+
+    Раньше путь был `temp_{file.filename}.wav` — имя из запроса, — и файл
+    складывался в рабочий каталог (`/app`, смонтированный репозиторий).
+    Склеенный префикс `temp_` спасал от обхода каталога через `..`, но две
+    беды оставались: при сбое распознавания `os.remove` не доходил (не было
+    `finally`), и temp-файл оставался в репозитории — повтор с разными именами
+    засорял дерево и заполнял диск. Имя из запроса в пути — само по себе
+    приглашение к беде.
+
+    Теперь имя даёт `tempfile` в системном temp-каталоге, а уборка стоит в
+    `finally` — остаётся файл или нет, он удаляется. Клиентское имя не читаем
+    вовсе: оно на результат не влияет.
+    """
     content = await file.read()
-    with open(temp_file, "wb") as buffer:
-        buffer.write(content)
 
-    text = await faster_whisper_model_transcribe(temp_file)
+    fd, temp_file = tempfile.mkstemp(suffix=".wav", prefix="chat_voice_")
+    try:
+        with os.fdopen(fd, "wb") as buffer:
+            buffer.write(content)
 
-    os.remove(temp_file)
-
-    return {"result": text}
+        return {"result": await faster_whisper_model_transcribe(temp_file)}
+    finally:
+        try:
+            os.remove(temp_file)
+        except OSError:
+            pass
 
 
 async def _variables_allowed(workflow_id: int, sent: dict) -> None:
