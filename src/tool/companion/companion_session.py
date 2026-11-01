@@ -222,6 +222,115 @@ async def companion_session_incoming(owner_unique_id: str,
     return {'id': int(made or 0), 'saved': 1, 'why': ''}
 
 
+async def companion_session_put(owner_id: str, owner_name: str,
+                               companion_id: str, companion_name: str,
+                               question: str = '', answer: str = '',
+                               kind: str = 'chat', source_uid: str = '',
+                               delivered: bool = False) -> dict:
+    """Положить в историю обмен, который сочинил не прогон.
+
+    Args:
+        owner_id: номер нашей стороны у источника (`622715`).
+        owner_name: её имя техническим видом (`ekaterina`).
+        companion_id: номер той стороны там же.
+        companion_name: её имя техническим видом.
+        question: что сказал **собеседник**. Пусто — он молчал.
+        answer: что сказали **мы**. Пусто — мы не ответили.
+        kind: `chat` или `mail`.
+        source_uid: ключ обмена у источника. Им ловится повтор.
+        delivered: дошёл ли до человека наш `answer`.
+
+    Returns:
+        dict: `id` — номер обмена (0, если не записали), `saved` — записали ли,
+        `why` — причина отказа словами.
+
+    ## ⚠⚠ Половины названы так же, как колонки, и это не формальность
+
+    В `companion_session` лежат `question` и `answer` — кто что сказал.
+    Принимай дверь один «текст», ей пришлось бы решать за вызывающего, чья
+    это реплика, а вызывающему — догадываться о её решении. Обе половины
+    необязательны и обе могут приехать разом: обмен, где он спросил и мы
+    ответили, — такая же законная запись, как и односторонняя.
+
+    ## ⚠⚠ Ключ склеивается ЗДЕСЬ, из частей — как это делает прогон
+
+    У `/chat/ask` стороны приезжают частями в `variables`, а шаг workflow
+    сшивает их в `{номер}_{имя}`. Значит и здесь приезжают части: правило
+    склейки принадлежит этой стороне, и вызывающему знать его незачем.
+    Прими мы готовый ключ, каждый проект повторял бы сшивку у себя — и
+    разошлись бы они молча, на первом же имени с пробелом.
+
+    ⚠ Имя приводит к техническому виду **вызывающий**: правило перевода у
+    каждого источника своё (у одного транслит, у другого — срез логина), и
+    навязывать его отсюда значило бы знать про его предметную область.
+
+    ## ⚠ Времени в доводах нет
+
+    `created_at` ставит база, а время половины — сам этот вызов: он и есть
+    момент, когда реплика стала известна. Довод «когда сказано» означал бы
+    второй источник правды о времени, который расходится с первым молча.
+
+    ⚠ Пустой `source_uid` не запрещён, но тогда и защиты от повтора нет:
+    `NULL` в уникальном ключе MySQL сам с собой не сталкивается.
+    """
+    owner_key = _key(owner_id, owner_name)
+    companion_key = _key(companion_id, companion_name)
+    asked = str(question or '').strip()
+    said = str(answer or '').strip()
+    channel = str(kind or '').strip().lower()
+    source = str(source_uid or '').strip()
+
+    if not owner_key or not companion_key:
+        return {'id': 0, 'saved': 0, 'why': 'нет номера или имени стороны'}
+
+    if channel not in COMPANION_SESSION_KINDS:
+        return {'id': 0, 'saved': 0, 'why': f'неизвестный канал: {channel}'}
+
+    if not asked and not said:
+        return {'id': 0, 'saved': 0, 'why': 'обе половины пусты'}
+
+    owner_db_id = await _companion_id(owner_key)
+    companion_db_id = await _companion_id(companion_key)
+
+    if not owner_db_id or not companion_db_id:
+        return {'id': 0, 'saved': 0, 'why': 'не завелась запись стороны'}
+
+    if source:
+        found = await _by_source(owner_db_id, channel, source)
+
+        if found:
+            return {'id': found, 'saved': 0, 'why': 'уже записано'}
+
+    now = datetime_utc_now()
+    # ⚠ Время у половины ставится, **только если половина есть**: пустая
+    #   половина со временем читалась бы как «сказал и промолчал».
+    row = {'owner_id': owner_db_id, 'companion_id': companion_db_id,
+           'kind': channel,
+           'question': asked, 'question_at': now if asked else None,
+           'answer': said, 'answer_at': now if said else None,
+           'delivered_at': now if (said and delivered) else None,
+           'source_uid': source or None}
+
+    # ⚠⚠⚠ Поглощение — **строго до вставки**, и порядок тут не вкусовой.
+    #   Оно убирает висящие строки, чей вопрос входит в новый; вставь мы
+    #   раньше — наша собственная строка подошла бы под это условие (ответ
+    #   пуст, вопрос входит сам в себя) и **удалила бы сама себя**. Поймано
+    #   живьём: запись с одним вопросом исчезала в тот же миг, отвечая при
+    #   этом `saved: 1` и номером несуществующей строки.
+    #
+    #   Та же причина, по которой порядок такой у `companion_session_add`.
+    #
+    # ⚠ Зовётся только при непустом вопросе: при пустом убирать нечего, а
+    #   трогать чужие строки незачем — это единственное место, где инструмент
+    #   удаляет.
+    if asked:
+        await _pending_absorb(owner_db_id, companion_db_id, channel, asked)
+
+    made = await CompanionSessionRepository().add(row)
+
+    return {'id': int(made or 0), 'saved': 1, 'why': ''}
+
+
 async def companion_session_delivered(message_id: int) -> dict:
     """Отметить обмен доставленным: наш ответ дошёл до собеседника.
 
@@ -612,6 +721,23 @@ async def companion_session_repeat_check(owner_unique_id: str,
         return {'repeat': 0, 'why': 'ответ повторяется, но спросил он о новом'}
 
     return {'repeat': 1, 'why': 'и ответ, и его сообщение повторяют сказанное раньше'}
+
+
+def _key(side_id, side_name) -> str:
+    """Части стороны → ключ `{номер}_{имя}`. Чего-то нет — пусто.
+
+    ⚠⚠ Правило склейки живёт **здесь**, а не у вызывающего. У прогона его
+    держит шаг workflow (`%companion_id%_%companion_name%`), и обе дороги
+    обязаны сшивать одинаково: разойдись они, сосед завёл бы вторую запись той
+    же пары — и агент писал бы человеку как незнакомому.
+
+    ⚠ Пустая часть даёт пустой ключ, а не половинку: `_angelas` и `625499_`
+    это записи, под которыми разговор найти уже нельзя.
+    """
+    number = str(side_id or '').strip()
+    name = str(side_name or '').strip()
+
+    return f'{number}_{name}' if number and name else ''
 
 
 async def _by_source(owner_id: int, kind: str, source_uid: str) -> int:

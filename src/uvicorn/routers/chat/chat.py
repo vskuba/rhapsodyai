@@ -59,6 +59,35 @@ class ChatMessageIncomingRequest(BaseModel):
     said_at: str = ''
 
 
+class ChatMessagePutRequest(BaseModel):
+    """Обмен, сочинённый не прогоном: письмо по обещанию, правка оператора,
+    текст чужого сервиса.
+
+    ⚠⚠ Стороны приезжают **частями**, как в переменных прогона, а не готовым
+    ключом: правило склейки `{номер}_{имя}` принадлежит нам, и вызывающему
+    знать его незачем. Повтори его каждый проект у себя — разошлись бы они
+    молча, на первом же имени с пробелом.
+
+    ⚠ Имена половин — те же, что колонки `companion_session`: `question` —
+    что сказал он, `answer` — что сказали мы. Один «текст» заставил бы дверь
+    решать за вызывающего, чья это реплика.
+    """
+    owner_id: str
+    owner_name: str
+    companion_id: str
+    companion_name: str
+    # Хотя бы одна половина обязана быть непустой — иначе записывать нечего.
+    question: str = ''
+    answer: str = ''
+    kind: str = 'chat'
+    # Ключ обмена у источника. Не обязателен, но без него повтор вызова
+    # положит вторую строку: защита стоит именно на нём.
+    source_uid: str = ''
+    # Дошёл ли до человека наш `answer`. ⚠ Ложь по умолчанию: доставку
+    # подтверждают, а не предполагают — как это делает прогон.
+    delivered: bool = False
+
+
 @router.post("/chat/ask")
 async def chat_ask_ai(
         request: Request,
@@ -358,6 +387,36 @@ async def chat_message_incoming(
         json_request.owner_unique_id, json_request.companion_unique_id,
         json_request.text, kind=json_request.kind,
         source_uid=json_request.source_uid, said_at=json_request.said_at)}
+
+
+@router.post("/chat/message/put")
+async def chat_message_put(
+        json_request: ChatMessagePutRequest,
+        user: AuthSession = Depends(AuthChecker([]))
+) -> dict:
+    """Положить в историю обмен, который сочинил не прогон.
+
+    Третья дорога в `companion_session`. Первые две описывают разговор,
+    придуманный моделью: прогон workflow и приём его реплики. А отправить
+    человеку можно и то, чего модель сейчас не сочиняла, — письмо по
+    обещанию, правку оператора, текст чужого сервиса.
+
+    ⚠⚠ Поймано на проде 01.11.2026: письма по намерениям уходят собеседнику,
+    а истории про них нет — и следующий прогон строит ответ так, будто
+    обещанного письма не было. Разговор искажается молча: ни ошибки, ни
+    пустой строки.
+
+    ⚠ Идемпотентна по `source_uid`: повтор отвечает `saved: 0` и номер уже
+    записанной строки. Без ключа защиты нет — повтор положит вторую строку.
+    """
+    from src.tool.companion.companion_session import companion_session_put
+
+    return {"result": await companion_session_put(
+        json_request.owner_id, json_request.owner_name,
+        json_request.companion_id, json_request.companion_name,
+        question=json_request.question, answer=json_request.answer,
+        kind=json_request.kind, source_uid=json_request.source_uid,
+        delivered=bool(json_request.delivered))}
 
 
 @router.post("/chat/messages", include_in_schema=False)
