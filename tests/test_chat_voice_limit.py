@@ -63,10 +63,17 @@ class TestVoiceLeavesNoFile:
     """
 
     async def test_broken_audio_is_a_clean_500(self, guest: httpx.AsyncClient):
-        """Не-wav: распознать нечего — 500, но процесс жив и уборка прошла."""
+        """Не-wav: распознать нечего — 500, но процесс жив и уборка прошла.
+
+        ⚠⚠ И в ответе **нет `details`**: сначала его прятали только на проде по
+        `APP_ENV`, но тот пуст и локально, и на проде — признак ненадёжен, и
+        текст исключения с внутренним путём утекал наружу. Теперь прячется
+        безусловно (fail-closed), полный сбой — в журнале ошибок.
+        """
         files = {'file': ('x', b'not-a-wav-at-all', 'application/octet-stream')}
         resp = await guest.post('/chat/voice', files=files)
         assert resp.status_code == 500, resp.text
+        assert 'details' not in resp.json(), f'внутренности в ответе: {resp.text[:160]}'
 
     async def test_client_filename_is_ignored(self, guest: httpx.AsyncClient):
         """⚠⚠ Имя из запроса в путь не попадает: обход каталога через `..` в
