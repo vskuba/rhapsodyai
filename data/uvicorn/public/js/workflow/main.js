@@ -10,7 +10,8 @@ import {initGraphMode, openWorkflowGraph} from './graph.js';
 import {openWorkflowHistory} from './history.js';
 import {openWorkflowTopic} from './topic.js';
 import {topicRoadsLoad, topicRoadsReload} from './topic-roads.js';
-import {loadWorkflowVariables, saveInputVariables, initVariablesHandlers} from './variables.js';
+import {loadWorkflowVariables, saveInputVariables, saveStagedVariableValues,
+    initVariablesHandlers} from './variables.js';
 import {loadWorkflowSteps, loadAvailableStepTypes, collectTransitions} from './steps.js';
 import {buildGroupTree, renderGroupTree} from '../agent_group_tree.js';
 import {ensureUndefinedIndex, workflowUndefinedEntriesSync, onUndefinedIndexChange,
@@ -571,6 +572,12 @@ workflowForm.onsubmit = async (e) => {
 
             await putData(`/workflow/${id}`, payload);
             await saveInputVariables(id); // Создаем новые и обновляем измененные входящие переменные
+            // ⚠⚠ Правки, сделанные виджетом шага в чужой переменной (жребий
+            // пишет туда описание долей). Своей строки в скрытом контейнере у
+            // переменной рода `workflow` нет, и `saveInputVariables` её не
+            // видит: без этой строки правка пропадала молча — человек менял
+            // долю, сохранял, а после перезагрузки видел прежнее число.
+            await saveStagedVariableValues(id);
             showNotification('Изменения успешно сохранены', 'success');
             // Кэш «Undefined переменных» по этому workflow протух: сохранение могло
             // завести/править переменные — значки в списке слева считают по свежему.
@@ -580,6 +587,7 @@ workflowForm.onsubmit = async (e) => {
             const createRes = await postData('/workflow', payload);
             if (createRes && createRes.result && createRes.result.id) {
                 await saveInputVariables(createRes.result.id);
+                await saveStagedVariableValues(createRes.result.id);
             }
             showNotification('Новый workflow успешно создан!', 'success');
 

@@ -433,6 +433,12 @@ function bindSave(el, variable, field) {
 // и обязан обновить ту же скрытую строку, иначе общая кнопка «Сохранить
 // workflow» унесёт в базу прежнее значение. Второй селектор на ту же строку
 // разошёлся бы с этим при первой же перевёрстке списка.
+//
+// ⚠⚠ Строка есть **только у входящих** переменных: `renderInputVariables`
+// наполняет скрытый контейнер фильтром `type === 'input'`. Для переменной
+// другого рода функция уходит ни с чем — и это не ошибка вызова, а причина,
+// по которой рядом живёт `variableValueStage`: правку такой переменной
+// сохранять нечем, кроме очереди.
 export function syncHiddenRow(variable) {
     if (!variable.id) return;
 
@@ -445,6 +451,82 @@ export function syncHiddenRow(variable) {
     row.querySelector('.var-note').value = variable.description ?? '';
     row.dataset.originalName = variable.name ?? '';
     row.dataset.originalDefault = variable.default ?? '';
+}
+
+/**
+ * Поставить правку значения переменной в очередь на сохранение.
+ *
+ * Для виджетов шага, которые правят **не свой** шаг, а переменную потока:
+ * жребий кладёт сюда описание долей. Уносит очередь
+ * `saveStagedVariableValues` по кнопке «Сохранить workflow» — там же, где
+ * сохраняются сами шаги, одним действием человека.
+ *
+ * ## ⚠⚠⚠ Зачем очередь, если есть `syncHiddenRow`
+ *
+ * Скрытые строки, на которых держится сохранение, есть только у **входящих**
+ * переменных: `renderInputVariables` наполняет контейнер фильтром
+ * `type === 'input'`. Описание жребия лежит в переменной рода `workflow` —
+ * строки у неё нет, `syncHiddenRow` молча уходила ни с чем, и правка
+ * пропадала **без единой ошибки**: человек менял долю с 5 на 15, жал
+ * «Сохранить workflow», страница перечитывала базу и показывала снова 5.
+ * Поймано на проде 01.11.2026, шаг «Жребий» #736 workflow `dating_talk`.
+ *
+ * ⚠ Правим и `state.allCurrentVariables`: из него виджет читает при
+ * следующем открытии формы, и без этого человек увидел бы старое число, не
+ * дойдя до сохранения.
+ *
+ * @param {object} variable строка переменной; нужен `id`
+ * @param {string} value новое значение (`default`)
+ */
+export function variableValueStage(variable, value) {
+    const id = variable && variable.id;
+    if (!id) return;
+
+    const workflowId = editorWorkflowId();
+
+    // ⚠ Очередь чужого workflow не наследуем: тот же довод, что у
+    // `inputVarPending` — иначе недоделанная правка уехала бы в соседний поток
+    // по первому «Сохранить».
+    if (String(state.varValuePendingFor ?? '') !== String(workflowId ?? '')) {
+        state.varValuePending = {};
+        state.varValuePendingFor = workflowId;
+    }
+
+    state.varValuePending[id] = value;
+    variable.default = value;
+
+    // Входящей переменной строка есть — обновим и её: иначе два писателя
+    // одного значения разошлись бы между очередью и полем на странице.
+    syncHiddenRow(variable);
+}
+
+/**
+ * Унести отложенные правки значений в базу. Зовётся по «Сохранить workflow».
+ *
+ * ⚠ Отдельно от `saveInputVariables`: та читает разметку скрытых строк и
+ * знает только входящие переменные. Здесь — переменные любого рода, и
+ * источник не разметка, а очередь.
+ *
+ * ⚠⚠ Очередь чистим **после** записи, а не до: упади запрос на середине,
+ * невынесённые правки останутся при человеке и уедут со следующим
+ * «Сохранить». Потерять их молча — ровно та беда, от которой эта очередь и
+ * заведена.
+ */
+export async function saveStagedVariableValues(workflowId) {
+    const staged = state.varValuePending;
+    if (!staged || !Object.keys(staged).length) return;
+
+    // Чужую очередь не уносим: она принадлежит другому workflow.
+    if (String(state.varValuePendingFor ?? '') !== String(workflowId ?? '')) return;
+
+    for (const [variableId, value] of Object.entries(staged)) {
+        await putData(`/workflow/${workflowId}/variable/${variableId}`, {
+            "default": value === '' ? null : value
+        });
+    }
+
+    state.varValuePending = {};
+    state.varValuePendingFor = null;
 }
 
 /**
