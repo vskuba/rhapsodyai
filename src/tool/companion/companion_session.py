@@ -141,16 +141,36 @@ async def companion_session_add(owner_unique_id: str, companion_unique_id: str,
     return {'id': int(made or 0), 'saved': 1, 'why': ''}
 
 
-async def companion_session_incoming(owner_unique_id: str,
-                                     companion_unique_id: str,
-                                     text: str, kind: str = 'chat',
-                                     source_uid: str = '',
-                                     said_at: str = '') -> dict:
+async def companion_session_incoming(owner_id: str = '', owner_name: str = '',
+                                     companion_id: str = '',
+                                     companion_name: str = '',
+                                     text: str = '', kind: str = 'chat',
+                                     source_uid: str = '', said_at: str = '',
+                                     owner_unique_id: str = '',
+                                     companion_unique_id: str = '') -> dict:
     """Записать реплику собеседника сразу, не дожидаясь нашего ответа.
 
     Args:
-        owner_unique_id: ключ нашей стороны (`companion.unique_id`).
-        companion_unique_id: ключ той стороны.
+        owner_id: номер нашей стороны у источника (`622715`).
+        owner_name: её имя техническим видом (`ekaterina`).
+        companion_id: номер той стороны там же.
+        companion_name: её имя техническим видом.
+
+    ## ⚠⚠ Стороны приезжают частями, как у `companion_session_put`
+
+    Правило склейки `{номер}_{имя}` принадлежит **нам** (`_key`), и
+    вызывающему знать его незачем. Прежде эта дверь брала ключ **готовым**, то
+    есть сшивал его источник — и правило жило в двух домах: здесь и у него.
+    Поменяй мы разделитель, `put` поехал бы за нами, а `incoming` остался, и
+    пара расщепилась бы надвое молча — ровно та беда, от которой `_key` и
+    заведён.
+
+    ⚠⚠ `owner_unique_id` / `companion_unique_id` — **переходные** доводы на
+    время, пока источник не переехал на части. Уходят третьим заходом, вместе
+    с этим абзацем; признак, что пора, — ни одного вызова с готовым ключом в
+    `DatingAi/src/dating/chat_history.py`.
+
+    Остальные доводы:
         text: что он написал.
         kind: `chat` или `mail`.
         source_uid: ключ реплики у источника. **Нужен**: им ловится повтор.
@@ -182,14 +202,19 @@ async def companion_session_incoming(owner_unique_id: str,
     нет), но тогда и защиты от повтора нет: `NULL` в уникальном ключе MySQL
     сам с собой не сталкивается.
     """
-    owner_key = str(owner_unique_id or '').strip()
-    companion_key = str(companion_unique_id or '').strip()
     said = str(text or '').strip()
     channel = str(kind or '').strip().lower()
     source = str(source_uid or '').strip()
 
+    # ⚠ Части старше готового ключа: переходный довод берётся, только когда
+    #   частей не прислали вовсе. Иначе источник, переехавший наполовину,
+    #   писал бы под двумя разными ключами и расщепил бы пару сам.
+    owner_key = _key(owner_id, owner_name) or str(owner_unique_id or '').strip()
+    companion_key = (_key(companion_id, companion_name)
+                     or str(companion_unique_id or '').strip())
+
     if not owner_key or not companion_key:
-        return {'id': 0, 'saved': 0, 'why': 'нет ключа стороны'}
+        return {'id': 0, 'saved': 0, 'why': 'нет номера или имени стороны'}
 
     if channel not in COMPANION_SESSION_KINDS:
         return {'id': 0, 'saved': 0, 'why': f'неизвестный канал: {channel}'}
@@ -197,14 +222,18 @@ async def companion_session_incoming(owner_unique_id: str,
     if not said:
         return {'id': 0, 'saved': 0, 'why': 'пустая реплика'}
 
-    owner_id = await _companion_id(owner_key)
-    companion_id = await _companion_id(companion_key)
+    # ⚠⚠ `_db_id`, а не `owner_id`: так теперь зовётся **довод** — номер
+    #   стороны у источника. Прежние имена здесь переиспользовались под номер
+    #   строки базы, и после переезда на части это было бы молчаливой
+    #   подменой: довод жив, выражение не падает, а в базу уедет не то.
+    owner_db_id = await _companion_id(owner_key)
+    companion_db_id = await _companion_id(companion_key)
 
-    if not owner_id or not companion_id:
+    if not owner_db_id or not companion_db_id:
         return {'id': 0, 'saved': 0, 'why': 'не завелась запись стороны'}
 
     if source:
-        found = await _by_source(owner_id, channel, source)
+        found = await _by_source(owner_db_id, channel, source)
 
         if found:
             return {'id': found, 'saved': 0, 'why': 'уже записано'}
@@ -212,7 +241,8 @@ async def companion_session_incoming(owner_unique_id: str,
     when = _moment(said_at)
     # ⚠ Ответа нет и времени ответа нет: его ещё не сочинили. `delivered_at`
     # тоже пуст — отметка про НАШУ реплику, а её тут нет.
-    row = {'owner_id': owner_id, 'companion_id': companion_id, 'kind': channel,
+    row = {'owner_id': owner_db_id, 'companion_id': companion_db_id,
+           'kind': channel,
            'question': said, 'question_at': when,
            'answer': '', 'answer_at': None,
            'source_uid': source or None}
@@ -330,21 +360,25 @@ async def companion_session_put(owner_id: str, owner_name: str,
            'delivered_at': now if (said and delivered) else None,
            'source_uid': source or None}
 
-    # ⚠⚠⚠ Поглощение — **строго до вставки**, и порядок тут не вкусовой.
-    #   Оно убирает висящие строки, чей вопрос входит в новый; вставь мы
-    #   раньше — наша собственная строка подошла бы под это условие (ответ
-    #   пуст, вопрос входит сам в себя) и **удалила бы сама себя**. Поймано
-    #   живьём: запись с одним вопросом исчезала в тот же миг, отвечая при
-    #   этом `saved: 1` и номером несуществующей строки.
+    # ⚠⚠⚠ **Поглощения здесь нет, и это решение, а не недоделка.**
     #
-    #   Та же причина, по которой порядок такой у `companion_session_add`.
+    #   Оно стояло — и было неверным. Поглощение убирает висящие реплики, чей
+    #   текст входит в новый вопрос, и верно это ровно там, где вызывающий
+    #   **знает, что его вопрос — склейка наших же висящих строк**. Знает это
+    #   одно место: прогон (`companion_session_add`), потому что склейку
+    #   делает сама панель и в вопросе лежат буквально те реплики.
     #
-    # ⚠ Зовётся только при непустом вопросе: при пустом убирать нечего, а
-    #   трогать чужие строки незачем — это единственное место, где инструмент
-    #   удаляет.
-    if asked:
-        await _pending_absorb(owner_db_id, companion_db_id, channel, asked)
-
+    #   Эта дверь такого не знает и знать не может: через неё приходит обмен,
+    #   сочинённый кем угодно. А правило вхождения — обычная подстрока, и на
+    #   чужом тексте оно срабатывает наугад:
+    #
+    #       'ok' в 'I will book a flight'   → съело  («bo-ok»)
+    #       'hi' в 'this is nice'           → съело  («t-hi-s»)
+    #
+    #   То есть здесь это была не защита от дубля, а **мина**: первый же
+    #   вызывающий, передавший `question`, молча потерял бы чужие реплики.
+    #   На проде она не срабатывала ни разу — вопрос сюда не передаёт никто,
+    #   все зовут с одной половиной (`answer`), — и снята до того, как успела.
     made = await CompanionSessionRepository().add(row)
 
     return {'id': int(made or 0), 'saved': 1, 'why': ''}
@@ -788,6 +822,18 @@ async def _pending_absorb(owner_id: int, companion_id: int, kind: str,
     реплика стоит вопросом (автоответчик соседа склеивает хвост в
     `prompt_user`). Без уборки лента показала бы её дважды: висящей строкой и
     в составе обмена.
+
+    ## ⚠⚠⚠ Зовётся ровно из одного места, и список мест — часть правила
+
+    Только из `companion_session_add` — дороги прогона. Оно одно знает, что
+    его вопрос **склейка наших же висящих строк**: склейку делает панель
+    (`_tail`), и в вопросе лежат буквально те реплики.
+
+    Из `companion_session_put` поглощение **снято** (2026-11-02): туда приходит
+    обмен, сочинённый кем угодно, и про его вопрос такого не известно. Правило
+    вхождения — обычная подстрока, и на чужом тексте оно срабатывает наугад:
+    `'ok'` входит в `'I will book a flight'`. Добавляя сюда второго
+    вызывающего, сперва ответьте, откуда он знает про склейку.
 
     ## ⚠⚠⚠ Границы узкие нарочно — это единственное место, где инструмент УДАЛЯЕТ
 

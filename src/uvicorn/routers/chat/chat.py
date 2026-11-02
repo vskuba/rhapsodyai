@@ -61,8 +61,24 @@ class ChatMessageDeliveredRequest(BaseModel):
 
 
 class ChatMessageIncomingRequest(BaseModel):
-    owner_unique_id: str
-    companion_unique_id: str
+    """Одна реплика собеседника — та, на которую мы ещё не ответили.
+
+    ⚠⚠ Стороны приезжают **частями**, как у `ChatMessagePutRequest`: правило
+    склейки `{номер}_{имя}` принадлежит нам, и вызывающему знать его незачем.
+    Прежде эта ручка брала ключ готовым — то есть сшивал его источник, и
+    правило жило в двух домах. Поменяй мы разделитель, `put` поехал бы за
+    нами, а `incoming` остался, и пара расщепилась бы надвое молча.
+
+    ⚠ `owner_unique_id` / `companion_unique_id` — **переходные**, на время,
+    пока источник не переехал на части. Уходят третьим заходом.
+    """
+    owner_id: str = ''
+    owner_name: str = ''
+    companion_id: str = ''
+    companion_name: str = ''
+    # Переходные: готовый ключ стороны. Части старше — см. выше.
+    owner_unique_id: str = ''
+    companion_unique_id: str = ''
     text: str
     kind: str = 'chat'
     # Ключ реплики у источника. Не обязателен, но без него повтор вызова
@@ -408,10 +424,17 @@ async def chat_message_incoming(
     """
     from src.tool.companion.companion_session import companion_session_incoming
 
+    # ⚠ Доводы **по именам**, а не по порядку: частей стало четыре, и
+    #   позиционный вызов при следующей правке подписи уехал бы не туда молча.
     return {"result": await companion_session_incoming(
-        json_request.owner_unique_id, json_request.companion_unique_id,
-        json_request.text, kind=json_request.kind,
-        source_uid=json_request.source_uid, said_at=json_request.said_at)}
+        owner_id=json_request.owner_id, owner_name=json_request.owner_name,
+        companion_id=json_request.companion_id,
+        companion_name=json_request.companion_name,
+        text=json_request.text, kind=json_request.kind,
+        source_uid=json_request.source_uid, said_at=json_request.said_at,
+        # Переходные — пока источник не переехал на части.
+        owner_unique_id=json_request.owner_unique_id,
+        companion_unique_id=json_request.companion_unique_id)}
 
 
 @router.post("/chat/message/put")

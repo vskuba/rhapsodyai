@@ -151,34 +151,40 @@ class TestTheKeyIsJoinedHere:
             assert 'стороны' in got['why'], got['why']
 
 
-class TestAbsorbRunsBeforeTheInsert:
-    """⚠⚠⚠ Порядок, который стоил отладки: поглощение — **до** вставки."""
+class TestItDoesNotAbsorb:
+    """⚠⚠⚠ Эта дверь **ничего не удаляет**, и так было не всегда.
 
-    async def test_a_lone_question_does_not_delete_itself(self, sides):
-        """Строка с одним вопросом подходит под условия поглощения: ответ
-        пуст, вопрос входит сам в себя. Вставь её раньше — она исчезнет."""
+    Поглощение здесь стояло и было неверным: оно убирает висящие реплики, чей
+    текст входит в новый вопрос, а верно это ровно там, где вызывающий знает,
+    что его вопрос — **склейка наших же висящих строк**. Знает это одно место:
+    прогон (`companion_session_add`), где склейку делает сама панель.
+
+    Сюда приходит обмен, сочинённый кем угодно. Правило вхождения — обычная
+    подстрока, и на чужом тексте оно срабатывает наугад: `'ok'` входит в
+    `'I will book a flight'` («bo-ok»). То есть это была не защита от дубля, а
+    мина — и на проде она не сработала ни разу только потому, что вопрос сюда
+    не передаёт никто.
+    """
+
+    async def test_a_lone_question_survives(self, sides):
+        """Строка с одним вопросом подходила под условия поглощения: ответ
+        пуст, вопрос входит сам в себя. Теперь удалять некому вовсе."""
         got = await companion_session_put(**sides, question='did you send it?',
                                           kind='mail', source_uid='t-5')
 
         rows = await _rows(_owner(sides))
 
-        assert rows, (
-            'запись съела сама себя: поглощение зовётся после вставки, а не до')
+        assert rows, 'запись исчезла — поглощение вернулось'
         assert int(rows[0]['id']) == int(got['id']), (
             'ответ назвал номер строки, которой нет')
 
-    async def test_a_stranger_exchange_keeps_it(self, sides):
-        """⚠ Чужой вопрос висящую строку не трогает — границы узкие нарочно."""
-        await companion_session_put(**sides, question='did you send it?',
-                                    kind='mail', source_uid='t-6')
-        await companion_session_put(**sides, question='well?', answer='yes',
-                                    kind='mail', source_uid='t-7')
+    async def test_an_exchange_that_swallowed_it_keeps_it(self, sides):
+        """⚠ Даже вобравший её обмен висящую строку **не трогает**.
 
-        assert len(await _rows(_owner(sides))) == 2, (
-            'посторонний обмен убрал чужую висящую реплику')
-
-    async def test_an_exchange_that_swallowed_it_absorbs(self, sides):
-        """А вобравший её — поглощает: иначе лента покажет её дважды."""
+        Прежде он её убирал. Если дубль в ленте когда-нибудь станет виден —
+        чинить его надо у той двери, что склеивала, а не удалением здесь: тут
+        про склейку ничего не известно.
+        """
         await companion_session_put(**sides, question='did you send it?',
                                     kind='mail', source_uid='t-8')
         await companion_session_put(**sides,
@@ -186,10 +192,35 @@ class TestAbsorbRunsBeforeTheInsert:
                                     answer='yes', kind='mail',
                                     source_uid='t-9')
 
-        rows = await _rows(_owner(sides))
+        assert len(await _rows(_owner(sides))) == 2
 
-        assert len(rows) == 1, (
-            'висящая реплика осталась рядом с обменом, который её вобрал')
+    async def test_a_short_pending_line_is_not_eaten(self, sides):
+        """⚠⚠ Тот самый случай, из-за которого поглощение и снято.
+
+        «ok» входит подстрокой в «book» — и реплика, которой собеседник
+        открыл разговор, исчезла бы молча.
+        """
+        await companion_session_put(**sides, question='ok', source_uid='t-10')
+        await companion_session_put(**sides,
+                                    question='I will book a flight',
+                                    answer='great', source_uid='t-11')
+
+        texts = [r['question'] for r in await _rows(_owner(sides))]
+
+        assert 'ok' in texts, 'короткая реплика съедена по вхождению подстроки'
+
+    async def test_nothing_here_deletes(self):
+        """⚠ Сторож на сам код: `DELETE` и поглощение сюда не возвращаются.
+
+        Проверяется **вызовами**, а не текстом файла: имя `_pending_absorb`
+        стоит в соседнем объяснении, и поиск по строке краснел бы на верном
+        коде.
+        """
+        from tests_.tests_guard import tests_guard_calls
+
+        calls = tests_guard_calls(companion_session_put)
+
+        assert '_pending_absorb' not in calls
 
 
 class TestRepeatDoesNotDouble:
