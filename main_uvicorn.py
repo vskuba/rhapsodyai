@@ -617,14 +617,35 @@ apps_static_path = os.path.join(current_dir, "apps")
 if os.path.isdir(apps_static_path):
     app.mount("/play", panel_static_files(apps_static_path, html=True), name="play")
 
-app.include_router(detective.router)
+# ⚠⚠ ПУБЛИЧНЫЕ РУЧКИ ЖИВУТ ПОД `/api`, И ПРЕФИКС СТОИТ ЗДЕСЬ
+#
+# Здесь, а не в `APIRouter(prefix=…)` у каждого роутера, по одной причине:
+# смысл правки — «всё наружу под одним префиксом», и проверить это должно
+# быть можно **одним взглядом в одно место**. Разложенный по роутерам, он
+# проверяется обходом пятидесяти файлов, и первый же забытый не заметит никто.
+#
+# ⚠⚠ Сюда входят **только те роутеры, у которых префикса ещё нет**. У `stt` и
+# `blog` он стоит в самом роутере (`APIRouter(prefix="/api/stt")`), и второй
+# здесь даёт `/api/api/blog` — поймано на первом же прогоне схемы. Сторож
+# `tests/test_api_prefix.py` стоит ровно на этом: ни одного `/api/api`.
+#
+# ⚠⚠ Старый путь отвечает **тем же** обработчиком, но скрыт из схемы: между
+# выкладкой соседа и переездом вызывающих проходят минуты, и сними мы его
+# сразу — у DatingAi встали бы чат и агенты. Снимается третьим заходом, когда
+# вызывающих не останется.
+API_PREFIX = '/api'
+
+for _public in (detective.router, chat.router, agent.router):
+    app.include_router(_public, prefix=API_PREFIX)
+    app.include_router(_public, include_in_schema=False)   # переходный
+
 app.include_router(dashboard.router, include_in_schema=False)
-app.include_router(chat.router)
 # Расшифровка речи для соседних проектов (BlogAi / Блокнот): см. stt.py
+# ⚠ Свой префикс в роутере — второго не ставим.
 app.include_router(stt.router)
 # Агенты «Блокнота» под нодой Blog: разметка черновиков для BlogAi
+# ⚠ Тоже со своим префиксом (`/api/blog`).
 app.include_router(blog_router.router)
-app.include_router(agent.router)
 app.include_router(auth_router.router, include_in_schema=False)
 app.include_router(user.router, include_in_schema=False)
 app.include_router(panel_user_api_router(

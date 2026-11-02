@@ -87,7 +87,7 @@ export async function sessionAgentInit() {
 
 async function dictionariesLoad() {
     const [agents, users, pairs] = await Promise.all([
-        fetch('/agent/list').then(r => r.json()).catch(() => ({})),
+        fetch('/api/agent/list').then(r => r.json()).catch(() => ({})),
         // ⚠ Не падаем без пользователей: `/api/users` требует своего права, и
         // роль без него должна видеть сессии, просто без имён в отборе.
         fetch('/api/users').then(r => r.json()).catch(() => ({})),

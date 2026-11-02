@@ -610,7 +610,7 @@
 
         try {
             const [agentsRes, nodesRes, workflowRes, roleRes, llmRes] = await Promise.all([
-                getData('/agent/list'),
+                getData('/api/agent/list'),
                 getData('/node/list'),
                 getData('/workflow/list'),
                 getData('/role/list'),
@@ -837,7 +837,7 @@
         element.classList.add('active');
 
         try {
-            const data = await getData(`/agent/${agentId}`);
+            const data = await getData(`/api/agent/${agentId}`);
             const agent = data.result; // Данные из ответа (как на вашем скрине)
 
             if (!agent) return;
@@ -920,7 +920,7 @@
         if (deleteBtn) deleteBtn.disabled = true;
 
         try {
-            await deleteData(`/agent/${id}`);
+            await deleteData(`/api/agent/${id}`);
             showNotification(`Агент "${title}" удален`, 'success');
 
             document.querySelectorAll('.agent-item').forEach(el => el.classList.remove('active'));
@@ -968,10 +968,10 @@
         try {
             let targetRoleIds = currentRoleIds;
             if (id) {
-                await putData(`/agent/${id}`, payload);
+                await putData(`/api/agent/${id}`, payload);
                 showNotification(`Агент "${payload.title}" обновлен`, 'success');
             } else {
-                const res = await postData('/agent', payload);
+                const res = await postData('/api/agent', payload);
                 showNotification(`Агент "${payload.title}" создан`, 'success');
                 if (res && res.result && res.result.role_ids) {
                     targetRoleIds = res.result.role_ids;

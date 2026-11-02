@@ -27,7 +27,7 @@ const FIXER_TASK_TYPE_NAME  = 'bug';
 const FIXER_PROJECT_LIST_URL = '/project/list';
 const FIXER_TYPE_LIST_URL    = '/api/team/types';
 const FIXER_TASK_URL         = '/tasks/{project_id}';
-const FIXER_VOICE_URL        = '/chat/voice';
+const FIXER_VOICE_URL        = '/api/chat/voice';
 
 // Пометки флажков — те же ключи, что у флажков на `/admin/task` (см.
 // `TASK_METADATA_KEY_*` в src/project/task/task_metadata.py). Оба хранятся наизнанку:

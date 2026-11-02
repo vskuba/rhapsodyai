@@ -24,7 +24,11 @@ router = APIRouter()
 # умолчание указывало на `uvicorn` — и на проде с активным green заведение агента
 # падало с «Temporary failure in name resolution». Настройка `UVICORN_URL`
 # остаётся: ею можно увести вызов на другой адрес, если понадобится.
-AGENT_CREATE_CHAT_URL = config_get('UVICORN_URL', 'http://127.0.0.1:8000') + '/chat/ask'
+# ⚠ Путь **с префиксом**: публичные ручки переехали под `/api`, старый
+# адрес жив лишь переходно и снимется третьим заходом. Оставь мы его
+# здесь — заведение агента встало бы ровно в тот день, молча.
+AGENT_CREATE_CHAT_URL = (config_get('UVICORN_URL', 'http://127.0.0.1:8000')
+                        + '/api/chat/ask')
 
 # Прогон с LLM идёт минуты, а не секунды.
 AGENT_CREATE_TIMEOUT = 300.0

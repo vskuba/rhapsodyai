@@ -1349,7 +1349,7 @@
      *
      * ⚠⚠ Пусто — говорим ПОЧЕМУ, а не рисуем прочерк. Контракт пишет ручка, и
      * пустым он бывает по двум законным причинам: прогон начат не через
-     * `/chat/ask` (мини-приложение, блог, повтор со страницы) либо снят раньше,
+     * `/api/chat/ask` (мини-приложение, блог, повтор со страницы) либо снят раньше,
      * чем запись появилась. Прочерк в этом месте читался бы как «зовущий
      * прислал пустоту» — то есть как поломка там, где её нет.
      */
@@ -1611,7 +1611,7 @@
         try {
             const [workflowsRes, agentsRes, nodesRes, typesRes, toolsRes, llmsRes] = await Promise.all([
                 getData('/workflow/list'),
-                getData('/agent/list'),
+                getData('/api/agent/list'),
                 getData('/node/list'),
                 getData('/workflow_step/list'),
                 getData('/tool/list'),

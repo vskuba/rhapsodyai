@@ -948,7 +948,7 @@
                 var ext = mimeType.includes('webm') ? 'webm' : 'ogg';
                 var fd  = new FormData();
                 fd.append('file', blob, 'voice.' + ext);
-                var resp = await fetch('/chat/voice', {method: 'POST', credentials: 'include', body: fd});
+                var resp = await fetch('/api/chat/voice', {method: 'POST', credentials: 'include', body: fd});
                 var data = await resp.json();
                 var text = (data.result || '').trim();
                 if (text) { aiTa.value = aiTa.value ? aiTa.value + ' ' + text : text; setAiStatus(''); }

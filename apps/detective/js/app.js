@@ -119,7 +119,7 @@ async function guestLoginEnsure() {
 
 // Подозреваемые/сержант текущего дела - для резолва чипса с именем в agent_id
 async function caseAgentsFetch() {
-    const res = await fetch(`/detective/case_agents?session_uuid=${encodeURIComponent(getSessionUuid())}`, {
+    const res = await fetch(`/api/detective/case_agents?session_uuid=${encodeURIComponent(getSessionUuid())}`, {
         credentials: 'same-origin',
     });
     if (!res.ok) return { suspects: [], sergeant: null };
@@ -202,7 +202,7 @@ async function sendMessage(text, displayText) {
     const loadingDiv = addTypingIndicator();
 
     try {
-        const res = await fetch('/chat/ask', {
+        const res = await fetch('/api/chat/ask', {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
@@ -252,7 +252,7 @@ formEl.addEventListener('submit', (e) => {
 // дело" не нужны, игрок и так посреди дела.
 async function restoreHistory() {
     try {
-        const res = await fetch('/chat/messages', {
+        const res = await fetch('/api/chat/messages', {
             method: 'POST',
             credentials: 'same-origin',
             headers: { 'Content-Type': 'application/json' },
@@ -336,7 +336,7 @@ function voiceInit() {
 
             micButtonEl.disabled = true;
             try {
-                const res = await fetch('/chat/voice', { method: 'POST', credentials: 'same-origin', body: formData });
+                const res = await fetch('/api/chat/voice', { method: 'POST', credentials: 'same-origin', body: formData });
                 if (res.ok) {
                     const data = await res.json();
                     if (data.result) {

@@ -671,7 +671,7 @@
             // не подставляет, а извлечению фактов она и не нужна
             // (`.claude/docs/chat.md`, §3). Запись в реестре заводилась только
             // ради номера — вместе с номером ушла и она.
-            const res = await postData('/chat/ask', {
+            const res = await postData('/api/chat/ask', {
                 question: text,
                 agent_id: 4,
                 agent: 'fact_extractor'

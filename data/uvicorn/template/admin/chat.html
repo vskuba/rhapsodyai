@@ -796,7 +796,7 @@
             // её входящей и получает от вызывающего (`.claude/docs/chat.md`, §3).
             // Пульт разработчика зовёт любого агента подряд, а незаявленная
             // переменная — отказ 400, поэтому слать её отсюда нельзя в принципе.
-            const data = await postData('/chat/ask', {
+            const data = await postData('/api/chat/ask', {
                 question: text,
                 agent_id: agentSelect.value,
                 session_uuid: currentSessionId
@@ -841,7 +841,7 @@
         if (!sessionDisplay.title) return;
 
         try {
-            const data = await postData('/chat/messages', {
+            const data = await postData('/api/chat/messages', {
                 session_uuid: sessionDisplay.title,
                 limit: 10
             });
@@ -878,7 +878,7 @@
     async function loadAgents(userId = null) {
         if (!agentSelect) return;
         try {
-            const url = userId ? `/agent/list?find_by=${encodeURIComponent(JSON.stringify({user_id: userId}))}` : '/agent/list';
+            const url = userId ? `/api/agent/list?find_by=${encodeURIComponent(JSON.stringify({user_id: userId}))}` : '/api/agent/list';
             const [agentsResponse] = await Promise.all([
                 getData(url)
             ]);
@@ -961,7 +961,7 @@
         if (!agentId || !userId) return;
 
         try {
-            const response = await fetch(`/agent/${agentId}/user/${userId}/session_last_entry`);
+            const response = await fetch(`/api/agent/${agentId}/user/${userId}/session_last_entry`);
             const data = await response.json();
 
             // API возвращает {"result": "uuid-строка"} или {"result": null}
@@ -1007,7 +1007,7 @@
 
                 showLoading(true);
                 try {
-                    const data = await postData('/chat/voice', formData);
+                    const data = await postData('/api/chat/voice', formData);
                     if (data.result) onTranscriptionReady(data.result);
                 } catch (err) {
                     console.error("Ошибка голоса:", err);
