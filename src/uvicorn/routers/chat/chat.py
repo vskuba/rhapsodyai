@@ -99,6 +99,14 @@ class ChatMessagePutRequest(BaseModel):
     # Дошёл ли до человека наш `answer`. ⚠ Ложь по умолчанию: доставку
     # подтверждают, а не предполагают — как это делает прогон.
     delivered: bool = False
+    # Когда это было сказано, `ГГГГ-ММ-ДД ЧЧ:ММ:СС` в UTC. Пусто — сейчас.
+    #
+    # ⚠⚠ Нужен не всякому вызывающему, а тому, кто узнаёт о сказанном
+    # **позже события**: правку оператора в панели сайта привозит заход
+    # импорта, иногда через сутки. Без времени такая переписка легла бы в
+    # ленту одним числом — агент увидел бы недельный разговор случившимся в
+    # одну минуту. Письму по обещанию довод не нужен: его шлют сейчас.
+    said_at: str = ''
 
 
 @router.post("/chat/ask")
@@ -434,7 +442,8 @@ async def chat_message_put(
         json_request.companion_id, json_request.companion_name,
         question=json_request.question, answer=json_request.answer,
         kind=json_request.kind, source_uid=json_request.source_uid,
-        delivered=bool(json_request.delivered))}
+        delivered=bool(json_request.delivered),
+        said_at=json_request.said_at)}
 
 
 @router.post("/chat/messages", include_in_schema=False)

@@ -208,3 +208,74 @@ class TestRepeatDoesNotDouble:
         got = await companion_session_put(**sides, answer='hi', kind='telegram')
 
         assert got['saved'] == 0 and 'канал' in got['why'], got['why']
+
+
+class TestTheMomentCanBeTold:
+    """⚠⚠ Время половины — довод, а не только часы сервера.
+
+    Здесь стояло «времени в доводах нет», и для письма по обещанию это верно:
+    его шлют в тот же миг. А правку оператора пишут руками в панели сайта, и
+    узнаёт о ней источник заходом импорта — иногда через сутки. Поставь такой
+    строке «сейчас», и привезённая переписка легла бы в ленту одним числом:
+    агент увидел бы недельный разговор случившимся в одну минуту.
+    """
+
+    async def test_our_half_keeps_the_told_moment(self, sides):
+        got = await companion_session_put(**sides, answer='написано вчера',
+                                          source_uid='t-when-1',
+                                          said_at='2026-10-20 08:15:00')
+
+        assert got['saved'] == 1, got['why']
+
+        row = (await _rows(_owner(sides)))[0]
+
+        assert str(row['answer_at']) == '2026-10-20 08:15:00'
+
+    async def test_his_half_keeps_it_too(self, sides):
+        """Половины обмена мерятся одними часами — обе берут один довод."""
+        await companion_session_put(**sides, question='он спросил вчера',
+                                    source_uid='t-when-2',
+                                    said_at='2026-10-20 08:15:00')
+
+        row = (await _rows(_owner(sides)))[0]
+
+        assert str(row['question_at']) == '2026-10-20 08:15:00'
+
+    async def test_delivery_is_stamped_by_the_same_moment(self, sides):
+        """⚠ Доставка не может быть позже самой реплики: время одно."""
+        await companion_session_put(**sides, answer='ушло вчера',
+                                    source_uid='t-when-3', delivered=True,
+                                    said_at='2026-10-20 08:15:00')
+
+        row = (await _rows(_owner(sides)))[0]
+
+        assert str(row['delivered_at']) == '2026-10-20 08:15:00'
+
+    async def test_without_it_nothing_changes(self, sides):
+        """⚠ Прежнее поведение — умолчание: пусто значит «сейчас».
+
+        Письму по обещанию довод не нужен, и требовать его значило бы менять
+        работающую дорогу ради новой.
+        """
+        from datetime_.datetime_ import datetime_utc_now
+
+        before = datetime_utc_now().replace(tzinfo=None)
+        await companion_session_put(**sides, answer='шлём сейчас',
+                                    source_uid='t-when-4')
+
+        row = (await _rows(_owner(sides)))[0]
+
+        assert row['answer_at'] >= before.replace(microsecond=0)
+
+    async def test_an_unreadable_moment_falls_back_to_now(self, sides):
+        """Непонятная строка — «сейчас», а не отказ.
+
+        ⚠ Сторона ошибки выбрана: потерять реплику из-за формата даты хуже,
+        чем показать её не тем часом. То же правило у приёма входящего.
+        """
+        got = await companion_session_put(**sides, answer='время не разобрать',
+                                          source_uid='t-when-5',
+                                          said_at='позавчера вечером')
+
+        assert got['saved'] == 1, got['why']
+        assert (await _rows(_owner(sides)))[0]['answer_at'] is not None
