@@ -310,3 +310,92 @@ class TestTheMomentCanBeTold:
 
         assert got['saved'] == 1, got['why']
         assert (await _rows(_owner(sides)))[0]['answer_at'] is not None
+
+
+class TestTheOneDoorHoldsBothRoads:
+    """⚠⚠ Одна дверь вместо двух: `incoming(text=X)` это `add(question=X)`.
+
+    Различались они по-настоящему, пока в `put` стояло поглощение. Его сняли —
+    и двери сошлись слово в слово: по 35 строк кода, расхождения в именах
+    доводов. Цена разделения измерена: `said_at` и переезд ключа на части
+    пришлось вносить **дважды**, по одному и тому же доводу.
+
+    ⚠ Проверяется **совпадение строк**, а не то, что код похож: похожесть
+    разойдётся молча, а совпадение записи — нет.
+    """
+
+    @staticmethod
+    def _shape(row: dict) -> dict:
+        """Строка без того, что заведомо своё у каждой записи."""
+        return {k: v for k, v in row.items()
+                if k not in ('id', 'source_uid', 'question_at', 'answer_at')}
+
+    async def test_a_reply_lands_the_same_either_way(self, sides):
+        """Та же строка, каким бы из двух способов её ни положили."""
+        from src.tool.companion.companion_session import (
+            companion_session_incoming)
+
+        await companion_session_put(**sides, question='он написал',
+                                    source_uid='one:put')
+        await companion_session_incoming(**sides, text='он написал',
+                                         source_uid='one:in')
+
+        rows = await _rows(_owner(sides))
+
+        assert len(rows) == 2
+        assert self._shape(rows[0]) == self._shape(rows[1]), (
+            'две двери пишут разные строки — сливать их было нельзя')
+
+    async def test_both_roads_reach_the_same_pair(self, sides):
+        """⚠ И под один ключ: иначе пара расщепилась бы надвое."""
+        from src.tool.companion.companion_session import (
+            companion_session_incoming)
+
+        await companion_session_incoming(**sides, text='его слова',
+                                         source_uid='one:k1')
+        await companion_session_put(**sides, answer='наши слова',
+                                    source_uid='one:k2')
+
+        assert len(await _rows(_owner(sides))) == 2
+
+
+class TestTheIdComesBackForLaterDelivery:
+    """⚠⚠ `id` возвращается **и при повторе** — на нём держится отметка
+    доставки задним числом.
+
+    Положили недоставленным, запомнили номер, а когда дошло — пометили.
+    Верни дверь ноль на повторе, номер потерялся бы, и отметить стало бы
+    нечем.
+    """
+
+    async def test_a_new_row_answers_with_its_number(self, sides):
+        got = await companion_session_put(**sides, answer='ушло потом',
+                                          source_uid='id:1')
+
+        assert got['saved'] == 1 and got['id'] > 0
+        assert int((await _rows(_owner(sides)))[0]['id']) == int(got['id'])
+
+    async def test_a_repeat_answers_with_the_same_number(self, sides):
+        first = await companion_session_put(**sides, answer='ушло потом',
+                                            source_uid='id:2')
+        again = await companion_session_put(**sides, answer='ушло потом',
+                                            source_uid='id:2')
+
+        assert again['saved'] == 0, 'повтор положил вторую строку'
+        assert int(again['id']) == int(first['id']), (
+            'повтор не назвал номер уже записанной строки — отмечать нечем')
+
+    async def test_undelivered_can_be_marked_later(self, sides):
+        """Сквозной путь из спеки: положили без отметки → пометили по номеру."""
+        from src.tool.companion.companion_session import (
+            companion_session_delivered)
+
+        got = await companion_session_put(**sides, answer='дойдёт позже',
+                                          source_uid='id:3', delivered=False)
+
+        assert (await _rows(_owner(sides)))[0]['delivered_at'] is None
+
+        marked = await companion_session_delivered(int(got['id']))
+
+        assert marked['marked'] == 1, marked.get('why')
+        assert (await _rows(_owner(sides)))[0]['delivered_at'] is not None

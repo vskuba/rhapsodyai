@@ -327,6 +327,8 @@ class TestGuestCannotWrite:
         ("POST", "/translate"),
         ("POST", "/agent/list"),
         ("POST", "/chat/message/put"),
+        # ⚠ Новая дверь разговора — под теми же правами, что и прежние две.
+        ("POST", "/chat/message/add"),
     ])
     async def test_guest_read_is_forbidden(self, guest: httpx.AsyncClient,
                                            method: str, path: str):
