@@ -531,11 +531,23 @@ export function stepResultVariables(stepsData, workflows, tools) {
                 found.add(tool_name + '_' + step.id + '_result_' + key);
             });
         }
-        // Результат шага workflow_invoke: {имя_sub_workflow}_{step_id}_result_str
+        // Результат шага workflow_invoke: движок кладёт ДВА имени (см.
+        // `ai_framework_manager.py`), и читают оба — значит показать надо оба,
+        // иначе одно из них горит «∅ не объявлена» на рабочей переменной:
+        //   * `{имя_sub_workflow}_{step_id}_result_str` — по имени ребёнка;
+        //   * `workflow_invoke_{step_id}_result_str` — универсальный алиас, не
+        //     зависящий от того, какой workflow прибит (им читают обёртки).
         if (metadata && metadata.workflow_invoke && metadata.workflow_invoke.workflow_id) {
             const wf = (workflows || []).find(w => String(w.id) === String(metadata.workflow_invoke.workflow_id));
             const childName = wf ? wf.name : ('workflow_' + metadata.workflow_invoke.workflow_id);
             found.add(childName + '_' + step.id + '_result_str');
+            found.add('workflow_invoke_' + step.id + '_result_str');
+        }
+        // Результат шага topic_action: `topic_action_{step_id}_result_str` —
+        // накопитель инструкций тем, движок пишет его в scope родителя сразу
+        // после возврата подпотока. Та же конвенция, что у workflow_invoke.
+        if (metadata && metadata.topic_action) {
+            found.add('topic_action_' + step.id + '_result_str');
         }
     });
 

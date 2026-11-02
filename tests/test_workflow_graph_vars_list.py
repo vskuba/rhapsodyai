@@ -75,6 +75,11 @@ STEPS = [
     {'id': 786, 'metadata': json.dumps(
         {'workflow_invoke': {'workflow_id': 5, 'next': 'talk_answer'}},
         ensure_ascii=False)},
+    # Шаг темы: его накопитель движок кладёт в `topic_action_<id>_result_str`
+    # той же конвенцией, что и `workflow_invoke` выше. Без учёта он горел бы
+    # «∅ не объявлена» — ровно то, что чинит эта правка.
+    {'id': 790, 'metadata': json.dumps(
+        {'topic_action': {'topic_action_name': 'talk_theme'}}, ensure_ascii=False)},
     {'id': 787, 'metadata': json.dumps({
         'llm_to_json_variable': [{'variable': 'talk_topic', 'text': 'о себе'}]},
         ensure_ascii=False)},
@@ -110,7 +115,13 @@ EXPECTED = {
     'agent_title': {'key': 'node', 'icon': '🇳', 'label': 'Node переменные'},
     'talk_history_chat': {'key': 'workflow', 'icon': '🇼', 'label': 'Workflow переменные'},
     'companion_bio_524_result_bio': {'key': 'tool', 'icon': '⚙️', 'label': 'Tool переменные'},
+    # Результат шага `workflow_invoke` движок кладёт под ДВУМЯ именами, и оба —
+    # рабочие: по имени ребёнка и под универсальным алиасом
+    # `workflow_invoke_<id>_result_str` (им читают обёртки). Второй прежде
+    # выпадал из следов шагов и горел «∅ не объявлена» на живой переменной.
     'dating_invite_one_786_result_str': {'key': 'tool', 'icon': '⚙️', 'label': 'Tool переменные'},
+    'workflow_invoke_786_result_str': {'key': 'tool', 'icon': '⚙️', 'label': 'Tool переменные'},
+    'topic_action_790_result_str': {'key': 'tool', 'icon': '⚙️', 'label': 'Tool переменные'},
     'girl_bio': {'key': 'dynamic', 'icon': '🌀', 'label': 'Dynamic переменные'},
     'talk_topic': {'key': 'dynamic', 'icon': '🌀', 'label': 'Dynamic переменные'},
     # Шаг читает переменную, которой нет ни в реестре, ни в следах шагов: имя
