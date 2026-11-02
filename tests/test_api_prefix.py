@@ -102,6 +102,49 @@ class TestThePublicDoorsAreUnderApi:
             assert one in schema, f'{one} пропал из схемы'
 
 
+class TestEveryDoorHasItsSection:
+    """⚠⚠ В `/docs` у каждой ручки свой раздел, и `default` быть не должно.
+
+    `default` — не раздел, а его отсутствие: туда FastAPI складывает всё, чему
+    тега не поставили. Девять ручек чата, агентов и детектива лежали там одной
+    кучей рядом с осмысленными `stt` и `blog`, и читающий документацию не
+    видел границ между делами.
+
+    ⚠ Тег — свойство **роутера** (`APIRouter(tags=…)`), как у `stt` и `blog`:
+    он описывает, что это за ручки. Префикс при этом остался в
+    `main_uvicorn.py` — он переходный, и его место там, где виден весь список
+    сразу.
+    """
+
+    @staticmethod
+    def _tags() -> dict:
+        """Путь → теги, которыми он подписан в схеме."""
+        from main_uvicorn import app
+
+        out = {}
+        for path, methods in (app.openapi().get('paths') or {}).items():
+            for one in methods.values():
+                out.setdefault(path, set()).update(one.get('tags') or [])
+
+        return out
+
+    def test_nothing_falls_into_default(self):
+        loose = sorted(p for p, tags in self._tags().items() if not tags)
+
+        assert not loose, (
+            f'без раздела остались: {loose}. Поставьте тег в `APIRouter(...)` '
+            'самого роутера — так сделано у `stt` и `blog`')
+
+    def test_the_public_sections_are_named(self):
+        """⚠ Сторож обязан находить сами разделы, иначе он зеленеет впустую."""
+        tags = set()
+        for one in self._tags().values():
+            tags |= one
+
+        for want in ('chat', 'agent', 'detective', 'stt', 'blog'):
+            assert want in tags, f'раздел «{want}» пропал из схемы'
+
+
 class TestTheOldPathStillAnswers:
     """⚠ Переходный период: старый путь жив, но скрыт из схемы.
 

@@ -31,7 +31,7 @@ from src.mysql_.repository.agent_repository import AgentRepository
 from src.mysql_.repository.node_repository import NodeRepository
 from src.mysql_.repository.user_repository import UserRepository
 
-router = APIRouter()
+router = APIRouter(tags=["chat"])
 
 # Нода публичной игры (`/play/detective`): единственная, чьих агентов вправе
 # запускать аноним-гость через `/chat/ask`. На ней и `detective_bot`, и

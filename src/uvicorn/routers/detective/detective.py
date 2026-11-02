@@ -3,7 +3,7 @@ from mysql_.mysql_ import mysql_get_db_async
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 
-router = APIRouter()
+router = APIRouter(tags=["detective"])
 
 
 @router.get("/detective/case_agents")

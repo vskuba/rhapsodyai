@@ -12,7 +12,7 @@ from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 from src.auth.auth_role import auth_role_is_full
 
-router = APIRouter()
+router = APIRouter(tags=["agent"])
 
 # Свой же сервер: workflow гоняем через `/chat/ask`, а не мимо него — у точки своя
 # проверка прав, свой журнал и своя сборка переменных, и вторая дорога к движку
