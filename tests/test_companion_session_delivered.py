@@ -256,3 +256,95 @@ class TestHistoryNeedsHisWords:
             pair[0], pair[1], companion_message_at_least='2') == ''
         assert await companion_session_history(
             pair[0], pair[1], companion_message_at_least='') != ''
+
+
+class TestDeliveryMovesOurHalfToo:
+    """⚠⚠⚠ Время нашей реплики — момент **доставки**, а не сочинения.
+
+    Обмен пишет прогон, то есть момент, когда модель сочинила. А уходит
+    реплика позже: черновик ждёт, пока собеседник появится в сети. Замер на
+    проде 02.11.2026 — у чата 552 строки из 1174 расходятся больше чем на
+    десять минут, среднее 80 минут, самый долгий разрыв 13,5 часа.
+
+    Пока `answer_at` оставался временем сочинения, лента врала порядком:
+    разговор, где мы сочинили в 07:02, он написал в 10:00, а наш ответ ушёл в
+    19:19, выглядел у агента так, будто его реплика — ответ на нашу.
+    """
+
+    @staticmethod
+    async def _row(row_id: int) -> dict:
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                'SELECT `question_at`, `answer_at`, `delivered_at`'
+                '  FROM `companion_session` WHERE `id` = %s', (int(row_id),))
+
+            return await db.fetchone() or {}
+
+    @staticmethod
+    async def _set_answer_at(row_id: int, when: str) -> None:
+        """Отодвигает сочинение в прошлое — как черновик, пролежавший часы."""
+        async with mysql_get_db_async() as db:
+            await db.execute('UPDATE `companion_session` SET `answer_at` = %s'
+                             ' WHERE `id` = %s', (when, int(row_id)))
+            await db.connection.commit()
+
+    async def test_our_half_takes_the_delivery_moment(self, pair):
+        made = await companion_session_add(*pair, question='ты тут?',
+                                           answer='тут')
+        await self._set_answer_at(made['id'], '2026-10-16 07:02:04')
+
+        await companion_session_delivered(int(made['id']))
+
+        row = await self._row(made['id'])
+
+        assert row['answer_at'] == row['delivered_at'], (
+            'время нашей половины осталось временем сочинения — лента покажет '
+            'её раньше того, что собеседник успел написать')
+
+    async def test_his_half_is_not_touched(self, pair):
+        """⚠ Его слова доставлены самим приходом — их время трогать нельзя."""
+        made = await companion_session_add(*pair, question='ты тут?',
+                                           answer='тут')
+        await self._set_answer_at(made['id'], '2026-10-16 07:02:04')
+        before = (await self._row(made['id']))['question_at']
+
+        await companion_session_delivered(int(made['id']))
+
+        assert (await self._row(made['id']))['question_at'] == before
+
+    async def test_a_row_without_our_half_keeps_its_null(self, pair):
+        """⚠ Нет нашей реплики — доставлять нечего, и двигать нечего."""
+        made = await companion_session_add(*pair, question='он один написал')
+
+        await companion_session_delivered(int(made['id']))
+
+        assert (await self._row(made['id']))['answer_at'] is None
+
+    async def test_time_never_moves_backwards(self, pair):
+        """⚠⚠ Только вперёд. Доставка раньше сочинения — не выдумка: на проде
+        таких строк девять (ручные отметки задним числом)."""
+        made = await companion_session_add(*pair, question='ты тут?',
+                                           answer='тут')
+        # Сочинение «в будущем» — тот же случай, что отметка задним числом.
+        await self._set_answer_at(made['id'], '2036-01-01 00:00:00')
+
+        await companion_session_delivered(int(made['id']))
+
+        row = await self._row(made['id'])
+
+        assert str(row['answer_at']) == '2036-01-01 00:00:00', (
+            'время сдвинуто назад — запись врёт в другую сторону')
+        assert row['delivered_at'] is not None, 'доставка не отмечена'
+
+    async def test_the_second_mark_moves_nothing(self, pair):
+        """Повтор не двигает ни доставку, ни время реплики."""
+        made = await companion_session_add(*pair, question='ты тут?',
+                                           answer='тут')
+        await self._set_answer_at(made['id'], '2026-10-16 07:02:04')
+
+        await companion_session_delivered(int(made['id']))
+        was = await self._row(made['id'])
+
+        await companion_session_delivered(int(made['id']))
+
+        assert await self._row(made['id']) == was
