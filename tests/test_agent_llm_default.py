@@ -48,7 +48,7 @@ async def llms(client: httpx.AsyncClient):
 
 async def _agent_create(client: httpx.AsyncClient, **extra) -> dict:
     """Агент с уникальным именем: повторный прогон не спотыкается о u_agent_name."""
-    response = await client.post("/agent", json={
+    response = await client.post("/api/agent", json={
         "name": f"{TEST_AGENT_PREFIX}{uuid.uuid4().hex[:8]}",
         "title": "Модель по умолчанию",
         "greeting": "",
@@ -68,22 +68,22 @@ class TestAgentLlmDefaultStorage:
         try:
             assert agent["llm_id"] == llms[1]["id"]
         finally:
-            await client.delete(f"/agent/{agent['id']}")
+            await client.delete(f"/api/agent/{agent['id']}")
 
     async def test_partial_update_keeps_and_null_clears(self, client: httpx.AsyncClient, llms):
         agent = await _agent_create(client, llm_id=llms[0]["id"])
         try:
             # поле не прислали — значение осталось
-            await client.put(f"/agent/{agent['id']}", json={"title": "Без поля в запросе"})
-            kept = (await client.get(f"/agent/{agent['id']}")).json()["result"]
+            await client.put(f"/api/agent/{agent['id']}", json={"title": "Без поля в запросе"})
+            kept = (await client.get(f"/api/agent/{agent['id']}")).json()["result"]
             assert kept["llm_id"] == llms[0]["id"]
 
             # прислали null — пишем: агент вернулся к порядку ноды
-            await client.put(f"/agent/{agent['id']}", json={"llm_id": None})
-            cleared = (await client.get(f"/agent/{agent['id']}")).json()["result"]
+            await client.put(f"/api/agent/{agent['id']}", json={"llm_id": None})
+            cleared = (await client.get(f"/api/agent/{agent['id']}")).json()["result"]
             assert cleared["llm_id"] is None
         finally:
-            await client.delete(f"/agent/{agent['id']}")
+            await client.delete(f"/api/agent/{agent['id']}")
 
 
 class TestAgentLlmDefaultEngine:

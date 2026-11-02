@@ -53,7 +53,7 @@ def _wipe(session_uuid: str) -> None:
 
 
 async def _messages(client: httpx.AsyncClient, session_uuid: str) -> list:
-    resp = await client.post('/chat/messages',
+    resp = await client.post('/api/chat/messages',
                              json={'session_uuid': session_uuid, 'limit': 10})
     assert resp.status_code == 200, resp.text
     return resp.json()['result']

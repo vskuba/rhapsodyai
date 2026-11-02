@@ -217,7 +217,7 @@ class TestWhatDatingAiSendsIsDeclared:
         ⚠⚠ Берём workflow **по признаку**, а не списком имён: агенты DatingAi
         помечены сайтом (`agent.site`), и седьмое занятие упало бы так же.
         """
-        agents = (await client.get('/agent/list')).json().get('result') or []
+        agents = (await client.get('/api/agent/list')).json().get('result') or []
 
         sited = {int(one['workflow_id']) for one in agents
                  if one.get('workflow_id') and str(one.get('site') or '').strip()}
@@ -292,7 +292,7 @@ class TestWhatDatingAiSendsIsDeclared:
 
 async def _workflow_id(client) -> int:
     """Номер workflow чата — через агента, по его системному имени."""
-    answer = await client.get(f'/agent/name/{AGENT_NAME}')
+    answer = await client.get(f'/api/agent/name/{AGENT_NAME}')
 
     if answer.status_code != 200:
         pytest.skip(f'агента «{AGENT_NAME}» нет в этой базе')
@@ -307,7 +307,7 @@ async def _masters(client) -> list:
     здесь. Перечисли мы имена руками — список разошёлся бы с ручкой при заведении
     нового мастера, и тест молчал бы о сломанном.
     """
-    answer = await client.get('/agent/list')
+    answer = await client.get('/api/agent/list')
 
     if answer.status_code != 200:
         return []
@@ -349,13 +349,13 @@ async def _ask(client, variables: dict):
     `400` до запуска workflow, и модель не тревожится. Пошли сюда объявленную —
     и каждый прогон сюиты занимал бы очередь ноды вместо живых собеседников.
     """
-    agent = (await client.get(f'/agent/name/{AGENT_NAME}')).json()
+    agent = (await client.get(f'/api/agent/name/{AGENT_NAME}')).json()
     agent_id = (agent.get('result') or {}).get('id')
 
     if not agent_id:
         pytest.skip('агента тестов нет в этой базе')
 
-    return await client.post('/chat/ask', json={
+    return await client.post('/api/chat/ask', json={
         'question': f'probe {uuid.uuid4().hex[:6]}',
         'agent_id': agent_id,
         'session_uuid': str(uuid.uuid4()),

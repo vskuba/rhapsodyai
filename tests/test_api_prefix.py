@@ -145,25 +145,41 @@ class TestEveryDoorHasItsSection:
             assert want in tags, f'раздел «{want}» пропал из схемы'
 
 
-class TestTheOldPathStillAnswers:
-    """⚠ Переходный период: старый путь жив, но скрыт из схемы.
+class TestTheOldPathIsGone:
+    """⚠⚠ Старых путей больше нет — сняты третьим заходом 03.11.2026.
 
-    Сними его раньше, чем переедут вызывающие, — у DatingAi встанут чат и
-    агенты. Этот класс уходит третьим заходом вместе с самим путём.
+    Пока вызывающие переезжали, роутер подключался дважды: новый путь в схеме,
+    старый скрытым. Перед снятием проверено по живому логу прода — за час
+    работы ни одного обращения к `/chat/…`, `/agent/…`, `/detective/…`,
+    только к `/api/…`.
+
+    ⚠ Этот класс — зеркало прежнего `TestTheOldPathStillAnswers`: тот стерёг,
+    что старый путь **жив**, этот — что его **нет**. Понадобится вернуть
+    (объявился чужой вызывающий, о котором не знали) — возвращать надо вторым
+    `include_router` без префикса и скрытым из схемы, а не вторым декоратором
+    у ручки: иначе у неё станет два адреса в документации.
     """
 
-    def test_the_old_paths_are_still_routed(self):
+    def test_no_route_answers_without_the_prefix(self):
+        loose = sorted(p for p in _paths()
+                       if p.startswith(('/chat/', '/agent/', '/detective/')))
+
+        assert not loose, (
+            f'переходные пути вернулись: {loose}. Они сняты намеренно — у '
+            'ручки должен быть один адрес')
+
+    def test_the_transitional_handles_are_gone_too(self):
+        """⚠ Ручки `incoming` и `put` слиты в `add` — ни в схеме, ни в
+        маршрутах их быть не должно."""
         paths = _paths()
 
-        for one in ('/chat/ask', '/chat/message/add', '/agent/list',
-                    '/agent/create', '/detective/case_agents'):
-            assert one in paths, (
-                f'{one} больше не отвечает — вызывающие в DatingAi встанут')
+        for one in ('/api/chat/message/incoming', '/api/chat/message/put'):
+            assert one not in paths, (
+                f'{one} вернулась — её дело делает `/api/chat/message/add`')
 
-    def test_but_they_are_hidden_from_the_docs(self):
-        """В схеме их быть не должно: два адреса одной ручки читаются как
-        два разных дела."""
+    def test_but_the_door_itself_still_works(self):
+        """⚠ Сторож обязан отличать «путь снят» от «ручка сломалась»."""
         schema = _schema()
 
-        for one in ('/chat/ask', '/agent/list', '/detective/case_agents'):
-            assert one not in schema, f'{one} виден в /docs вторым адресом'
+        assert '/api/chat/message/add' in schema
+        assert '/api/chat/ask' in schema

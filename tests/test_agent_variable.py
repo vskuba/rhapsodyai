@@ -45,7 +45,7 @@ class TestAgentVariableStorage:
     """Колонка: запись, чтение, частичное обновление."""
 
     async def test_create_with_agent_variable(self, client: httpx.AsyncClient):
-        response = await client.post("/agent", json={
+        response = await client.post("/api/agent", json={
             "name": f"{TEST_AGENT_PREFIX}var_create",
             "title": "Переменные при создании",
             "greeting": "",
@@ -60,7 +60,7 @@ class TestAgentVariableStorage:
 
     async def test_agent_variable_is_separate_from_workflow_variable(self, client: httpx.AsyncClient):
         """Две колонки, два смысла: правка одной не задевает другую."""
-        create = await client.post("/agent", json={
+        create = await client.post("/api/agent", json={
             "name": f"{TEST_AGENT_PREFIX}var_both",
             "title": "Две колонки",
             "greeting": "", "prompt_system": "",
@@ -70,9 +70,9 @@ class TestAgentVariableStorage:
         })
         agent_id = create.json()["result"]["id"]
 
-        await client.put(f"/agent/{agent_id}", json={"agent_variable": {"girl_name": "Diana"}})
+        await client.put(f"/api/agent/{agent_id}", json={"agent_variable": {"girl_name": "Diana"}})
 
-        agent = (await client.get(f"/agent/{agent_id}")).json()["result"]
+        agent = (await client.get(f"/api/agent/{agent_id}")).json()["result"]
         assert _agent_variable_parse(agent) == {"girl_name": "Diana"}
 
         workflow_variable = agent["workflow_variable"]
@@ -86,7 +86,7 @@ class TestAgentVariableStorage:
         Внешний клиент шлёт словарь — обе формы обязаны лечь в колонку одинаково,
         иначе «сохранил в админке» и «завёл по API» дают разные записи.
         """
-        create = await client.post("/agent", json={
+        create = await client.post("/api/agent", json={
             "name": f"{TEST_AGENT_PREFIX}var_string",
             "title": "Строкой из формы",
             "greeting": "", "prompt_system": "",
@@ -96,10 +96,10 @@ class TestAgentVariableStorage:
         agent_id = create.json()["result"]["id"]
         assert _agent_variable_parse(create.json()["result"]) == {"girl_name": "Natalia"}
 
-        await client.put(f"/agent/{agent_id}", json={
+        await client.put(f"/api/agent/{agent_id}", json={
             "agent_variable": json.dumps({"girl_name": "Диана"}, ensure_ascii=False)})
 
-        agent = (await client.get(f"/agent/{agent_id}")).json()["result"]
+        agent = (await client.get(f"/api/agent/{agent_id}")).json()["result"]
         assert _agent_variable_parse(agent) == {"girl_name": "Диана"}
 
     async def test_update_without_agent_variable_keeps_it(self, client: httpx.AsyncClient):
@@ -108,7 +108,7 @@ class TestAgentVariableStorage:
         Форма админки шлёт все поля разом, а внешний клиент — только то, что
         меняет. Второй не должен стирать переменные, о которых не знает.
         """
-        create = await client.post("/agent", json={
+        create = await client.post("/api/agent", json={
             "name": f"{TEST_AGENT_PREFIX}var_keep",
             "title": "Частичное обновление",
             "greeting": "", "prompt_system": "",
@@ -117,9 +117,9 @@ class TestAgentVariableStorage:
         })
         agent_id = create.json()["result"]["id"]
 
-        await client.put(f"/agent/{agent_id}", json={"title": "Новое название"})
+        await client.put(f"/api/agent/{agent_id}", json={"title": "Новое название"})
 
-        agent = (await client.get(f"/agent/{agent_id}")).json()["result"]
+        agent = (await client.get(f"/api/agent/{agent_id}")).json()["result"]
         assert agent["title"] == "Новое название"
         assert _agent_variable_parse(agent) == {"girl_name": "Natalia"}
 
@@ -128,7 +128,7 @@ class TestAgentVariableCreateByName:
     """`POST /agent/create` — дорога внешнего сервиса: переменные приходят с заведением."""
 
     async def test_create_by_name_stores_agent_variable(self, client: httpx.AsyncClient):
-        response = await client.post("/agent/create", json={
+        response = await client.post("/api/agent/create", json={
             "node": "Telegram",
             # workflow без шага agent_create_or_update: агент заводится записью,
             # без прогона через /chat/ask с LLM
@@ -142,13 +142,13 @@ class TestAgentVariableCreateByName:
 
         agent_id = response.json()["result"]["id"]
         try:
-            agent = (await client.get(f"/agent/{agent_id}")).json()["result"]
+            agent = (await client.get(f"/api/agent/{agent_id}")).json()["result"]
             assert _agent_variable_parse(agent) == {"girl_name": "Natalia"}
 
-            prompt = await client.get(f"/agent/{agent_id}/prompt_system/dating_girl")
+            prompt = await client.get(f"/api/agent/{agent_id}/prompt_system/dating_girl")
             assert prompt.json()["result"] == "You are a girl Natalia."
         finally:
-            await client.delete(f"/agent/{agent_id}")
+            await client.delete(f"/api/agent/{agent_id}")
 
 
 class TestAgentVariableRender:
@@ -160,7 +160,7 @@ class TestAgentVariableRender:
         Точка ходит в движок без scope прогона — переменные агента её единственный
         источник значений, и именно поэтому они подмешиваются в рендер отдельно.
         """
-        create = await client.post("/agent", json={
+        create = await client.post("/api/agent", json={
             "name": f"{TEST_AGENT_PREFIX}var_prompt",
             "title": "Рендер промпта",
             "greeting": "", "prompt_system": "You are a girl %girl_name% from %girl_city%.",
@@ -169,7 +169,7 @@ class TestAgentVariableRender:
         })
         agent_id = create.json()["result"]["id"]
 
-        response = await client.get(f"/agent/{agent_id}/prompt_system/dating_girl")
+        response = await client.get(f"/api/agent/{agent_id}/prompt_system/dating_girl")
         assert response.status_code == 200
         assert response.json()["result"] == "You are a girl Natalia from Kyiv."
 
@@ -237,12 +237,12 @@ class TestAgentUniversalDatingGirl:
     """Универсальная «Девушка»: та самая запись, ради которой всё это заведено."""
 
     async def test_universal_agent_prompt_is_template(self, client: httpx.AsyncClient):
-        response = await client.request("GET", "/agent/list", json={"find_by": {"name": AGENT_UNIVERSAL_NAME}})
+        response = await client.request("GET", "/api/agent/list", json={"find_by": {"name": AGENT_UNIVERSAL_NAME}})
         agents = response.json().get("result") or []
         if not agents:
             pytest.skip(f'агента {AGENT_UNIVERSAL_NAME} нет: узел Dating не заведён на этой установке')
 
-        agent = (await client.get(f"/agent/{agents[0]['id']}")).json()["result"]
+        agent = (await client.get(f"/api/agent/{agents[0]['id']}")).json()["result"]
 
         assert '%girl_name%' in agent['prompt_system'], 'промпт должен остаться шаблоном, а не копией имени'
         assert '%girl_title%' not in agent['prompt_system'], (

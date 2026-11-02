@@ -71,7 +71,7 @@ class TestVoiceLeavesNoFile:
         безусловно (fail-closed), полный сбой — в журнале ошибок.
         """
         files = {'file': ('x', b'not-a-wav-at-all', 'application/octet-stream')}
-        resp = await guest.post('/chat/voice', files=files)
+        resp = await guest.post('/api/chat/voice', files=files)
         assert resp.status_code == 500, resp.text
         assert 'details' not in resp.json(), f'внутренности в ответе: {resp.text[:160]}'
 
@@ -80,7 +80,7 @@ class TestVoiceLeavesNoFile:
         имени больше не адресует ничего — ответ тот же 500 распознавания, а не
         отказ записи по несуществующему пути."""
         files = {'file': ('../../evil', b'junk', 'application/octet-stream')}
-        resp = await guest.post('/chat/voice', files=files)
+        resp = await guest.post('/api/chat/voice', files=files)
         assert resp.status_code == 500, resp.text
         # Старый код отвечал бы «No such file or directory: 'temp_../../evil.wav'»
         # — то есть пытался писать по пути из имени. Теперь путь свой.
@@ -92,17 +92,17 @@ class TestMessagesLimitIsClamped:
 
     @pytest.mark.parametrize('limit', [-1, 0, 201, 999999999])
     async def test_out_of_range_is_422(self, guest: httpx.AsyncClient, limit: int):
-        resp = await guest.post('/chat/messages',
+        resp = await guest.post('/api/chat/messages',
                                 json={'session_uuid': 'zzz', 'limit': limit})
         assert resp.status_code == 422, f'limit={limit}: {resp.status_code} {resp.text[:120]}'
 
     @pytest.mark.parametrize('limit', [1, 50, 200])
     async def test_in_range_is_ok(self, guest: httpx.AsyncClient, limit: int):
-        resp = await guest.post('/chat/messages',
+        resp = await guest.post('/api/chat/messages',
                                 json={'session_uuid': 'zzz', 'limit': limit})
         assert resp.status_code == 200, f'limit={limit}: {resp.status_code} {resp.text[:120]}'
 
     async def test_default_without_limit_works(self, guest: httpx.AsyncClient):
         """Поле необязательное: без него берётся умолчание (10)."""
-        resp = await guest.post('/chat/messages', json={'session_uuid': 'zzz'})
+        resp = await guest.post('/api/chat/messages', json={'session_uuid': 'zzz'})
         assert resp.status_code == 200, resp.text

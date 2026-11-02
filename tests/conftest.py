@@ -522,14 +522,14 @@ async def _cleanup_test_users(client: httpx.AsyncClient) -> None:
 async def _cleanup_test_agents(client: httpx.AsyncClient) -> None:
     """Delete all agents with name starting with TEST_AGENT_PREFIX."""
     try:
-        response = await client.get("/agent/list")
+        response = await client.get("/api/agent/list")
         if response.status_code != 200:
             return
         agents = response.json().get("result", [])
         test_agents = [a for a in agents if a.get("name", "").startswith(TEST_AGENT_PREFIX)]
         for agent in test_agents:
             try:
-                await client.delete(f"/agent/{agent['id']}")
+                await client.delete(f"/api/agent/{agent['id']}")
             except Exception:
                 pass  # Ignore individual deletion errors
     except Exception:

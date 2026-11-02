@@ -56,7 +56,7 @@ class TestSchema:
     def test_dump_with_a_name(self):
         from browser_.browser_scenario import BrowserScenarioStep
 
-        step = BrowserScenarioStep(action='net_dump', name='запросы', value='/chat')
+        step = BrowserScenarioStep(action='net_dump', name='запросы', value='/api/chat')
 
         assert step.name == 'запросы'
 

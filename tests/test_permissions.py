@@ -97,15 +97,15 @@ class TestPermissions:
     # --- Agent write operations ---
 
     async def test_non_admin_cannot_create_agent(self, non_admin: httpx.AsyncClient):
-        resp = await non_admin.post("/agent", json={"title": "Hacked", "node_id": 2})
+        resp = await non_admin.post("/api/agent", json={"title": "Hacked", "node_id": 2})
         assert resp.status_code == 403
 
     async def test_non_admin_cannot_delete_agent(self, non_admin: httpx.AsyncClient):
-        resp = await non_admin.delete("/agent/1")
+        resp = await non_admin.delete("/api/agent/1")
         assert resp.status_code == 403
 
     async def test_non_admin_cannot_update_agent(self, non_admin: httpx.AsyncClient):
-        resp = await non_admin.put("/agent/1", json={"title": "Hacked"})
+        resp = await non_admin.put("/api/agent/1", json={"title": "Hacked"})
         assert resp.status_code == 403
 
     # --- Node write operations ---
@@ -192,7 +192,7 @@ class TestPermissions:
     # которую никто не наделял правами, теперь закрыто.
 
     @pytest.mark.parametrize("path", [
-        "/agent/list", "/node/list", "/workflow/list", "/llm/list", "/llm/status",
+        "/api/agent/list", "/node/list", "/workflow/list", "/llm/list", "/llm/status",
     ])
     async def test_unnamed_role_cannot_read(self, non_admin: httpx.AsyncClient, path: str):
         resp = await non_admin.get(path)
@@ -242,7 +242,7 @@ class TestNamedRoleCanRead:
         await admin.delete(f'/api/users/{user_id}')
 
     @pytest.mark.parametrize("path", [
-        "/agent/list", "/node/list", "/workflow/list", "/llm/list", "/llm/status",
+        "/api/agent/list", "/node/list", "/workflow/list", "/llm/list", "/llm/status",
     ])
     async def test_named_role_reads(self, named: httpx.AsyncClient, path: str):
         resp = await named.get(path)
@@ -325,10 +325,10 @@ class TestGuestCannotWrite:
         ("GET", "/admin/setting"),
         ("GET", "/admin/team"),
         ("POST", "/translate"),
-        ("POST", "/agent/list"),
-        ("POST", "/chat/message/put"),
-        # ⚠ Новая дверь разговора — под теми же правами, что и прежние две.
-        ("POST", "/chat/message/add"),
+        ("POST", "/api/agent/list"),
+        # ⚠ Дверь разговора — под теми же правами, что и прежние две,
+        #   которые она собой заменила.
+        ("POST", "/api/chat/message/add"),
     ])
     async def test_guest_read_is_forbidden(self, guest: httpx.AsyncClient,
                                            method: str, path: str):
@@ -369,21 +369,21 @@ class TestGuestCanPlay:
         await admin.delete(f"/api/users/{guest_id}")
 
     async def test_guest_opens_case_agents(self, guest: httpx.AsyncClient):
-        resp = await guest.get(f'/detective/case_agents?session_uuid={uuid.uuid4()}')
+        resp = await guest.get(f'/api/detective/case_agents?session_uuid={uuid.uuid4()}')
         assert resp.status_code == 200, resp.text[:120]
 
     async def test_guest_reads_own_history(self, guest: httpx.AsyncClient):
-        resp = await guest.post('/chat/messages',
+        resp = await guest.post('/api/chat/messages',
                                 json={'session_uuid': str(uuid.uuid4()), 'limit': 5})
         assert resp.status_code == 200, resp.text[:120]
 
     async def test_guest_may_ask_agent(self, guest: httpx.AsyncClient):
         """404 «нет такого агента» — значит право прошло и дело дошло до тела."""
-        resp = await guest.post('/chat/ask', json={
+        resp = await guest.post('/api/chat/ask', json={
             'agent_id': 10 ** 7, 'question': 'проба', 'session_uuid': str(uuid.uuid4())})
         assert resp.status_code == 404, f'{resp.status_code}: {resp.text[:120]}'
 
     async def test_guest_may_send_voice(self, guest: httpx.AsyncClient):
         """422 «нет файла» — право прошло, споткнулась только валидация тела."""
-        resp = await guest.post('/chat/voice')
+        resp = await guest.post('/api/chat/voice')
         assert resp.status_code == 422, f'{resp.status_code}: {resp.text[:120]}'

@@ -90,7 +90,7 @@ class TestWorkflowTrace:
         """Ноды у прогона нет — отбор идёт через агента, поэтому проверяем именно это:
         каждый прогон отбора принадлежит агенту запрошенной ноды."""
         nodes = (await client.get("/node/list")).json()["result"]
-        agents = (await client.get("/agent/list")).json()["result"]
+        agents = (await client.get("/api/agent/list")).json()["result"]
 
         for node in nodes:
             node_agent_ids = {a["id"] for a in agents if a.get("node_id") == node["id"]}
@@ -226,14 +226,14 @@ class TestWorkflowTrace:
         """
         import uuid as uuid_module
 
-        agents = (await client.get("/agent/list")).json()["result"]
+        agents = (await client.get("/api/agent/list")).json()["result"]
         probe = next((a for a in agents
                       if str(a.get("name", "")).startswith("testing_") and a.get("workflow_id")), None)
         if not probe:
             pytest.skip("на установке нет агентов ноды Testing")
 
         needle = f"zzprobe{uuid_module.uuid4().hex[:10]}"
-        await client.post("/chat/ask", json={
+        await client.post("/api/chat/ask", json={
             "question": f"поиск по всем прогонам {needle}", "agent_id": probe["id"],
             "session_uuid": str(uuid_module.uuid4()), "variables": {}}, timeout=60.0)
 
@@ -286,14 +286,14 @@ class TestWorkflowTrace:
         """
         import uuid as uuid_module
 
-        agents = (await client.get("/agent/list")).json()["result"]
+        agents = (await client.get("/api/agent/list")).json()["result"]
         probe = next((a for a in agents
                       if str(a.get("name", "")).startswith("testing_") and a.get("workflow_id")), None)
         if not probe:
             pytest.skip("на установке нет агентов ноды Testing")
 
         needle = f"zzprobe{uuid_module.uuid4().hex[:10]}"
-        await client.post("/chat/ask", json={
+        await client.post("/api/chat/ask", json={
             "question": f"отбор и поиск {needle}", "agent_id": probe["id"],
             "session_uuid": str(uuid_module.uuid4()), "variables": {}}, timeout=60.0)
 
@@ -349,7 +349,7 @@ class TestWorkflowTrace:
         import json
         import uuid as uuid_module
 
-        agents = (await client.get("/agent/list")).json()["result"]
+        agents = (await client.get("/api/agent/list")).json()["result"]
         probe = next((a for a in agents
                       if str(a.get("name", "")).startswith("testing_") and a.get("workflow_id")), None)
         if not probe:
@@ -360,7 +360,7 @@ class TestWorkflowTrace:
                 "session_uuid": str(uuid_module.uuid4()), "variables": {}}
 
         # Исход не важен: контракт обязан лечь и у упавшего прогона
-        await client.post("/chat/ask", json=body, timeout=60.0)
+        await client.post("/api/chat/ask", json=body, timeout=60.0)
 
         runs = (await client.get(
             f"/workflow_trace/run/list?agent_id={probe['id']}&limit=100")).json()["result"]

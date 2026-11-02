@@ -168,7 +168,7 @@ class TestLoginFlow:
 
     async def test_api_endpoint_returns_401_without_auth(self, client: httpx.AsyncClient):
         """Test that API endpoints return 401 without authentication."""
-        response = await client.get("/agent/list")
+        response = await client.get("/api/agent/list")
         assert response.status_code == 401
         assert response.json()["message"] == "Not authenticated"
 

@@ -47,7 +47,7 @@ async def db_pool_release():
 
     ⚠ Без этого второй тест берёт пул, заведённый первым, и падает на
     освобождении соединения — `Event loop is closed`, и ни слова о настоящей
-    причине. Тот же приём, что у соседнего `test_companion_session_incoming.py`.
+    причине. Тот же приём, что у соседнего `test_companion_session_pending.py`.
     """
     yield
 

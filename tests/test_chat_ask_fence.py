@@ -84,20 +84,20 @@ class TestChatAskFence:
 
     async def test_guest_cannot_run_production_agent(self, guest, production_agent):
         """⚠⚠ Главное: гость не запускает агента вне игровой ноды — 403."""
-        resp = await guest.post('/chat/ask',
+        resp = await guest.post('/api/chat/ask',
                                 json={'agent_id': production_agent, 'question': 'x'})
         assert resp.status_code == 403, f'{resp.status_code}: {resp.text[:140]}'
 
     async def test_admin_is_not_fenced(self, admin, production_agent):
         """Админ (`agent:view`) забором не зацеплен: проходит дальше, до проверки
         workflow — и получает 401 «нет workflow», а не 403."""
-        resp = await admin.post('/chat/ask',
+        resp = await admin.post('/api/chat/ask',
                                 json={'agent_id': production_agent, 'question': 'x'})
         assert resp.status_code != 403, f'забор зацепил админа: {resp.text[:140]}'
         assert resp.status_code == 401, f'ожидали 401 «нет workflow»: {resp.status_code}'
 
     async def test_unknown_agent_is_404_before_fence(self, guest):
         """Несуществующий агент — 404: забор стоит после проверки существования."""
-        resp = await guest.post('/chat/ask',
+        resp = await guest.post('/api/chat/ask',
                                 json={'agent_id': 10 ** 8, 'question': 'x'})
         assert resp.status_code == 404, resp.text

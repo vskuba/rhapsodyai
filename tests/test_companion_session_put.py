@@ -312,51 +312,42 @@ class TestTheMomentCanBeTold:
         assert (await _rows(_owner(sides)))[0]['answer_at'] is not None
 
 
-class TestTheOneDoorHoldsBothRoads:
-    """⚠⚠ Одна дверь вместо двух: `incoming(text=X)` это `add(question=X)`.
+class TestTheOneDoorIsTheOnlyOne:
+    """⚠⚠ Дверь одна, и второй больше нет.
 
-    Различались они по-настоящему, пока в `put` стояло поглощение. Его сняли —
-    и двери сошлись слово в слово: по 35 строк кода, расхождения в именах
-    доводов. Цена разделения измерена: `said_at` и переезд ключа на части
-    пришлось вносить **дважды**, по одному и тому же доводу.
+    Было две — `companion_session_incoming` («он написал») и `put`
+    («законченный обмен»). Различались они по-настоящему, пока в `put` стояло
+    поглощение; его сняли, и двери сошлись слово в слово: писали одну и ту же
+    строку. Цена разделения измерена за одну сессию — `said_at` и переезд
+    ключа на части пришлось вносить **дважды**, по одному доводу.
 
-    ⚠ Проверяется **совпадение строк**, а не то, что код похож: похожесть
-    разойдётся молча, а совпадение записи — нет.
+    Третьим заходом вторая удалена вместе со своей ручкой. Сторож стоит
+    затем, чтобы её не завели заново: «приём реплики» — это `put` с непустым
+    `question` и пустым `answer`, а не отдельная функция.
     """
 
-    @staticmethod
-    def _shape(row: dict) -> dict:
-        """Строка без того, что заведомо своё у каждой записи."""
-        return {k: v for k, v in row.items()
-                if k not in ('id', 'source_uid', 'question_at', 'answer_at')}
+    def test_there_is_no_second_door(self):
+        from src.tool.companion import companion_session
 
-    async def test_a_reply_lands_the_same_either_way(self, sides):
-        """Та же строка, каким бы из двух способов её ни положили."""
-        from src.tool.companion.companion_session import (
-            companion_session_incoming)
+        assert not hasattr(companion_session, 'companion_session_incoming'), (
+            'вторая дверь вернулась — её дело делает `companion_session_put` '
+            'с одним `question`')
 
-        await companion_session_put(**sides, question='он написал',
-                                    source_uid='one:put')
-        await companion_session_incoming(**sides, text='он написал',
-                                         source_uid='one:in')
+    async def test_one_half_is_a_legal_record(self, sides):
+        """И её дело правда делается: половина пишется как висящая реплика."""
+        got = await companion_session_put(**sides, question='он написал',
+                                          source_uid='one:half')
 
-        rows = await _rows(_owner(sides))
+        assert got['saved'] == 1, got['why']
 
-        assert len(rows) == 2
-        assert self._shape(rows[0]) == self._shape(rows[1]), (
-            'две двери пишут разные строки — сливать их было нельзя')
+        row = (await _rows(_owner(sides)))[0]
 
-    async def test_both_roads_reach_the_same_pair(self, sides):
-        """⚠ И под один ключ: иначе пара расщепилась бы надвое."""
-        from src.tool.companion.companion_session import (
-            companion_session_incoming)
-
-        await companion_session_incoming(**sides, text='его слова',
-                                         source_uid='one:k1')
-        await companion_session_put(**sides, answer='наши слова',
-                                    source_uid='one:k2')
-
-        assert len(await _rows(_owner(sides))) == 2
+        assert row['question'] == 'он написал'
+        assert row['answer'] == '', 'ответа нет — его ещё не сочинили'
+        assert row['question_at'] is not None
+        assert row['answer_at'] is None
+        assert row['delivered_at'] is None, (
+            'отметка доставки про НАШУ реплику, а её тут нет')
 
 
 class TestTheIdComesBackForLaterDelivery:

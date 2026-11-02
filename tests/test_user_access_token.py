@@ -137,7 +137,7 @@ class TestUserAccessToken:
             # 1. Query with valid API key
             headers = {"X-API-KEY": own_key}
             payload = {"find_by": {}}
-            response = await anon_client.post("/agent/list", json=payload, headers=headers)
+            response = await anon_client.post("/api/agent/list", json=payload, headers=headers)
             assert response.status_code == 200
             data = response.json()
             assert "result" in data
@@ -154,7 +154,7 @@ class TestUserAccessToken:
 
             # 2. Query with invalid API key
             headers_invalid = {"X-API-KEY": "invalid-token-value"}
-            response_invalid = await anon_client.post("/agent/list", json=payload, headers=headers_invalid)
+            response_invalid = await anon_client.post("/api/agent/list", json=payload, headers=headers_invalid)
             assert response_invalid.status_code == 401
             # ⚠ Текст отказа общий у всех панелей («нужен вход»), а не наш
             # прежний «Invalid API Key»: разбор «кто пришёл» уехал в скелет
@@ -164,13 +164,13 @@ class TestUserAccessToken:
             assert response_invalid.json()["detail"]
 
             # 3. Query new token-route without header (should fail validation with 401)
-            response_no_header = await anon_client.post("/agent/list", json=payload)
+            response_no_header = await anon_client.post("/api/agent/list", json=payload)
             assert response_no_header.status_code == 401
             # ⚠ Тот же довод, что и ниже: сторожим код, а не текст отказа.
             assert response_no_header.json()["detail"]
 
             # 4. Query session-route without session (should return 401)
-            response_no_auth = await anon_client.get("/agent/list")
+            response_no_auth = await anon_client.get("/api/agent/list")
             assert response_no_auth.status_code == 401
             assert "Not authenticated" in response_no_auth.text
 
@@ -215,7 +215,7 @@ class TestFakeTokenDoesNotPassGate:
     заставе, и тест зеленел бы впустую.
     """
 
-    GATE_PROBE_PATH = "/chat/messages"
+    GATE_PROBE_PATH = "/api/chat/messages"
     GATE_PROBE_BODY = {"session_uuid": "test-nonexistent-uuid", "limit": 1}
 
     @pytest.mark.parametrize("headers", [

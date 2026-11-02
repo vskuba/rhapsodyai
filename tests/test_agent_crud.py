@@ -38,7 +38,7 @@ class TestAgentCRUD:
 
     async def test_get_agent_list(self, client: httpx.AsyncClient):
         """Test getting agent list."""
-        response = await client.request("GET", "/agent/list", json={"find_by": {}})
+        response = await client.request("GET", "/api/agent/list", json={"find_by": {}})
         assert response.status_code == 200
         data = response.json()
         assert "result" in data
@@ -47,7 +47,7 @@ class TestAgentCRUD:
     async def test_create_agent_minimal(self, client: httpx.AsyncClient):
         """Test creating an agent with minimal required fields."""
         response = await client.post(
-            "/agent",
+            "/api/agent",
             json={
                 "name": f"{TEST_AGENT_PREFIX}minimal",
                 "title": "Minimal Test Agent",
@@ -82,7 +82,7 @@ class TestAgentCRUD:
         workflow_variable = {"test_key": "test_value", "another_key": "another_value"}
 
         response = await client.post(
-            "/agent",
+            "/api/agent",
             json={
                 "name": f"{TEST_AGENT_PREFIX}full",
                 "title": "Full Test Agent",
@@ -110,7 +110,7 @@ class TestAgentCRUD:
         """Test getting a single agent by ID."""
         # Create first
         create_res = await client.post(
-            "/agent",
+            "/api/agent",
             json={
                 "name": f"{TEST_AGENT_PREFIX}get",
                 "title": "Get Test Agent",
@@ -125,7 +125,7 @@ class TestAgentCRUD:
         agent_id = create_res.json()["result"]["id"]
 
         # Get by ID
-        response = await client.get(f"/agent/{agent_id}")
+        response = await client.get(f"/api/agent/{agent_id}")
         assert response.status_code == 200
         data = response.json()
         assert "result" in data
@@ -138,7 +138,7 @@ class TestAgentCRUD:
         """Test updating an agent."""
         # Create first
         create_res = await client.post(
-            "/agent",
+            "/api/agent",
             json={
                 "name": f"{TEST_AGENT_PREFIX}update",
                 "title": "Original Title",
@@ -154,7 +154,7 @@ class TestAgentCRUD:
 
         # Update
         response = await client.put(
-            f"/agent/{agent_id}",
+            f"/api/agent/{agent_id}",
             json={
                 "name": f"{TEST_AGENT_PREFIX}updated",
                 "title": "Updated Title",
@@ -172,7 +172,7 @@ class TestAgentCRUD:
         assert data["status"] == "success"
 
         # Verify update
-        get_res = await client.get(f"/agent/{agent_id}")
+        get_res = await client.get(f"/api/agent/{agent_id}")
         agent = get_res.json()["result"]
         assert agent["title"] == "Updated Title"
         stored = agent["workflow_variable"]
@@ -184,7 +184,7 @@ class TestAgentCRUD:
     async def test_update_agent_partial(self, client: httpx.AsyncClient):
         """Test updating only some fields of an agent."""
         create_res = await client.post(
-            "/agent",
+            "/api/agent",
             json={
                 "name": f"{TEST_AGENT_PREFIX}partial",
                 "title": "Partial Test",
@@ -200,7 +200,7 @@ class TestAgentCRUD:
 
         # Update only title and greeting
         response = await client.put(
-            f"/agent/{agent_id}",
+            f"/api/agent/{agent_id}",
             json={
                 "title": "Partial Updated",
                 "greeting": "Updated greeting",
@@ -209,7 +209,7 @@ class TestAgentCRUD:
         assert response.status_code == 200
 
         # Verify only those fields changed
-        get_res = await client.get(f"/agent/{agent_id}")
+        get_res = await client.get(f"/api/agent/{agent_id}")
         agent = get_res.json()["result"]
         assert agent["title"] == "Partial Updated"
         assert agent["greeting"] == "Updated greeting"
@@ -220,7 +220,7 @@ class TestAgentCRUD:
         """Test deleting an agent."""
         # Create first
         create_res = await client.post(
-            "/agent",
+            "/api/agent",
             json={
                 "name": f"{TEST_AGENT_PREFIX}delete",
                 "title": "Delete Test Agent",
@@ -235,13 +235,13 @@ class TestAgentCRUD:
         agent_id = create_res.json()["result"]["id"]
 
         # Delete
-        response = await client.delete(f"/agent/{agent_id}")
+        response = await client.delete(f"/api/agent/{agent_id}")
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "success"
 
         # Verify deleted
-        get_res = await client.get(f"/agent/{agent_id}")
+        get_res = await client.get(f"/api/agent/{agent_id}")
         # Should return 404 or empty result
         assert get_res.status_code in [200, 404]
         if get_res.status_code == 200:
@@ -269,7 +269,7 @@ class TestAgentCRUD:
         # 2. Create 3 agents:
         # Agent A: matching node and matching role (node_id = 2, role_id = 2)
         agent_a_res = await client.post(
-            "/agent",
+            "/api/agent",
             json={
                 "name": f"{TEST_AGENT_PREFIX}filter_a",
                 "title": "Agent A (Matching)",
@@ -286,7 +286,7 @@ class TestAgentCRUD:
 
         # Agent B: different node but matching role (node_id = 6, role_id = 2)
         agent_b_res = await client.post(
-            "/agent",
+            "/api/agent",
             json={
                 "name": f"{TEST_AGENT_PREFIX}filter_b",
                 "title": "Agent B (Wrong Node)",
@@ -303,7 +303,7 @@ class TestAgentCRUD:
 
         # Agent C: matching node but different role (node_id = 2, role_id = 1)
         agent_c_res = await client.post(
-            "/agent",
+            "/api/agent",
             json={
                 "name": f"{TEST_AGENT_PREFIX}filter_c",
                 "title": "Agent C (Wrong Role)",
@@ -319,7 +319,7 @@ class TestAgentCRUD:
         agent_c_id = agent_c_res.json()["result"]["id"]
 
         # 3. Request agent list for our test user
-        list_res = await client.request("GET", "/agent/list", json={"find_by": {"user_id": user_id}})
+        list_res = await client.request("GET", "/api/agent/list", json={"find_by": {"user_id": user_id}})
         assert list_res.status_code == 200
         agents = list_res.json()["result"]
         agent_ids = [a["id"] for a in agents]
@@ -330,7 +330,7 @@ class TestAgentCRUD:
         assert agent_c_id not in agent_ids
 
         # 4. Request agent list for admin user (admin has role 'admin')
-        admin_list_res = await client.request("GET", "/agent/list", json={"find_by": {"user_id": 1}})
+        admin_list_res = await client.request("GET", "/api/agent/list", json={"find_by": {"user_id": 1}})
         assert admin_list_res.status_code == 200
         admin_agents = admin_list_res.json()["result"]
         admin_agent_ids = [a["id"] for a in admin_agents]
@@ -342,9 +342,9 @@ class TestAgentCRUD:
 
         # Clean up
         await client.delete(f"/api/users/{user_id}")
-        await client.delete(f"/agent/{agent_a_id}")
-        await client.delete(f"/agent/{agent_b_id}")
-        await client.delete(f"/agent/{agent_c_id}")
+        await client.delete(f"/api/agent/{agent_a_id}")
+        await client.delete(f"/api/agent/{agent_b_id}")
+        await client.delete(f"/api/agent/{agent_c_id}")
 
     async def test_agent_list_get_hides_other_role_agents_for_nonadmin_session(self, client: httpx.AsyncClient):
         """Regression test: GET /agent/list called without an explicit user_id (as the
@@ -368,7 +368,7 @@ class TestAgentCRUD:
 
         # 2. Create an admin-only agent and a manager_dating-role agent, both on a node the user has access to
         admin_agent_res = await client.post(
-            "/agent",
+            "/api/agent",
             json={
                 "name": f"{TEST_AGENT_PREFIX}role_admin",
                 "title": "Admin Only Agent",
@@ -384,7 +384,7 @@ class TestAgentCRUD:
         admin_agent_id = admin_agent_res.json()["result"]["id"]
 
         user_agent_res = await client.post(
-            "/agent",
+            "/api/agent",
             json={
                 "name": f"{TEST_AGENT_PREFIX}role_user",
                 "title": "User Role Agent",
@@ -409,7 +409,7 @@ class TestAgentCRUD:
                 )
                 assert login_res.status_code == 200
 
-                list_res = await user_client.get("/agent/list")
+                list_res = await user_client.get("/api/agent/list")
                 assert list_res.status_code == 200
                 agent_ids = [a["id"] for a in list_res.json()["result"]]
 
@@ -418,12 +418,12 @@ class TestAgentCRUD:
         finally:
             # Clean up (back on the admin session)
             await client.delete(f"/api/users/{user_id}")
-            await client.delete(f"/agent/{admin_agent_id}")
-            await client.delete(f"/agent/{user_agent_id}")
+            await client.delete(f"/api/agent/{admin_agent_id}")
+            await client.delete(f"/api/agent/{user_agent_id}")
 
     async def test_delete_nonexistent_agent(self, client: httpx.AsyncClient):
         """Test deleting a non-existent agent returns error."""
-        response = await client.delete("/agent/999999")
+        response = await client.delete("/api/agent/999999")
         assert response.status_code == 200  # Current API returns 200 with error status
         data = response.json()
         assert data["status"] == "error"
@@ -439,7 +439,7 @@ class TestAgentCRUD:
         }
 
         response = await client.post(
-            "/agent",
+            "/api/agent",
             json={
                 "name": f"{TEST_AGENT_PREFIX}json",
                 "title": "JSON Test Agent",
@@ -456,7 +456,7 @@ class TestAgentCRUD:
         agent_id = response.json()["result"]["id"]
 
         # Retrieve and verify
-        get_res = await client.get(f"/agent/{agent_id}")
+        get_res = await client.get(f"/api/agent/{agent_id}")
         agent = get_res.json()["result"]
         # JSON may be returned as dict (already parsed) or string
         stored = agent["workflow_variable"]
@@ -469,7 +469,7 @@ class TestAgentCRUD:
         """Test POST /agent/list schema validation and response structure."""
         # Create a test agent
         response = await client.post(
-            "/agent",
+            "/api/agent",
             json={
                 "name": f"{TEST_AGENT_PREFIX}schema_test",
                 "title": "Schema Test Agent",
@@ -487,7 +487,7 @@ class TestAgentCRUD:
         try:
             # Query the newly created agent using POST /agent/list with API Key
             list_res = await client.post(
-                "/agent/list",
+                "/api/agent/list",
                 headers={"X-API-KEY": "8fd15581-36ae-48ed-812f-3b3d11d427f0"},
                 json={
                     "find_by": {"id": agent_id}
@@ -509,7 +509,7 @@ class TestAgentCRUD:
 
         finally:
             # Clean up the test agent
-            await client.delete(f"/agent/{agent_id}")
+            await client.delete(f"/api/agent/{agent_id}")
 
 
 class TestAgentCreateByNameSiteGroup:
@@ -538,17 +538,17 @@ class TestAgentCreateByNameSiteGroup:
         """Без `site` точка обязана отказать 422 и не завести агента."""
         payload = self._payload(f"{TEST_AGENT_PREFIX}no_site")
         payload.pop("site")
-        response = await client.post("/agent/create", json=payload)
+        response = await client.post("/api/agent/create", json=payload)
         assert response.status_code == 422
 
-        found = await client.get("/agent/name/" + payload["name"])
+        found = await client.get("/api/agent/name/" + payload["name"])
         assert found.status_code == 404
 
     @pytest.mark.parametrize("bad_site", ["Bad Name!", "site-01", "site_01", "Сайт", "Site01", "a b", ""])
     async def test_create_rejects_site_format(self, client: httpx.AsyncClient, bad_site: str):
         """`site` — только строчная латиница и цифры; всё остальное — 422 (#34543)."""
         response = await client.post(
-            "/agent/create",
+            "/api/agent/create",
             json=self._payload(f"{TEST_AGENT_PREFIX}bad_site", site=bad_site),
         )
         assert response.status_code == 422
@@ -557,32 +557,32 @@ class TestAgentCreateByNameSiteGroup:
         """Переданные `site` и `group_name` ложатся в ответ и в строку агента."""
         payload = self._payload(f"{TEST_AGENT_PREFIX}site_group",
                                 site="support24", group_name="Service")
-        response = await client.post("/agent/create", json=payload)
+        response = await client.post("/api/agent/create", json=payload)
         assert response.status_code == 201, response.text
 
         try:
             result = response.json()["result"]
             assert result["site"] == "support24"
 
-            row = (await client.get(f"/agent/{result['id']}")).json()["result"]
+            row = (await client.get(f"/api/agent/{result['id']}")).json()["result"]
             assert row["site"] == "support24"
             assert row["group_name"] == "Service"
         finally:
-            await client.delete(f"/agent/{result['id']}")
+            await client.delete(f"/api/agent/{result['id']}")
 
     async def test_create_without_group_name_keeps_empty(self, client: httpx.AsyncClient):
         """`group_name` факультативен: не передан — группы нет, агент заведён."""
         payload = self._payload(f"{TEST_AGENT_PREFIX}no_group")
-        response = await client.post("/agent/create", json=payload)
+        response = await client.post("/api/agent/create", json=payload)
         assert response.status_code == 201, response.text
 
         try:
             result = response.json()["result"]
-            row = (await client.get(f"/agent/{result['id']}")).json()["result"]
+            row = (await client.get(f"/api/agent/{result['id']}")).json()["result"]
             assert row["site"] == "support24"
             assert not row["group_name"]
         finally:
-            await client.delete(f"/agent/{result['id']}")
+            await client.delete(f"/api/agent/{result['id']}")
 
 
 if __name__ == "__main__":

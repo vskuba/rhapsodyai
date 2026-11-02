@@ -60,34 +60,6 @@ class ChatMessageDeliveredRequest(BaseModel):
     message_id: int
 
 
-class ChatMessageIncomingRequest(BaseModel):
-    """Одна реплика собеседника — та, на которую мы ещё не ответили.
-
-    ⚠⚠ Стороны приезжают **частями**, как у `ChatMessagePutRequest`: правило
-    склейки `{номер}_{имя}` принадлежит нам, и вызывающему знать его незачем.
-    Прежде эта ручка брала ключ готовым — то есть сшивал его источник, и
-    правило жило в двух домах. Поменяй мы разделитель, `put` поехал бы за
-    нами, а `incoming` остался, и пара расщепилась бы надвое молча.
-
-    ⚠ `owner_unique_id` / `companion_unique_id` — **переходные**, на время,
-    пока источник не переехал на части. Уходят третьим заходом.
-    """
-    owner_id: str = ''
-    owner_name: str = ''
-    companion_id: str = ''
-    companion_name: str = ''
-    # Переходные: готовый ключ стороны. Части старше — см. выше.
-    owner_unique_id: str = ''
-    companion_unique_id: str = ''
-    text: str
-    kind: str = 'chat'
-    # Ключ реплики у источника. Не обязателен, но без него повтор вызова
-    # положит вторую строку: защита стоит именно на нём.
-    source_uid: str = ''
-    # Когда он это написал, `ГГГГ-ММ-ДД ЧЧ:ММ:СС` в UTC. Пусто — сейчас.
-    said_at: str = ''
-
-
 class ChatMessageAddRequest(BaseModel):
     """Одна запись разговора: его половина, наша половина или обе.
 
@@ -133,43 +105,6 @@ class ChatMessageAddRequest(BaseModel):
     # позже по `id`, когда дойдёт.
     delivered: bool = False
     # Когда это было сказано, `ГГГГ-ММ-ДД ЧЧ:ММ:СС` в UTC. Пусто — сейчас.
-    said_at: str = ''
-
-
-class ChatMessagePutRequest(BaseModel):
-    """Обмен, сочинённый не прогоном: письмо по обещанию, правка оператора,
-    текст чужого сервиса.
-
-    ⚠⚠ Стороны приезжают **частями**, как в переменных прогона, а не готовым
-    ключом: правило склейки `{номер}_{имя}` принадлежит нам, и вызывающему
-    знать его незачем. Повтори его каждый проект у себя — разошлись бы они
-    молча, на первом же имени с пробелом.
-
-    ⚠ Имена половин — те же, что колонки `companion_session`: `question` —
-    что сказал он, `answer` — что сказали мы. Один «текст» заставил бы дверь
-    решать за вызывающего, чья это реплика.
-    """
-    owner_id: str
-    owner_name: str
-    companion_id: str
-    companion_name: str
-    # Хотя бы одна половина обязана быть непустой — иначе записывать нечего.
-    question: str = ''
-    answer: str = ''
-    kind: str = 'chat'
-    # Ключ обмена у источника. Не обязателен, но без него повтор вызова
-    # положит вторую строку: защита стоит именно на нём.
-    source_uid: str = ''
-    # Дошёл ли до человека наш `answer`. ⚠ Ложь по умолчанию: доставку
-    # подтверждают, а не предполагают — как это делает прогон.
-    delivered: bool = False
-    # Когда это было сказано, `ГГГГ-ММ-ДД ЧЧ:ММ:СС` в UTC. Пусто — сейчас.
-    #
-    # ⚠⚠ Нужен не всякому вызывающему, а тому, кто узнаёт о сказанном
-    # **позже события**: правку оператора в панели сайта привозит заход
-    # импорта, иногда через сутки. Без времени такая переписка легла бы в
-    # ленту одним числом — агент увидел бы недельный разговор случившимся в
-    # одну минуту. Письму по обещанию довод не нужен: его шлют сейчас.
     said_at: str = ''
 
 
@@ -474,90 +409,6 @@ async def chat_message_add(
     (`companion_session_add`) — он один знает, что его вопрос склеен из них.
     Здесь про склейку не известно ничего, и правило вхождения сработало бы
     наугад: `'ok'` входит в `'I will book a flight'`.
-    """
-    from src.tool.companion.companion_session import companion_session_put
-
-    return {"result": await companion_session_put(
-        json_request.owner_id, json_request.owner_name,
-        json_request.companion_id, json_request.companion_name,
-        question=json_request.question, answer=json_request.answer,
-        kind=json_request.kind, source_uid=json_request.source_uid,
-        delivered=bool(json_request.delivered),
-        said_at=json_request.said_at)}
-
-
-@router.post("/chat/message/incoming")
-async def chat_message_incoming(
-        json_request: ChatMessageIncomingRequest,
-        user: AuthSession = Depends(
-            AuthChecker([AuthPermission.SESSION_COMPANION_WRITE]))
-) -> dict:
-    """Записать реплику собеседника — сразу, не дожидаясь нашего ответа.
-
-    ## ⚠⚠ ПЕРЕХОДНАЯ: её дело делает `/chat/message/add`
-
-    Слита с `put` в одну дверь: после снятия поглощения обе писали **одну и ту
-    же строку**, а правки (`said_at`, части ключа) приходилось вносить дважды.
-    `incoming(text=X)` — это `add(question=X)`.
-
-    Остаётся, пока источник не переехал. Уходит третьим заходом; признак, что
-    пора, — ни одного вызова `/chat/message/incoming` в `DatingAi`.
-
-    Зовёт DatingAi в момент приёма сообщения. Вторая дорога в
-    `companion_session` помимо прогона workflow, и заведена она потому, что
-    первая проходима **только при ответе**: `/chat/ask` запускают, когда
-    решили отвечать, а реплика, оставшаяся без ответа, не попадала к нам
-    ничем — ни ошибкой, ни следом. Двенадцать таких за восемь дней, замерено
-    на проде 02.10.2026.
-
-    ⚠ Идемпотентна по `source_uid`: повтор отвечает `saved: 0` и номер уже
-    записанной строки. Без ключа защиты нет — повтор положит вторую строку.
-
-    ⚠ Ответ агента, пришедший следом, эту строку **поглотит**: шаг workflow
-    пишет обмен целиком, а висящая реплика убирается (`_pending_absorb`).
-    Поэтому звать приём на каждое входящее безопасно и правильно — даже на
-    то, на которое собираемся ответить.
-    """
-    from src.tool.companion.companion_session import companion_session_incoming
-
-    # ⚠ Доводы **по именам**, а не по порядку: частей стало четыре, и
-    #   позиционный вызов при следующей правке подписи уехал бы не туда молча.
-    return {"result": await companion_session_incoming(
-        owner_id=json_request.owner_id, owner_name=json_request.owner_name,
-        companion_id=json_request.companion_id,
-        companion_name=json_request.companion_name,
-        text=json_request.text, kind=json_request.kind,
-        source_uid=json_request.source_uid, said_at=json_request.said_at,
-        # Переходные — пока источник не переехал на части.
-        owner_unique_id=json_request.owner_unique_id,
-        companion_unique_id=json_request.companion_unique_id)}
-
-
-@router.post("/chat/message/put")
-async def chat_message_put(
-        json_request: ChatMessagePutRequest,
-        user: AuthSession = Depends(
-            AuthChecker([AuthPermission.SESSION_COMPANION_WRITE]))
-) -> dict:
-    """Положить в историю обмен, который сочинил не прогон.
-
-    ## ⚠⚠ ПЕРЕХОДНАЯ: то же самое делает `/chat/message/add`
-
-    Имя сменилось, поведение — нет: `add` зовёт тот же `companion_session_put`
-    с теми же доводами. Уходит третьим заходом, вместе с `incoming`.
-
-    Третья дорога в `companion_session`. Первые две описывают разговор,
-    придуманный моделью: прогон workflow и приём его реплики. А отправить
-    человеку можно и то, чего модель сейчас не сочиняла, — письмо по
-    обещанию, правку оператора, текст чужого сервиса.
-
-    ⚠⚠ Поймано на проде 01.11.2026: письма по намерениям уходят собеседнику,
-    а истории про них нет — и следующий прогон строит ответ так, будто
-    обещанного письма не было. Разговор искажается молча: ни ошибки, ни
-    пустой строки.
-
-    ⚠ Идемпотентна по `source_uid`: повтор отвечает `saved: 0` и номер уже
-    записанной строки. Без ключа защиты нет — повтор положит вторую строку.
     """
     from src.tool.companion.companion_session import companion_session_put
 

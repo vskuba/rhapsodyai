@@ -129,123 +129,12 @@ async def companion_session_add(owner_unique_id: str, companion_unique_id: str,
            'answer_at': now if answer_text else None,
            'source_uid': str(source_uid or '').strip() or None}
 
-    # ⚠⚠ Реплики, записанные приёмом (`companion_session_incoming`), вошли в
+    # ⚠⚠ Реплики, записанные одной половиной (`companion_session_put`), вошли в
     # этот же вопрос — их строки надо закрыть, иначе лента покажет вопрос
     # дважды: один раз висящим, второй в составе обмена. Подробности и границы
     # — в `_pending_absorb`.
     if question_text:
         await _pending_absorb(owner_id, companion_id, channel, question_text)
-
-    made = await CompanionSessionRepository().add(row)
-
-    return {'id': int(made or 0), 'saved': 1, 'why': ''}
-
-
-async def companion_session_incoming(owner_id: str = '', owner_name: str = '',
-                                     companion_id: str = '',
-                                     companion_name: str = '',
-                                     text: str = '', kind: str = 'chat',
-                                     source_uid: str = '', said_at: str = '',
-                                     owner_unique_id: str = '',
-                                     companion_unique_id: str = '') -> dict:
-    """Записать реплику собеседника сразу, не дожидаясь нашего ответа.
-
-    Args:
-        owner_id: номер нашей стороны у источника (`622715`).
-        owner_name: её имя техническим видом (`ekaterina`).
-        companion_id: номер той стороны там же.
-        companion_name: её имя техническим видом.
-
-    ## ⚠⚠ Стороны приезжают частями, как у `companion_session_put`
-
-    Правило склейки `{номер}_{имя}` принадлежит **нам** (`_key`), и
-    вызывающему знать его незачем. Прежде эта дверь брала ключ **готовым**, то
-    есть сшивал его источник — и правило жило в двух домах: здесь и у него.
-    Поменяй мы разделитель, `put` поехал бы за нами, а `incoming` остался, и
-    пара расщепилась бы надвое молча — ровно та беда, от которой `_key` и
-    заведён.
-
-    ⚠⚠ `owner_unique_id` / `companion_unique_id` — **переходные** доводы на
-    время, пока источник не переехал на части. Уходят третьим заходом, вместе
-    с этим абзацем; признак, что пора, — ни одного вызова с готовым ключом в
-    `DatingAi/src/dating/chat_history.py`.
-
-    Остальные доводы:
-        text: что он написал.
-        kind: `chat` или `mail`.
-        source_uid: ключ реплики у источника. **Нужен**: им ловится повтор.
-        said_at: когда он это написал, `ГГГГ-ММ-ДД ЧЧ:ММ:СС` в UTC. Пусто —
-            сейчас.
-
-    Returns:
-        dict: `id` — номер строки (0, если не записали), `saved` — записали ли,
-        `why` — причина отказа словами.
-
-    ## ⚠⚠ ЗАЧЕМ ОТДЕЛЬНАЯ ДОРОГА
-
-    Единственный путь в `companion_session` шёл через прогон workflow, а его
-    запускает `/chat/ask` — то есть **решение ответить**. Реплика, на которую
-    не ответили, не попадала к нам ничем: ни ошибки, ни следа.
-
-    Замерено на проде 02.10.2026: двенадцать таких за восемь дней. У всех у
-    соседа `is_answered = 0` и попытки не было вовсе — агента на них не звали.
-    Среди потерянного «how did you sleep???» и «sent you photo».
-
-    ## ⚠ Повтор не задваивает, и ключ тут обязателен
-
-    Приём зовут на каждое входящее, а доставка до нас не гарантирована:
-    сосед повторит вызов. Без `source_uid` каждый повтор клал бы новую строку.
-    Проверка идёт по тройке `(owner, kind, source_uid)` — ровно тот уникальный
-    ключ, что стоит у таблицы.
-
-    ⚠ Пустой `source_uid` не запрещён (у реплики со страницы своего номера
-    нет), но тогда и защиты от повтора нет: `NULL` в уникальном ключе MySQL
-    сам с собой не сталкивается.
-    """
-    said = str(text or '').strip()
-    channel = str(kind or '').strip().lower()
-    source = str(source_uid or '').strip()
-
-    # ⚠ Части старше готового ключа: переходный довод берётся, только когда
-    #   частей не прислали вовсе. Иначе источник, переехавший наполовину,
-    #   писал бы под двумя разными ключами и расщепил бы пару сам.
-    owner_key = _key(owner_id, owner_name) or str(owner_unique_id or '').strip()
-    companion_key = (_key(companion_id, companion_name)
-                     or str(companion_unique_id or '').strip())
-
-    if not owner_key or not companion_key:
-        return {'id': 0, 'saved': 0, 'why': 'нет номера или имени стороны'}
-
-    if channel not in COMPANION_SESSION_KINDS:
-        return {'id': 0, 'saved': 0, 'why': f'неизвестный канал: {channel}'}
-
-    if not said:
-        return {'id': 0, 'saved': 0, 'why': 'пустая реплика'}
-
-    # ⚠⚠ `_db_id`, а не `owner_id`: так теперь зовётся **довод** — номер
-    #   стороны у источника. Прежние имена здесь переиспользовались под номер
-    #   строки базы, и после переезда на части это было бы молчаливой
-    #   подменой: довод жив, выражение не падает, а в базу уедет не то.
-    owner_db_id = await _companion_id(owner_key)
-    companion_db_id = await _companion_id(companion_key)
-
-    if not owner_db_id or not companion_db_id:
-        return {'id': 0, 'saved': 0, 'why': 'не завелась запись стороны'}
-
-    if source:
-        found = await _by_source(owner_db_id, channel, source)
-
-        if found:
-            return {'id': found, 'saved': 0, 'why': 'уже записано'}
-
-    when = _moment(said_at)
-    # ⚠ Ответа нет и времени ответа нет: его ещё не сочинили. `delivered_at`
-    # тоже пуст — отметка про НАШУ реплику, а её тут нет.
-    row = {'owner_id': owner_db_id, 'companion_id': companion_db_id,
-           'kind': channel,
-           'question': said, 'question_at': when,
-           'answer': '', 'answer_at': None,
-           'source_uid': source or None}
 
     made = await CompanionSessionRepository().add(row)
 
@@ -312,9 +201,9 @@ async def companion_session_put(owner_id: str, owner_name: str,
     то есть «сейчас». Второго источника правды это не заводит — источник
     по-прежнему один, просто называет его вызывающий, а не часы сервера.
 
-    ⚠ Разбирает его та же `_moment`, что у `companion_session_incoming`:
-    обе половины обмена обязаны мериться одними часами, и второе правило
-    разбора разошлось бы с первым молча.
+    ⚠ Разбирает его `_moment` — одна на все записи: половины обмена обязаны
+    мериться одними часами, и второе правило разбора разошлось бы с первым
+    молча.
 
     ⚠ Пустой `source_uid` не запрещён, но тогда и защиты от повтора нет:
     `NULL` в уникальном ключе MySQL сам с собой не сталкивается.
@@ -755,7 +644,8 @@ async def companion_session_repeat_check(owner_unique_id: str,
     #
     # ## ⚠ Текущее сообщение в ленте уже может лежать
     #
-    # Приём (`companion_session_incoming`) пишет реплику собеседника сразу, не
+    # Запись одной половины (`companion_session_put` с одним `question`) кладёт
+    # реплику собеседника сразу, не
     # дожидаясь ответа, — и тогда сравнение нашло бы её само в себе. Поэтому
     # самое свежее его сообщение, если оно и есть переданное, из сравнения
     # выпадает.
@@ -850,7 +740,7 @@ async def _pending_absorb(owner_id: int, companion_id: int, kind: str,
 
     ## ⚠⚠ ЗАЧЕМ
 
-    Приём (`companion_session_incoming`) пишет реплику собеседника сразу, а
+    Запись одной половины (`companion_session_put`) кладёт реплику сразу, а
     через минуту агент отвечает — и шаг workflow кладёт обмен, где та же
     реплика стоит вопросом (автоответчик соседа склеивает хвост в
     `prompt_user`). Без уборки лента показала бы её дважды: висящей строкой и
@@ -996,7 +886,8 @@ def _asked_before(rows: list[dict], incoming: str) -> list[str]:
 
     ⚠⚠ «Прямо сейчас» — это **висящая** реплика: самая свежая строка, где его
     слова есть, а нашего ответа ещё нет. Такую пишет приём
-    (`companion_session_incoming`), не дожидаясь ответа, и не выброси мы её —
+    (`companion_session_put` с одним `question`), не дожидаясь ответа, и не
+    выброси мы её —
     сообщение совпало бы само с собой, второе условие выполнялось бы всегда, и
     проверка гасила бы ответ на каждое новое сообщение.
 
