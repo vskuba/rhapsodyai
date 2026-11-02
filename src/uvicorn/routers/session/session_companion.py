@@ -82,6 +82,27 @@ router = APIRouter()
 #
 # ⚠ Пределы свои, не те, что у `companion_session` в инструменте: там лента едет
 # в промпт и стоит токенов на каждом ответе, здесь её читает человек глазами.
+# ⚠⚠⚠ «Когда в разговоре в последний раз что-то было» — ПОЗДНЯЯ из половин.
+#
+# Здесь стояло `COALESCE(question_at, answer_at, created_at)`, и оно берёт
+# **первое непустое**: у обмена с обеими половинами это всегда вопрос, то есть
+# время ЕГО реплики. Наш ответ в счёт не шёл вовсе.
+#
+# Пока обе половины писались одним `datetime_utc_now()` прогона, разницы не
+# было. Она появилась, как только время нашей половины стало временем
+# **доставки**: черновик ждёт, пока собеседник появится в сети, и ответ уходит
+# на часы позже вопроса. Разговор Anastasiya ↔ Semen от 02.11.2026 встал в
+# списке по 11:56 — времени его «Hi», — хотя наш ответ ушёл в 17:12.
+#
+# Искали его в списке за 19 часов и не нашли: он лежал пятью часами выше.
+#
+# ⚠ `GREATEST` с двумя `COALESCE`, а не `MAX(question_at, answer_at)`: в MySQL
+# `GREATEST` с `NULL` среди доводов отвечает `NULL` целиком, и обмен с одной
+# половиной потерял бы время вовсе.
+SESSION_COMPANION_WHEN = ('GREATEST('
+                          'COALESCE(s.`question_at`, s.`answer_at`, s.`created_at`),'
+                          'COALESCE(s.`answer_at`, s.`question_at`, s.`created_at`))')
+
 SESSION_COMPANION_LIMIT = 50
 SESSION_COMPANION_LIMIT_MAX = 500
 
@@ -192,8 +213,7 @@ async def session_companion_list(
                -- отметку ставят только там, где ответ был (`DELETE` отвечает
                -- `404` на пустой), и второе условие было бы ложным уточнением.
                SUM(s.`answer_deleted_at` IS NOT NULL) AS deleted_count,
-               MAX(COALESCE(s.`question_at`, s.`answer_at`, s.`created_at`))
-                   AS last_at
+               MAX({SESSION_COMPANION_WHEN}) AS last_at
           FROM `companion_session` s
           JOIN `companion` o ON o.`id` = s.`owner_id`
           JOIN `companion` c ON c.`id` = s.`companion_id`
@@ -350,8 +370,8 @@ async def session_companion_messages(
         params.append(kind)
 
     sql += _delivered_condition(json_request.delivered)
-    sql += """
-         ORDER BY COALESCE(s.`question_at`, s.`answer_at`, s.`created_at`) DESC,
+    sql += f"""
+         ORDER BY {SESSION_COMPANION_WHEN} DESC,
                   s.`id` DESC
          LIMIT %s
     """

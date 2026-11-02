@@ -822,3 +822,134 @@ async def _exchanges(client, body):
     assert response.status_code == 200
 
     return response.json()['result']
+
+
+class TestWhenIsTheLaterHalf:
+    """⚠⚠⚠ «Когда в разговоре в последний раз что-то было» — ПОЗДНЯЯ половина.
+
+    Здесь стояло `COALESCE(question_at, answer_at, created_at)`, и оно берёт
+    **первое непустое**: у обмена с обеими половинами это всегда вопрос, то
+    есть время ЕГО реплики. Наш ответ в счёт не шёл вовсе.
+
+    Пока обе половины писались одним `datetime_utc_now()` прогона, разницы не
+    было. Она появилась, как только время нашей половины стало временем
+    **доставки**: черновик ждёт, пока собеседник появится в сети, и ответ
+    уходит на часы позже вопроса.
+
+    Живой случай 02.11.2026: разговор Anastasiya ↔ Semen встал в списке по
+    11:56 — времени его «Hi», — хотя наш ответ ушёл в 17:12. Искали его за
+    19 часов и не нашли: он лежал пятью часами выше, 55-м из 272.
+    """
+
+    @staticmethod
+    async def _move(row_id: int, question_at: str, answer_at) -> None:
+        """Разводит половины обмена по времени — как черновик, пролежавший часы."""
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                'UPDATE `companion_session` SET `question_at` = %s,'
+                ' `answer_at` = %s WHERE `id` = %s',
+                (question_at, answer_at, int(row_id)))
+            await db.connection.commit()
+
+    @staticmethod
+    def _same(got, want: str) -> bool:
+        """Один ли это момент. ⚠ Ручка отдаёт ISO (`…T19:19:28`), база — с
+        пробелом: сверять написанием значило бы проверять формат ответа."""
+        return str(got).replace('T', ' ')[:19] == want
+
+    @staticmethod
+    async def _age_the_rest(owner_key: str, keep: int) -> None:
+        """Отодвигает прочие обмены пары в прошлое.
+
+        ⚠ Без этого проверка бессмысленна: `last_at` — это **максимум по
+        паре**, а фикстура кладёт обмены временем «сейчас». Они перебили бы
+        любую дату, которую мы расставляем, и тест зеленел бы на чём угодно.
+        """
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                'UPDATE `companion_session` s'
+                '  JOIN `companion` c ON c.`id` = s.`owner_id`'
+                '   SET s.`question_at` = %s,'
+                '       s.`answer_at` = IF(s.`answer_at` IS NULL, NULL, %s),'
+                '       s.`created_at` = %s'
+                ' WHERE c.`unique_id` = %s AND s.`id` <> %s',
+                ('2020-01-01 00:00:00', '2020-01-01 00:00:00',
+                 '2020-01-01 00:00:00', owner_key, int(keep)))
+            await db.connection.commit()
+
+    async def test_the_pair_is_dated_by_our_answer(self, client, talk):
+        """Ответ позже вопроса — разговор датируется ответом."""
+        made = await companion_session_add(talk['owner_key'],
+                                           talk['companion_key'],
+                                           question='утром спросил',
+                                           answer='вечером ответили')
+        await self._move(made['id'], '2026-10-16 07:02:04',
+                         '2026-10-16 19:19:28')
+        await self._age_the_rest(talk['owner_key'], made['id'])
+
+        rows = await _pairs(client, {'owner_id': talk['owner_id'],
+                                     'kind': 'chat'})
+
+        assert self._same(rows[0]['last_at'], '2026-10-16 19:19:28'), (
+            'разговор датирован вопросом — в списке он на двенадцать часов '
+            'выше, чем был на самом деле')
+
+    async def test_a_lone_question_still_has_its_time(self, client, talk):
+        """⚠ `GREATEST` с `NULL` среди доводов отвечает `NULL` целиком.
+
+        Поэтому внутри два `COALESCE`, а не голые столбцы: обмен с одной
+        половиной иначе потерял бы время вовсе и провалился в конец списка.
+        """
+        made = await companion_session_add(talk['owner_key'],
+                                           talk['companion_key'],
+                                           question='он один написал')
+        async with mysql_get_db_async() as db:
+            await db.execute('UPDATE `companion_session`'
+                             ' SET `question_at` = %s, `answer_at` = NULL'
+                             ' WHERE `id` = %s',
+                             ('2026-10-17 10:00:00', int(made['id'])))
+            await db.connection.commit()
+        await self._age_the_rest(talk['owner_key'], made['id'])
+
+        rows = await _pairs(client, {'owner_id': talk['owner_id'],
+                                     'kind': 'chat'})
+
+        assert rows[0]['last_at'] is not None, 'время потерялось на NULL-половине'
+        assert self._same(rows[0]['last_at'], '2026-10-17 10:00:00')
+
+    async def test_our_lone_answer_dates_the_pair_too(self, client, talk):
+        """Инвайт и рассылка — обмены без вопроса; их время тоже считается."""
+        made = await companion_session_add(talk['owner_key'],
+                                           talk['companion_key'],
+                                           answer='мы написали первыми')
+        async with mysql_get_db_async() as db:
+            await db.execute('UPDATE `companion_session`'
+                             ' SET `answer_at` = %s WHERE `id` = %s',
+                             ('2026-10-18 11:00:00', int(made['id'])))
+            await db.connection.commit()
+        await self._age_the_rest(talk['owner_key'], made['id'])
+
+        rows = await _pairs(client, {'owner_id': talk['owner_id'],
+                                     'kind': 'chat'})
+
+        assert self._same(rows[0]['last_at'], '2026-10-18 11:00:00')
+
+    async def test_the_exchange_list_keeps_the_same_rule(self, client, talk):
+        """⚠ Лента в панели берёт **последние N** тем же выражением.
+
+        Разойдись они — обмен со свежим ответом и старым вопросом выпадал бы
+        из ленты, хотя в списке разговоров стоял бы первым.
+        """
+        made = await companion_session_add(talk['owner_key'],
+                                           talk['companion_key'],
+                                           question='старый вопрос',
+                                           answer='свежий ответ')
+        await self._move(made['id'], '2026-10-16 07:02:04',
+                         '2036-01-01 00:00:00')
+
+        rows = await _exchanges(client, {'owner_id': talk['owner_id'],
+                                         'companion_id': talk['companion_id'],
+                                         'kind': 'chat', 'limit': 1})
+
+        assert rows and rows[0]['answer'] == 'свежий ответ', (
+            'лента отобрала последние обмены по вопросу — свежий ответ выпал')
