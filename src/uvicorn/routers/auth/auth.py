@@ -1,8 +1,11 @@
+import ipaddress
+import time
 import uuid
 
 import bcrypt
 from fastapi import APIRouter, Request, HTTPException
 from event_.event_ import event_emit
+from logging_.logging_ import logger_exception
 from mysql_.mysql_ import mysql_get_db_async
 from dashboard.src.panel.panel_auth import panel_auth_user_check
 from dashboard.src.panel.panel_auth_throttle import (panel_auth_throttle_fail,
@@ -14,6 +17,39 @@ from i18n_.i18n_ import i18n_languages_parse
 from src.tool.setting.setting_ import setting_value_get
 
 router = APIRouter()
+
+# Потолок анонимных гостей с ОДНОГО адреса за окно. Публичный `/auth/guest`
+# заводит учётку без доказательств, и без потолка один клиент плодил их без
+# счёта — рост таблицы `user` и нагрузка на базу.
+#
+# ⚠ Числа щедрые: живой игрок получает гостя один раз (сессия идемпотентна,
+# cookie держит того же), новый нужен лишь тем, кто чистит cookie или ходит из
+# приватного окна. 20 за час с одного адреса — заведомо выше честного и заведомо
+# ниже флуда. Адрес нужен настоящий: прод поднят с `--proxy-headers`.
+#
+# ⚠⚠ Потолок **поадресный**, а не общий на окно: общий заперел бы вход 21-му
+# живому игроку из-за двадцати других — то есть сам стал бы отказом в
+# обслуживании. Ключ — адрес, и популярность игры в него не упирается.
+AUTH_GUEST_MAX_PER_IP = 20
+AUTH_GUEST_WINDOW_SECONDS = 3600
+
+# ⚠⚠ Хеш-заглушка гостя: НЕ bcrypt, а короткий маркер. Войти по паролю гостём
+# нельзя вовсе — `panel_auth_user_check` зовёт `bcrypt.checkpw`, та на не-bcrypt
+# строке бросает `ValueError`, перехваченный в `ok = False`. Прежде тут считался
+# настоящий bcrypt от случайного uuid — и это была вторая ось флуда: каждый
+# анонимный запрос жёг ~100 мс CPU на хеш, который никому не нужен (гость входит
+# сессией, не паролем).
+#
+# ⚠ `AUTH_DUMMY_HASH` сюда не годится: это bcrypt от `-`, и `checkpw('-', …)`
+# вернул бы True — вход по паролю `-` открылся бы всем гостям разом.
+AUTH_GUEST_PASSWORD_MARKER = 'guest-no-login'
+
+# Счётчик гостевых входов по адресу: `{ip: [метки времени]}`. Живёт в памяти
+# процесса — `/auth/guest` обслуживает только активный слот (один в любой
+# момент), и один процесс видит все запросы. Переживаемость при рестарте анти-
+# флуду не нужна: флуд — всплеск, его ловит живой процесс, а рестарт обнуляет
+# окно и флудеру же во вред.
+_auth_guest_hits: dict = {}
 
 
 @router.post("/auth/guest")
@@ -50,6 +86,22 @@ async def auth_guest_login(request: Request):
     ⚠⚠ Новой публичной PWA, которой понадобится что-то сверх этого, права надо
     выдавать **именованной ролью**, а не возвращать их гостю: гость — это
     «любой человек из интернета», и у него не должно быть ничего.
+
+    ## ⚠⚠ Против флуда: потолок по адресу и хеш-маркер вместо bcrypt
+
+    Точка публична и заводит учётку без доказательств — пентест 2026-11-02
+    показал флуд: один клиент плодил гостей без счёта. Две оси закрыты.
+
+    Рост таблицы — поадресный потолок (`_auth_guest_rate_ok`,
+    `AUTH_GUEST_MAX_PER_IP` за окно). Честного игрока он не трогает: сессия
+    идемпотентна, у него один гость навсегда; потолок бьёт только по тому, кто
+    заводит десятки с одного адреса.
+
+    CPU — пароль гостя теперь не bcrypt, а короткий маркер
+    (`AUTH_GUEST_PASSWORD_MARKER`). Прежде на каждый анонимный запрос считался
+    настоящий bcrypt от случайного uuid (~100 мс), который никому не нужен:
+    гость входит сессией, не паролем. Войти под гостя по паролю невозможно —
+    `checkpw` на не-bcrypt строке бросает `ValueError` и даёт отказ.
     """
     existing_user_id = request.session.get("user_id")
     if existing_user_id:
@@ -59,13 +111,32 @@ async def auth_guest_login(request: Request):
         if existing_user:
             return {"user": {"id": existing_user['id'], "username": existing_user['username']}}
 
+    # ⚠⚠ Потолок анонимов с адреса — против флуда. Идемпотентность выше закрывает
+    # честного игрока (у него cookie), сюда доходит только запрос БЕЗ сессии:
+    # первый вход, чистка cookie — или перебор без счёта.
+    #
+    # ⚠⚠ Лимитируем только ПУБЛИЧНЫЕ адреса. На проде внешний клиент идёт через
+    # Caddy, и `--proxy-headers` подставляет его реальный (публичный) адрес —
+    # флуд приходит отсюда. А приватные и петля (`192.168.*`, `172.16/12`,
+    # `10.*`, `127.*`) значат «из своей сети»: docker-мост, соседний контейнер,
+    # сама машина. Сюита ходит с адреса docker-gateway (один на все тесты) и без
+    # этого исключения упёрлась бы в потолок на двадцать первом госте — то есть
+    # лимит бил бы по тестам, не по флуду. Прод исключение не ослабляет: оттуда
+    # публичные адреса, и их он считает.
+    ip = panel_auth_throttle_ip(request)
+    if ip and _auth_ip_is_public(ip) and not _auth_guest_rate_ok(ip):
+        logger_exception(
+            f'[auth] гостевой флуд: больше {AUTH_GUEST_MAX_PER_IP} входов за '
+            f'{AUTH_GUEST_WINDOW_SECONDS}s с адреса {ip}')
+        raise HTTPException(status_code=429,
+                            detail='Слишком много гостевых входов, попробуйте позже')
+
     guest_username = f"guest_{uuid.uuid4().hex[:12]}"
-    random_password_hash = bcrypt.hashpw(uuid.uuid4().hex.encode(), bcrypt.gensalt()).decode()
 
     async with mysql_get_db_async() as db:
         await db.execute(
             "INSERT INTO `user` (username, email, password_hash, role_id, dynamic) VALUES (%s, %s, %s, NULL, 1)",
-            (guest_username, f"{guest_username}@guest.local", random_password_hash)
+            (guest_username, f"{guest_username}@guest.local", AUTH_GUEST_PASSWORD_MARKER)
         )
         new_user_id = db.lastrowid
         await db.connection.commit()
@@ -246,6 +317,53 @@ async def auth_update_me(request: Request, data: dict):
         updated_user = await db.fetchone()
 
     return {"message": "Профиль успешно обновлен.", "user": updated_user}
+
+
+def _auth_ip_is_public(ip: str) -> bool:
+    """Публичный ли адрес — только такие лимитируем. См. ⚠⚠ в хендлере.
+
+    Приватные (`10.*`, `172.16/12`, `192.168.*`), петля и прочее не-глобальное —
+    «из своей сети»: docker-мост, сама машина, сюита. Нераспознанный адрес
+    считаем НЕ публичным (`False`): лучше не лимитировать сомнительное, чем
+    запереть своих по ошибке разбора.
+    """
+    try:
+        return ipaddress.ip_address(ip).is_global
+    except ValueError:
+        return False
+
+
+def _auth_guest_rate_ok(ip: str) -> bool:
+    """Можно ли завести ещё одного гостя с этого адреса. `False` — упёрлись.
+
+    Скользящее окно в памяти процесса: храним метки времени гостевых входов
+    адреса, отбрасываем те, что старше окна, и считаем оставшиеся. Дошло до
+    потолка — отказ; иначе метим эту попытку и пускаем.
+
+    ⚠ Чистим протухшее при каждом вызове и у **всех** адресов, не только у
+    текущего: иначе словарь рос бы ключами разовых посетителей до конца жизни
+    процесса. Разовый флудер с тысяч адресов словарь всё же раздует — но против
+    такого (ботнет) поадресный лимит бессилен в принципе, это другой разговор.
+
+    ⚠ Решение и запись — в одном вызове под `/auth/guest`, который обслуживает
+    один процесс (активный слот): гонки здесь нет, блокировка не нужна.
+    """
+    now = time.monotonic()
+    floor = now - AUTH_GUEST_WINDOW_SECONDS
+
+    for addr in list(_auth_guest_hits.keys()):
+        kept = [t for t in _auth_guest_hits[addr] if t >= floor]
+        if kept:
+            _auth_guest_hits[addr] = kept
+        else:
+            del _auth_guest_hits[addr]
+
+    if len(_auth_guest_hits.get(ip, ())) >= AUTH_GUEST_MAX_PER_IP:
+        return False
+
+    _auth_guest_hits.setdefault(ip, []).append(now)
+
+    return True
 
 
 async def _user_languages_get(user_id: int) -> list[str]:
