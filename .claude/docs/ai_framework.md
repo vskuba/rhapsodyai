@@ -87,6 +87,42 @@
 Ограничители: `MAX_WORKFLOW_DEPTH = 5` (рекурсия `workflow_invoke`),
 `MAX_WORKFLOW_ITERATIONS = 300` (защита от цикла after-переходов).
 
+### ⚠⚠ Как ждать прогон: `framework_workflow_wait`, а не свой `wait_for`
+
+`framework_workflow_run` запускает прогон **отдельной задачей** и возвращает её.
+`asyncio.wait_for(future, …)` гасит только ожидание: задача остаётся жить,
+дожигает модель, закрывает журнал как `success` и дописывает всё, что успела, —
+включая реплику в `companion_session`, которую уже никто не отправит. Снаружи
+это читается как противоречие: у одного прогона на странице трассы и текст
+ответа, и `status: 504` в контракте.
+
+Цена измерена 03.11.2026 (прогон #190754, `dating_talk`, агент «Письма:
+ответы»): срок 240 секунд, прогон шёл 498. Зовущий ушёл на 240-й, ответ в 1802
+знака лёг в базу на 498-й и остался недоставленным; человеку ушёл ответ другого,
+посчитанного заново прогона. У соседа таких отказов восемь за двое суток.
+
+Поэтому ждать надо дверью менеджера — она заводит `future` и `loop` сама, а по
+сроку отменяет **задачу**:
+
+```python
+try:
+    result = await agent_manager.framework_workflow_wait(framework_model, timeout)
+except asyncio.TimeoutError:
+    ...  # объяснить отказ зовущему: 504 у HTTP, RuntimeError у конвейера
+```
+
+Движок отмену принимает штатно: закрывает журнал как `stopped` и отпускает
+`future` пустотой (`_framework_workflow_run`).
+
+⚠ **Переведены не все.** На двери чата (`chat/chat.py`) и в конвейере задач
+(`task_agent_*`, `task_log_summary` — там отмена написана руками) прогон
+отменяется; четырнадцать дверей ещё ждут своим `wait_for` и прогон не
+отменяют — `planning_phase`, `fact_verify`, `browser_author_run`,
+`telegram_app_common`, `telegram_app_plan`, `workflow_trace` (replay),
+`project_idea`, `project_prototype`, `project_task`, `design`, `design_block`,
+`design_prototype`, `blog`, `translate`. Трогаете любую из них — переводите на
+дверь заодно.
+
 ### Типы шагов
 
 | Тип шага | Что делает |

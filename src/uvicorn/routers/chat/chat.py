@@ -257,10 +257,6 @@ async def chat_ask_ai(
         raw_tools = await db.fetchall()
         tools = {t['name'].strip(): t['path'].strip() for t in raw_tools if t.get('name') and t.get('path')}
 
-    # Инициализируем механизм синхронизации потоков через Future
-    loop = asyncio.get_running_loop()
-    future = loop.create_future()
-
     # Вызываем создание модели и запуск бизнес-логики в менеджере
     agent_manager = request.app.state.agent_manager
     framework_model = await agent_manager.framework_model_create({
@@ -284,7 +280,6 @@ async def chat_ask_ai(
     # заведении, и контракт будет виден у идущего прогона — там, где он нужнее
     # всего. После ответа писать поздно: у зависшего ответа не будет никогда.
     framework_model.contract_request = json_request.model_dump()
-    agent_manager.framework_workflow_run(framework_model, future, loop)
 
     # Долгие workflow (например, тестовые прогоны в цикле) поднимают таймаут
     # переменной chat_timeout; обычные — 60 секунд
@@ -294,7 +289,12 @@ async def chat_ask_ai(
         timeout = 60.0
 
     try:
-        result_text = await asyncio.wait_for(future, timeout=timeout)
+        # ⚠⚠ Ждём **дверью менеджера**, а не своим `wait_for`: по сроку она
+        # отменяет сам прогон. Своё ожидание гасило только `future`, и
+        # брошенный workflow дожигал модель в пустоту — 03.11.2026 это стоило
+        # 498 секунд при сроке 240 (`framework_workflow_wait`).
+        result_text = await agent_manager.framework_workflow_wait(
+            framework_model, timeout)
 
         # ⚠⚠ Номер обмена разговора — тому, кто будет отправлять реплику.
         # `workflow_variables` движок мутирует на месте, поэтому после прогона в
@@ -340,8 +340,9 @@ async def chat_ask_ai(
 
         return response
     except asyncio.TimeoutError:
-        # Пытаемся отменить future, чтобы не висела в памяти
-        future.cancel()
+        # ⚠ Прогон уже отменён дверью менеджера; здесь остаётся объяснить отказ
+        # зовущему и журналу.
+        #
         # ⚠⚠ Отказ — тоже ответ контракта, и в журнале он нужнее удачного:
         # «почему зовущий не дождался» разбирают именно по нему. Без этой
         # записи у прогона, оборванного таймаутом, ответа нет вовсе — и

@@ -254,6 +254,57 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
         logger_info('Запуск воркфлоу агента в отдельной асинхронной задаче...')
         return asyncio.create_task(self._framework_workflow_run(framework_model, future, loop))
 
+    async def framework_workflow_wait(self, framework_model: AiFrameworkAgentModel,
+                                      timeout: float) -> str:
+        """Запускает workflow и ждёт ответа; не дождавшись — **отменяет прогон**.
+
+        Args:
+            framework_model: модель, собранная `framework_model_create`. Всё, что
+                зовущий дописывает на неё сам (контракт запроса), дописывается
+                **до** вызова: прогон читает модель с первой же секунды.
+            timeout: сколько ждать ответа, секунд.
+
+        Returns:
+            Ответ workflow строкой. Пустая строка — законный исход: агент
+            промолчал (`_framework_workflow_run`).
+
+        Raises:
+            asyncio.TimeoutError: ответа не дождались. Прогон к этому мигу уже
+                отменён; как объяснить отказ зовущему — дело вызывающего, у
+                каждой двери своё (504 у чата, `RuntimeError` у конвейера).
+
+        ## ⚠⚠ Зачем дверь, если это пять строк
+
+        Пять строк, но одна из них забывается всегда, и забывается молча.
+        `asyncio.wait_for` отменяет **ожидание**, а не прогон: задача идёт
+        дальше, дожигает модель и дописывает ответ, которого уже никто не
+        прочтёт. Снаружи это выглядит как успех — в журнале прогон `success` с
+        текстом, а зовущий получил отказ по сроку.
+
+        Цена измерена: 03.11.2026 ответ на письмо (`dating_talk`, агент «Письма:
+        ответы») шёл 498 секунд при сроке 240. Зовущий ушёл на 240-й, прогон
+        доработал до 498-й, реплика легла в `companion_session` и не была
+        доставлена никогда. Такой же след ищется по журналу запросов соседа: там
+        таких отказов восемь за двое суток.
+
+        ⚠ Поэтому `future` и `loop` эта дверь заводит **сама**: зовущему их
+        незачем держать, а держа — он и забывает вернуть задачу.
+        """
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        workflow_task = self.framework_workflow_run(framework_model, future, loop)
+
+        try:
+            return await asyncio.wait_for(future, timeout=timeout)
+        except asyncio.TimeoutError:
+            # ⚠ Отменяем **задачу**, а не только ожидание: `wait_for` погасил
+            # `future`, и без этой строки прогон остаётся жить. Отмену движок
+            # принимает штатно — закрывает журнал как `stopped` и отпускает
+            # `future` пустотой.
+            workflow_task.cancel()
+            future.cancel()
+            raise
+
     async def prompt_system_create(self, metadata: dict) -> str:
         entity_agent = metadata.get('entity_agent', {})
         prompt_system = self._prompt_system_render(metadata)
