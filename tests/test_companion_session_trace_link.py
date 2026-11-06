@@ -366,8 +366,10 @@ class TestCollationAligned:
         sql = found[0].read_text(encoding='utf-8').lower()
         assert 'agent_workflow_trace' in sql and 'collate utf8mb4_general_ci' in sql, \
             'миграция больше не ровняет колонку ключа к общей проекту коллации'
-        assert 'algorithm=inplace' in sql, \
-            'без INPLACE перестройка ляжет на горячий журнал копией с блокировкой'
+        assert 'information_schema' in sql, \
+            'миграция потеряла сторожа: на ровной установке она обязана пропускать ALTER'
+        assert 'algorithm=inplace' not in sql and 'algorithm=copy' in sql, \
+            'смена коллации не бывает INPLACE (1846) — ALTER встанет на старте слота'
 
     def test_query_compares_bare_columns(self):
         """Роутер сравнивает колонки голо — выравнивание живёт в схеме, не в `COLLATE`-костыле.
