@@ -349,3 +349,46 @@ class TestFrontRoad:
             'ключ не кладётся в `activeRunUuid` — автоклик первой карточки собьёт детали'
         assert 'e.message ||' in page, \
             'битая ссылка прячет «не найдено» за «ошибкой загрузки»'
+
+class TestCollationAligned:
+    """Сравнение ключа исполнимо в любой среде: коллация колонки выровнена.
+
+    ⚠⚠ На проде `agent_workflow_trace.request_uuid` достался таблице с
+    серверной коллацией (начальная схема завела её без `COLLATE`), и первое же
+    сравнение колонка-с-колонкой роняло вкладку «Чат» ошибкой 1267. На деве тот
+    же код молчит — разницу видно только сторожем, а не прогоном здесь.
+    """
+
+    def test_migration_levels_the_column(self):
+        """Миграция выравнивает колонку по проекту и не блокирует горячий журнал."""
+        found = sorted((ROOT / 'migrations').glob('*_trace_request_uuid_collation.sql'))
+        assert found, 'миграция выравнивания коллации ключа пропала из migrations/'
+        sql = found[0].read_text(encoding='utf-8').lower()
+        assert 'agent_workflow_trace' in sql and 'collate utf8mb4_general_ci' in sql, \
+            'миграция больше не ровняет колонку ключа к общей проекту коллации'
+        assert 'algorithm=inplace' in sql, \
+            'без INPLACE перестройка ляжет на горячий журнал копией с блокировкой'
+
+    def test_query_compares_bare_columns(self):
+        """Роутер сравнивает колонки голо — выравнивание живёт в схеме, не в `COLLATE`-костыле.
+
+        ⚠ Костыль в запросе спасал бы одну страницу, но с убитым индексом
+        трасс (сравнение не в коллации индекса — индекс не используется), а
+        следующая связка этих таблиц наступила бы на то же.
+        """
+        py = (ROOT / 'src/uvicorn/routers/session/session_companion.py').read_text(encoding='utf-8')
+        assert 'COLLATE' not in py.upper(), \
+            'COLLATE в роутере — значит выравнивание уехало из схемы в запрос'
+
+    async def test_comparison_runs_here(self):
+        """То самое сравнение, что роняло прод, на этой установке исполнима.
+
+        ⚠ Если среда разошлась (миграция не накатана), здесь прилетит 1267 —
+        тест укажет прямо на причину, а не «Внутренняя ошибка сервера».
+        """
+        async with mysql_get_db_async() as db:
+            await db.execute('SELECT COUNT(*) AS c FROM `companion_session` `s`'
+                             ' WHERE EXISTS (SELECT 1 FROM `agent_workflow_trace` `t`'
+                             '                WHERE `t`.`request_uuid` = `s`.`request_uuid`'
+                             '                  AND `t`.`depth` = 0)')
+            assert (await db.fetchone())['c'] >= 0
