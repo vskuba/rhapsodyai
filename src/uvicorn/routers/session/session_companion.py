@@ -361,21 +361,32 @@ async def session_companion_messages(
                    AS `answer_deleted_text`,
                s.`source_uid`,
                s.`request_uuid`,
-               -- Ссылка на прогон, сочинивший ответ: верхний (`depth = 0`)
-               -- прогон того вызова, чей ключ лежал в `request_uuid`.
+               -- Ссылка на прогон, сочинивший ответ. Два ключа, в порядке
+               -- точности: `message_id` — номер обмена, который прогон назвал
+               -- в своём ответе (прогон, записавший СТРОКУ; целое о целое,
+               -- сравнимо без коллации на любой установке), и `request_uuid`
+               -- — ключ вызова, который штампует движок (им же и строкам
+               -- «тишины», где обмена нет и колонка 1 пуста).
                --
                -- ⚠ Скалярный подзапрос, а не JOIN: ключ мог достаться и
                -- второму прогону (повтор с той же перепиской), а дублировать
                -- строку обмена нельзя — `LIMIT` ленты считает именно строки.
                --
-               -- ⚠ Без индекса по `request_uuid` это был бы скан журнала на
-               -- каждой отрисовке ленты — индекс завёл
-               -- `20261106211537_trace_request_bridge`.
-               (SELECT t.`run_uuid`
-                  FROM `agent_workflow_trace` t
-                 WHERE t.`request_uuid` = s.`request_uuid`
-                   AND t.`depth` = 0
-                 ORDER BY t.`id` LIMIT 1) AS `trace_run_uuid`,
+               -- ⚠ Оба пути без индексов были бы сканом журнала на каждой
+               -- отрисовке ленты: индексы завели `20261106211537`
+               -- (`request_uuid`) и `20261107004418` (`message_id`).
+               COALESCE(
+                   (SELECT t.`run_uuid`
+                      FROM `agent_workflow_trace` t
+                     WHERE t.`message_id` = s.`id`
+                       AND t.`depth` = 0
+                     ORDER BY t.`id` LIMIT 1),
+                   (SELECT t.`run_uuid`
+                      FROM `agent_workflow_trace` t
+                     WHERE t.`request_uuid` = s.`request_uuid`
+                       AND t.`depth` = 0
+                     ORDER BY t.`id` LIMIT 1)
+               ) AS `trace_run_uuid`,
                s.`created_at`
           FROM `companion_session` s
          WHERE s.`owner_id` = %s AND s.`companion_id` = %s

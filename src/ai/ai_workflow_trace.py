@@ -115,7 +115,8 @@ async def ai_workflow_trace_run_contract(run_id: int | None, request=None, respo
     выход **workflow**. Контракт — соседний вопрос: что пришло по HTTP и что
     по нему ответили. Из прогона он не восстанавливается: `variables` запроса
     растворены в снапшоте старта вперемешку с переменными агента и ноды, а
-    `message_id` с `intentions` не хранились нигде.
+    `intentions` не хранились нигде; `message_id` с этой осени дублируется в
+    свою колонку (см. ниже), но точная форма отданного живёт только здесь.
 
     Args:
         run_id: номер прогона (`model.trace_run_id`); `None` — писать некуда.
@@ -143,6 +144,22 @@ async def ai_workflow_trace_run_contract(run_id: int | None, request=None, respo
     if response is not None:
         fields.append('response_json = %s')
         params.append(_workflow_trace_json_dump(response))
+
+        # ⚠ Номер обмена — тем же ходом в свою колонку (`message_id`,
+        # `20261107004418`). Держать его только в JSON означало искать прогон
+        # по сообщению через `JSON_EXTRACT` без индекса, а целочисленный ключ
+        # к тому же сравниваем без коллации — у строкового ключа этой зимой
+        # был сбой 1267 (`20261106230614`).
+        #
+        # ⚠ Отказа в колонке нет: в `message_id` ложит только положительный
+        # номер. Ошибка, таймаут и «Стоп» не записали обмен — колонка ждёт
+        # своего значения, а не нулевого ответа; «тишина» (номер 0) — там же.
+        if isinstance(response, dict):
+            message_id = response.get('message_id')
+            if isinstance(message_id, int) and not isinstance(message_id, bool) \
+                    and message_id > 0:
+                fields.append('message_id = %s')
+                params.append(message_id)
 
     try:
         async with mysql_get_db_async() as db:

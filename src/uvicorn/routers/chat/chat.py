@@ -100,6 +100,13 @@ class ChatMessageAddRequest(BaseModel):
     # Ключ записи у источника. Не обязателен, но без него повтор вызова
     # положит вторую строку: защита стоит именно на нём.
     source_uid: str = ''
+    # Номер обмена, который записал прогон, сочинивший этот `answer`, — его
+    # `message_id` из его ответа. Нужен службам с отложенной доставкой:
+    # письмо по намерению сочиняет один прогон, а его поезд приносит строку
+    # часам позже. По этому номеру строка вяжется с сочинившим прогоном
+    # (колонка `agent_workflow_trace.message_id`); без номера — ссылки нет,
+    # выдумывать её по времени нечем.
+    composing_message_id: int = 0
     # Дошёл ли до человека наш `answer`. ⚠ Ложь по умолчанию: доставку
     # подтверждают, а не предполагают. Не дошло — кладём без отметки и метим
     # позже по `id`, когда дойдёт.
@@ -413,13 +420,22 @@ async def chat_message_add(
     """
     from src.tool.companion.companion_session import companion_session_put
 
-    return {"result": await companion_session_put(
+    result = await companion_session_put(
         json_request.owner_id, json_request.owner_name,
         json_request.companion_id, json_request.companion_name,
         question=json_request.question, answer=json_request.answer,
         kind=json_request.kind, source_uid=json_request.source_uid,
         delivered=bool(json_request.delivered),
-        said_at=json_request.said_at)}
+        said_at=json_request.said_at)
+
+    # Строку писал не движок — его штамп сюда не дотягивается. Ключ даёт
+    # сам зовущий: по нему строка и находит сочинивший прогон.
+    if json_request.composing_message_id and isinstance(result, dict) \
+            and result.get('id'):
+        await _composing_run_stamp(int(result['id']),
+                                   int(json_request.composing_message_id))
+
+    return {"result": result}
 
 
 @router.post("/chat/messages", include_in_schema=False)
@@ -603,3 +619,37 @@ async def _variables_allowed(workflow_id: int, sent: dict) -> None:
                 f"'input'` у этого workflow) либо уберите из запроса: "
                 f"переопределять внутренние переменные workflow снаружи нельзя.")
     )
+
+
+async def _composing_run_stamp(row_id: int, composing_message_id: int) -> None:
+    """Вязку «строка двери → сочинивший прогон» несёт зовущий, а нас — ключ.
+
+    Строки этой двери движок не касался: его штамп `request_uuid` живёт в
+    дороге прогона (`_workflow_steps_run`) и до сюда не дотягивается. Ключ
+    даёт сам зовущий: номер обмена, который сочинивший прогон назвал в своём
+    ответе (`message_id` контракта, он же колонка
+    `agent_workflow_trace.message_id`, `20261107004418`). Так вяжутся письма
+    по намерениям: сочиняет их прогон одного обмена, а привозит почтовик
+    другого сервиса часам позже — своего ключа у строки от этого нет.
+
+    ⚠ Кладём ключ только строкам с пустым `request_uuid`: строку движка
+    переставлять задним числом незачем, её ключ — правда прогона.
+
+    ⚠ Сбой вязки не роняет вызов: запись уже лежит, ссылка — вопрос
+    страницы, а не разговора. То же правило, что у моста движка.
+    """
+    try:
+        async with mysql_get_db_async() as db:
+            await db.execute(
+                'UPDATE `companion_session` s'
+                '   SET s.`request_uuid` = ('
+                '       SELECT t.`request_uuid` FROM `agent_workflow_trace` t'
+                '        WHERE t.`message_id` = %s AND t.`depth` = 0'
+                '        ORDER BY t.`id` LIMIT 1)'
+                " WHERE s.`id` = %s AND s.`request_uuid` = ''"
+                '   AND EXISTS (SELECT 1 FROM `agent_workflow_trace` t'
+                '                WHERE t.`message_id` = %s AND t.`depth` = 0)',
+                (composing_message_id, row_id, composing_message_id))
+            await db.connection.commit()
+    except Exception as e:
+        logger_info(f"⚠️ Не привязана строка двери к прогону: {e}")

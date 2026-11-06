@@ -8,16 +8,22 @@
 ставит чип «⚙ trace», а чип ведёт на `/admin/workflow_trace?run=<uuid>`.
 
 Мост завёлся не на пустом месте: колонка существовала, но не заполнялась
-никем. Поэтому у связки три конца, и каждый здесь под сторожем:
+никем. Поэтому у связки четыре конца, и каждый здесь под сторожем:
 
 1. **Запись.** Штамп ставит движок в момент, когда `companion_session_add`
    вернул номер строки, — единственное место, где прогон и строка известны
    одновременно (инструмент про прогон не знает, `request_uuid` в переменные
    workflow не попадает). Правку workflow для этого не заводили намеренно.
-2. **Чтение.** Скалярный подзапрос роутера: `depth = 0` (прогон под-сюжета
-   ответ не сочинял) и `ORDER BY id LIMIT 1` при повторном прогоне с тем же
-   ключом — иначе лента дублировала бы обмен.
-3. **Дорога наружу.** Чип рисуют только у обмена с ответом (или с убранным
+2. **Чтение.** Скалярные подзапросы роутера, в порядке точности: номер
+   обмена, названный прогоном в ответе (`trace.message_id = s.id` — прогон,
+   записавший строку), и ключ вызова (`trace.request_uuid = s.request_uuid`);
+   оба только `depth = 0` (прогон под-сюжета ответ не сочинял) и `ORDER BY
+   id LIMIT 1` при повторе — иначе лента дублировала бы обмен.
+3. **Дверь.** Строки, которые движок не касался (письма по намерениям их
+   почтовика), получают ключ от зовущего: `composing_message_id` из
+   `/chat/message/add` вяжет строку с прогоном, назвавшим тот номер в
+   своём ответе.
+4. **Дорога наружу.** Чип рисуют только у обмена с ответом (или с убранным
    ответом): «тишина» тоже штампует строку, но ссылаться в ней не на что.
 
 ⚠ Тесты чистые там, где можно: движковый прогон стоит вызова модели, общей
@@ -34,9 +40,12 @@ import pytest
 
 from mysql_.mysql_ import mysql_get_db_async, mysql_pool_close
 
+from src.ai.ai_workflow_trace import ai_workflow_trace_run_contract
 from src.mysql_.repository.companion_session_repository import \
     CompanionSessionRepository
 from src.tool.companion.companion_session import companion_session_add
+from src.uvicorn.routers.chat.chat import (ChatMessageAddRequest,
+                                           chat_message_add)
 from src.uvicorn.routers.session.session_companion import \
     (SessionCompanionMessagesRequest, session_companion_messages)
 
@@ -46,13 +55,6 @@ ROOT = Path(__file__).resolve().parent.parent
 ENGINE_FILE = ROOT / 'src/ai/framework/agent/ai_framework_manager.py'
 CHAT_JS = ROOT / 'data/uvicorn/public/js/session/chat.js'
 TRACE_PAGE = ROOT / 'data/uvicorn/template/admin/workflow_trace.html'
-
-
-def _migration_file() -> Path:
-    """Файл моста ищется по хвосту имени: метка — метка времени."""
-    found = sorted((ROOT / 'migrations').glob('*_trace_request_bridge.sql'))
-    assert found, 'миграция моста «обмен → прогон» пропала из migrations/'
-    return found[0]
 
 
 # ── Сюда пишет только движок ──────────────────────────────────────────────────
@@ -167,13 +169,16 @@ async def _ids(keys) -> tuple[int, int]:
 
 
 async def _add_trace(run_uuid: str, request_uuid: str, depth: int = 0,
-                     response_json: str | None = None):
+                     response_json: str | None = None,
+                     message_id: int | None = None):
     """Строка журнала с ключом вызова; в тестовых прогонах всё остальное — лишнее."""
     async with mysql_get_db_async() as db:
         await db.execute('INSERT INTO `agent_workflow_trace`'
-                         ' (`run_uuid`, `depth`, `request_uuid`, `status`, `response_json`)'
-                         ' VALUES (%s, %s, %s, %s, %s)',
-                         (run_uuid, depth, request_uuid, 'success', response_json))
+                         ' (`run_uuid`, `depth`, `request_uuid`, `status`,'
+                         ' `response_json`, `message_id`)'
+                         ' VALUES (%s, %s, %s, %s, %s, %s)',
+                         (run_uuid, depth, request_uuid, 'success',
+                          response_json, message_id))
 
 
 async def _link_of(keys, exchange_id: int):
@@ -252,7 +257,208 @@ class TestLinkRead:
         assert await _link_of(keys, exchange_id) == first
 
 
+# ── Колонка `message_id`: прогон находится по сообщению ───────────────────────
+
+def _message_id_migration() -> Path:
+    """Файл колонки ищется по хвосту имени: метка — метка времени."""
+    found = sorted((ROOT / 'migrations').glob('*_trace_message_id.sql'))
+    assert found, 'миграция колонки `message_id` пропала из migrations/'
+    return found[0]
+
+
+class TestMessageIdColumn:
+    """`agent_workflow_trace.message_id` — номер обмена, который прогон записал.
+
+    Числа в ответе у строки нет — оно живёт только в журнале. Вынесенное из
+    контракта в свою колонку, оно ищет прогон индексным `WHERE` и сравнивается
+    без коллации: на строковом ключе этой зимой случился сбой 1267
+    (`20261106230614`).
+    """
+
+    def test_migration_guards_ddl_and_locks(self):
+        """Колонка — INSTANT, индекс — INPLACE, оба под guards: журнал на проде горячий."""
+        sql = _message_id_migration().read_text(encoding='utf-8').lower()
+        assert sql.count('information_schema') >= 2, \
+            'DDL без guard-ов: повторный накат рвётся 1060/1061'
+        assert 'algorithm=instant' in sql, \
+            'колонка не INSTANT: ларёк встанет на всё перестроение таблицы'
+        assert 'algorithm=inplace' in sql, \
+            'индекс не INPLACE: COPY остановит записи журнала на весь перестрой'
+
+    def test_backfill_is_idempotent_and_contract_guarded(self):
+        """Задним числом — только пустые, только из честного JSON, только положительные."""
+        text = _message_id_migration().read_text(encoding='utf-8')
+        assert '`message_id` IS NULL' in text, \
+            'без guard-а на NULL повторный накат переставит живые штампы'
+        assert 'CASE WHEN JSON_VALID' in text, \
+            'голый JSON_EXTRACT по TEXT: битый ответ рвёт миграцию ошибкой'
+
+    async def test_contract_writes_the_column(self, pair):
+        """Ответ с номером кладёт его в колонку — тем же ходом, что и JSON."""
+        keys, run_uuids = pair
+        run_uuid = str(uuidlib.uuid4())
+        run_uuids.append(run_uuid)
+        await _add_trace(run_uuid, str(uuidlib.uuid4()))
+        async with mysql_get_db_async() as db:
+            await db.execute('SELECT `id` FROM `agent_workflow_trace`'
+                             ' WHERE `run_uuid` = %s', (run_uuid,))
+            run_id = (await db.fetchone())['id']
+
+        await ai_workflow_trace_run_contract(
+            run_id, response={'result': 'hi', 'message_id': 4321})
+
+        async with mysql_get_db_async() as db:
+            await db.execute('SELECT `message_id` FROM `agent_workflow_trace`'
+                             ' WHERE `id` = %s', (run_id,))
+            assert (await db.fetchone())['message_id'] == 4321
+
+    async def test_refusal_and_silence_leave_the_column_null(self, pair):
+        """Ошибка, таймаут и «тишина» (номер 0) ничего не записали — колонка ждёт.
+
+        ⚠ Правило Хозяина «кончился ошибкой — message id null»: именно битые
+        прогоны разбирают по трассе, и NULL здесь значит «не записал», а не
+        «пробегал мимо».
+        """
+        keys, run_uuids = pair
+        run_uuid = str(uuidlib.uuid4())
+        run_uuids.append(run_uuid)
+        await _add_trace(run_uuid, str(uuidlib.uuid4()))
+        async with mysql_get_db_async() as db:
+            await db.execute('SELECT `id` FROM `agent_workflow_trace`'
+                             ' WHERE `run_uuid` = %s', (run_uuid,))
+            run_id = (await db.fetchone())['id']
+
+        for refusal in ({'status': 504, 'detail': 'timeout'}, {'message_id': 0}):
+            await ai_workflow_trace_run_contract(run_id, response=refusal)
+
+        async with mysql_get_db_async() as db:
+            await db.execute('SELECT `message_id` FROM `agent_workflow_trace`'
+                             ' WHERE `id` = %s', (run_id,))
+            assert (await db.fetchone())['message_id'] is None
+
+
+class TestLinkByMessageId:
+    """Лента зовёт сочинивший прогон по номеру сообщения — точнее ключа нет."""
+
+    async def test_row_of_a_run_without_key_links_by_number(self, pair):
+        """Даже если штамп движка не дошёл, номер из ответа вяжет обмен.
+
+        Второй путь (`request_uuid`) здесь закрыт намеренно: ключ в строке
+        журнала пуст — номер остаётся единственным зацепом.
+        """
+        keys, run_uuids = pair
+        exchange_id = await _exchange(keys)
+        run_uuid = str(uuidlib.uuid4())
+        await _add_trace(run_uuid, None, message_id=exchange_id)
+        run_uuids.append(run_uuid)
+
+        assert await _link_of(keys, exchange_id) == run_uuid
+
+    async def test_number_of_a_child_run_never_wins(self, pair):
+        """Прогон под-сюжета ответ не сочинял — его номер ссылкой не считается."""
+        keys, run_uuids = pair
+        exchange_id = await _exchange(keys)
+        child = str(uuidlib.uuid4())
+        await _add_trace(child, None, depth=1, message_id=exchange_id)
+        run_uuids.append(child)
+
+        assert not await _link_of(keys, exchange_id)
+
+    async def test_row_number_beats_the_call_key(self, pair):
+        """Два ключа на два прогона: выигрывает назвавший строку, а не прошедший по ключу.
+
+        ⚠ Повтор с тем же ключом вызова — второй прогон того же обмена, а
+        номер строки называет один.
+        """
+        keys, run_uuids = pair
+        exchange_id = await _exchange(keys)
+        request_uuid = str(uuidlib.uuid4())
+        await CompanionSessionRepository().update(exchange_id,
+                                                  {'request_uuid': request_uuid})
+        by_key, by_number = str(uuidlib.uuid4()), str(uuidlib.uuid4())
+        await _add_trace(by_key, request_uuid)                  # раньше по id
+        await _add_trace(by_number, str(uuidlib.uuid4()), message_id=exchange_id)
+        run_uuids += [by_key, by_number]
+
+        assert await _link_of(keys, exchange_id) == by_number
+
+
+# ── Дверь: строки, которые движок не касался ──────────────────────────────────
+
+async def _door_says(keys, answer: str, source_uid: str,
+                     composing_message_id: int = 0) -> int:
+    """Строка как её привозит дверь: ключ пары разложен на части и сшиты по её же правилу."""
+    owner, _, owner_name = keys[0].partition('_')
+    him, _, him_name = keys[1].partition('_')
+    made = await chat_message_add(json_request=ChatMessageAddRequest(
+        owner_id=owner, owner_name=owner_name,
+        companion_id=him, companion_name=him_name,
+        answer=answer, source_uid=source_uid,
+        composing_message_id=composing_message_id))
+    return int(made['result']['id'])
+
+
+class TestDoorComposingKey:
+    """`/chat/message/add` вяжет привезённую строку по ключу зовущего."""
+
+    async def test_door_links_letter_with_the_composing_run(self, pair):
+        """Почтовик привозит письмо с номером сочинившего прогона — письмо со ссылкой.
+
+        Сюжет письма по намерению: прогон ответил в обмен N и там же положил
+        письмо в намерение; через часы сервис приносит само письмо — дверь
+        получает `composing_message_id = N`.
+        """
+        keys, run_uuids = pair
+        composing_id = await _exchange(keys)      # обмен, в котором прогон звали
+        request_uuid, run_uuid = str(uuidlib.uuid4()), str(uuidlib.uuid4())
+        await _add_trace(run_uuid, request_uuid, message_id=composing_id)
+        run_uuids.append(run_uuid)
+
+        letter_id = await _door_says(
+            keys, 'текст письма',
+            f'intention_mail:{uuidlib.uuid4().hex[:6]}', composing_id)
+
+        assert await _link_of(keys, letter_id) == run_uuid
+
+    async def test_door_without_the_key_stays_unlinked(self, pair):
+        """Вызов без номера-link не выдумывает: время и текст — не ключи."""
+        keys, _ = pair
+        letter_id = await _door_says(
+            keys, 'текст оператора', f'panel:{uuidlib.uuid4().hex[:6]}')
+
+        assert not await _link_of(keys, letter_id)
+
+    async def test_repeat_does_not_restamp_the_letter(self, pair):
+        """Повтор двери с другим номером не переставляет связку: ключ ставится один раз.
+
+        ⚠ Повтор по тому же `source_uid` — обычная почтовая reality: доставка
+        не подтвердилась, сервис принёс письмо снова.
+        """
+        keys, run_uuids = pair
+        first_id, second_id = await _exchange(keys), await _exchange(keys)
+        run_a, key_a = str(uuidlib.uuid4()), str(uuidlib.uuid4())
+        run_b, key_b = str(uuidlib.uuid4()), str(uuidlib.uuid4())
+        await _add_trace(run_a, key_a, message_id=first_id)
+        await _add_trace(run_b, key_b, message_id=second_id)
+        run_uuids += [run_a, run_b]
+        source = f'intention_mail:{uuidlib.uuid4().hex[:6]}'
+
+        letter_id = await _door_says(keys, 'письмо', source, first_id)
+        assert await _link_of(keys, letter_id) == run_a
+
+        again = await _door_says(keys, 'письмо', source, second_id)
+        assert again == letter_id, 'повтор положил вторую строку'
+        assert await _link_of(keys, letter_id) == run_a
+
+
 # ── Миграция: донастройка старых строк ───────────────────────────────────────
+
+def _migration_file() -> Path:
+    """Файл моста ищется по хвосту имени: метка — метка времени."""
+    found = sorted((ROOT / 'migrations').glob('*_trace_request_bridge.sql'))
+    assert found, 'миграция моста «обмен → прогон» пропала из migrations/'
+    return found[0]
+
 
 def _backfill_statement() -> str:
     """`UPDATE` из файла миграции — тот же текст, а не копия."""
