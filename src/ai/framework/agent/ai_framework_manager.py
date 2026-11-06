@@ -26,6 +26,7 @@ from src.ai.framework.agent.ai_framework import AiFrameworkAgent
 from ai.ai_think import ai_think_strip
 from ai.framework.ai_framework_manager import AbstractAiFrameworkManager
 from src.mysql_.repository.agent_specialization_repository import AgentSpecializationRepository
+from src.mysql_.repository.companion_session_repository import CompanionSessionRepository
 
 
 # Универсальная отмена многошагового мастера (continue_workflow): слова-команды,
@@ -92,7 +93,9 @@ AI_FRAMEWORK_TRANSITION_GONE = 'переход на несуществующий
 AI_FRAMEWORK_STEP_RETURNS = ('return_response_text', 'return_response_llm')
 
 # Инструмент записи обмена разговора: его номер движок кладёт в модель, и оттуда
-# его забирает ручка `/chat/ask` (`model.companion_session_message_id`).
+# его забирает ручка `/chat/ask` (`model.companion_session_message_id`); тем же
+# именем движок держит и вторую связку — штамп `request_uuid` прогона на
+# записанном обмене, мост вкладки «Чат» в журнал выполнения (см. `_workflow_steps_run`).
 #
 # ⚠⚠ Имя здесь **дублирует** `COMPANION_SESSION_TOOL` из
 # `src/tool/companion/companion_session.py`, и это осознанный размен. Движок
@@ -1276,6 +1279,27 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                             model.companion_session_message_id = int(raw_result.get('id') or 0)
                         except (TypeError, ValueError):
                             model.companion_session_message_id = 0
+
+                        # ⚠⚠ Мост в журнал выполнения: строке обмена, которую
+                        # только что записали, ставится `request_uuid` прогона.
+                        # Колонка была заведена давно («мост в `agent_session`»),
+                        # но не заполнялась никем, и вкладка «Чат» не могла
+                        # ответить «какой прогон сочинил этот ответ». Штамп
+                        # стоит здесь, а не в инструменте: инструмент про прогон
+                        # не знает — `request_uuid` служебная и в переменные
+                        # workflow не попадает (см. `_workflow_variable_names`).
+                        # Ставится и строкам без ответа («тишина»): ключ у
+                        # строки от строки не зависит, а читатели решают сами.
+                        if model.companion_session_message_id and model.request_uuid:
+                            try:
+                                await CompanionSessionRepository().update(
+                                    model.companion_session_message_id,
+                                    {'request_uuid': model.request_uuid})
+                            except Exception as e:
+                                # ⚠ Сбой моста не роняет прогон: он отвечает на
+                                # вопрос страницы, разговор продолжается и без
+                                # ссылки.
+                                logger_info(f"⚠️ Не проставлен request_uuid обмена: {e}")
 
                     # ⚠⚠ Намерение — в модель, тем же приёмом и по тем же
                     # причинам, что номер обмена выше. Его ждёт ручка

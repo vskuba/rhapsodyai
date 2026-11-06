@@ -499,12 +499,23 @@ function exchangeHtml(pair, row) {
     // ⚠ Канал виден, хотя в открытом разговоре он один и тот же у всех строк:
     // разговор опознаётся тройкой, и чат с почтой одной пары лежат врозь. Чип
     // отвечает на «а это сейчас какая из двух переписок» не глядя в сайдбар.
+    //
+    // ⚠ Ссылка на прогон — здесь же, в шапке, а не в хвосте нашей строки: она
+    // отвечает на «каким прогоном это сочинено» про обмен целиком и не обязана
+    // прятаться за текстом ответа. Движок ставит ключ вызова и строкам без
+    // ответа («тишина»), но ссылки там нет: вести некуда — ответ не сочиняли.
+    // У убранного ответа ссылка остаётся: прогон был и в журнале он есть.
     return `
         <div class="chat-exchange">
             <div class="chips-container">
                 <span class="chip chip-id" title="строка в базе с ${fmtTz(row.created_at)}">#${htmlEscape(row.id)}</span>
                 <span class="chip chip-channel chip-channel-${htmlEscape(row.kind)}"
                       title="канал разговора">${row.kind === 'mail' ? '✉' : '💬'} ${htmlEscape(row.kind)}</span>
+                ${row.trace_run_uuid && (answered || row.answer_deleted_at)
+                    ? `<a class="chip chip-trace" target="_blank" rel="noopener"`
+                      + ` href="/admin/workflow_trace?run=${htmlEscape(row.trace_run_uuid)}"`
+                      + ` title="прогон workflow, который сочинил этот ответ">⚙ trace</a>`
+                    : ''}
             </div>
             ${String(row.question || '') === '' ? '' : halfHtml({
                 side: 'his',

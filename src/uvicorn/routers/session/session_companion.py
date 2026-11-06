@@ -15,12 +15,15 @@ LLM: строка на промпт, на ответ, на вызов инстр
 
 У `agent_session` есть `agent_id`, и соседняя ручка прячет от не-админа чужих
 агентов через `agent_role` (session.md §2). У `companion_session` агента нет
-вовсе: столбец `request_uuid` заведён «мостом в `agent_session`», но его никто
-не заполняет — на установке он пуст во всех строках. Значит отбор по роли не
-то чтобы не сделан, а **не из чего сделать**: право `session:view` открывает
-все разговоры всем, кто его имеет (не-админские роли получают его набором по
-умолчанию, `auth_role.py`). Появится заполненный `request_uuid` — отбор можно
-будет построить по нему; до тех пор это известная дырка, а не недосмотр.
+вовсе: столбец `request_uuid` — «мост в `agent_session`» — с осени 2026
+заполняет движок (штамп прогона в `ai_framework_manager`) и донастроила
+миграция `20261106211537_trace_request_bridge`, но мост ведёт в **прогон**, а
+не в агента прямо: отбор по роли остался делом не близким. Строки, привезённые
+дверью `/chat/message/add` (`companion_session_put`), и ответы до контракта
+прогона (13.10.2026) остаются без ключа вовсе. Значит право `session:view`
+по-прежнему открывает все разговоры всем, кто его имеет (не-админские роли
+получают его набором по умолчанию, `auth_role.py`): это известная дырка, а не
+недосмотр.
 
 ## ⚠⚠ Удаляется НАШ ОТВЕТ, а не строка и не разговор
 
@@ -280,9 +283,10 @@ async def session_companion_messages(
 
     Returns:
         dict: `result` — строки `companion_session`: обе половины с их временем,
-        `delivered_at`, `source_uid`, `request_uuid`, `id`. У убранного ответа
-        вместо текста приходят `answer_deleted_at` и `answer_deleted_text`, а
-        `delivered_at` остаётся настоящим.
+        `delivered_at`, `source_uid`, `request_uuid`, `id`, плюс `trace_run_uuid`
+        — запуск журнала, сочинивший ответ (пусто, если ключа вызова у строки
+        нет). У убранного ответа вместо текста приходят `answer_deleted_at` и
+        `answer_deleted_text`, а `delivered_at` остаётся настоящим.
 
     ## ⚠⚠ Убранный ответ приходит ОТДЕЛЬНЫМ полем, а не в `answer`
 
@@ -357,6 +361,21 @@ async def session_companion_messages(
                    AS `answer_deleted_text`,
                s.`source_uid`,
                s.`request_uuid`,
+               -- Ссылка на прогон, сочинивший ответ: верхний (`depth = 0`)
+               -- прогон того вызова, чей ключ лежал в `request_uuid`.
+               --
+               -- ⚠ Скалярный подзапрос, а не JOIN: ключ мог достаться и
+               -- второму прогону (повтор с той же перепиской), а дублировать
+               -- строку обмена нельзя — `LIMIT` ленты считает именно строки.
+               --
+               -- ⚠ Без индекса по `request_uuid` это был бы скан журнала на
+               -- каждой отрисовке ленты — индекс завёл
+               -- `20261106211537_trace_request_bridge`.
+               (SELECT t.`run_uuid`
+                  FROM `agent_workflow_trace` t
+                 WHERE t.`request_uuid` = s.`request_uuid`
+                   AND t.`depth` = 0
+                 ORDER BY t.`id` LIMIT 1) AS `trace_run_uuid`,
                s.`created_at`
           FROM `companion_session` s
          WHERE s.`owner_id` = %s AND s.`companion_id` = %s

@@ -31,7 +31,8 @@ parent_step_id INT NULL          -- id шага workflow_invoke, породив�
 depth INT DEFAULT 0              -- 0 = верхний уровень
 workflow_id INT NULL FK          -- ON DELETE SET NULL
 agent_id, user_id INT NULL
-session_uuid, request_uuid CHAR(36)
+session_uuid, request_uuid CHAR(36)   -- request_uuid — ключ одного вызова движка:
+                                       -- он же у сообщений agent_session и у строк обмена
 prompt_user LONGTEXT
 variables_start LONGTEXT         -- полный JSON-снапшот переменных на старте
 result LONGTEXT NULL
@@ -47,7 +48,8 @@ task_id    INT GENERATED VIRTUAL  -- номер задачи; у подзада�
 ```
 
 Индексы: `run_uuid` (unique), `(workflow_id, started_at)`, `session_uuid`, `parent_run_id`,
-`(status, id)`, `(depth, status, id)`, `(finished_at)`, `(subtask_id, task_id)`.
+`(status, id)`, `(depth, status, id)`, `(finished_at)`, `(subtask_id, task_id)`,
+`request_uuid` (`20261106211537` — им прогон находят из вкладки «Чат», см. `session.md`, § «⚙ trace»).
 
 ### ⚠ Номер задачи — колонка, а не поиск по тексту
 
@@ -265,6 +267,24 @@ WORKFLOW_TRACE_STOP   = "workflow_trace:stop"
 ⚠ Ширина заголовка фильтра задана в `px` (`flex: 0 0 72px`) по самому длинному из трёх —
 `WORKFLOW`. Меньше — и min-content раздвигает именно его строку: поля перестают стоять в
 колонку, хотя правило у всех трёх одно.
+
+### Ссылка из вкладки «Чат» (`?run=`)
+
+Страница принимает прогон адресом: `/admin/workflow_trace?run=<run_uuid>`
+открывает его детали, никто тыкать в список не должен. Ссылку кладёт чип
+«⚙ trace» во вкладке «Чат» — дорога туда описана в `session.md`, § «⚙ trace».
+
+⚠⚠ Ключ кладётся в `state.activeRunUuid` **до** `loadRuns()`: без этого
+`renderRuns` автоклика первую карточку ленты, и детали открытого прогона
+записало бы поверх чужими. У автоклика свой смысл — заход без ссылки должен
+открывать самый свежий прогон, — поэтому он смотрит на `activeRunUuid`, а не
+на наличие ссылки.
+
+⚠ Битый или удалённый `run` — «Запуск не найден» в панели деталей, не
+«Ошибка загрузки»: ручка детали бросает `HTTPException` с этим текстом, и
+`catch` показывает `e.message`. Подстановка же (`state.activeRunUuid` на
+несуществующий прогон) ничем не опасна: карточка в списке просто не
+подсвечена.
 
 ### Нода сужает два других селекта
 
