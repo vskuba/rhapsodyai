@@ -53,7 +53,9 @@ task_id    INT GENERATED VIRTUAL  -- номер задачи; у подзада�
 Индексы: `run_uuid` (unique), `(workflow_id, started_at)`, `session_uuid`, `parent_run_id`,
 `(status, id)`, `(depth, status, id)`, `(finished_at)`, `(subtask_id, task_id)`,
 `request_uuid` (`20261106211537`), `message_id` (`20261107004418`) — двумя прогон
-находят из вкладки «Чат», см. `session.md`, § «⚙ trace»; `message_id` к тому же
+находят при записи и донастройке строки обмена: по ним writers и `20261107020008`
+кладут адрес прогона в `companion_session.workflow_trace_uuid`, откуда его
+читает вкладка «Чат» (см. `session.md`, § «⚙ trace»); `message_id` к тому же
 сравнивается без коллации — у строкового ключа этот сбой уже был.
 
 ⚠⚠ Колонка `request_uuid` досталась таблице **с серверной коллацией**:

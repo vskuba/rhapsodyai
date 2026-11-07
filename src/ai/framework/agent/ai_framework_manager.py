@@ -447,6 +447,13 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             # он знает только, куда писать.
             model.trace_run_id = trace_run_id
 
+            # ⚠ И адрес прогона — на модель: им штампуются строки обмена ниже
+            # (`workflow_trace_uuid`). При сбое журнала адрес пуст: ссылаться
+            # тогда не на что, и честнее не вести никуда, чем в несуществующий
+            # прогон. Дочерние прогоны поле не перекладывают — адрес остаётся
+            # верхним (см. поле в `ai_framework_model`).
+            model.trace_run_uuid = run_uuid if trace_run_id else ''
+
             # Регистрируем задачу запуска: кнопка «Стоп» отменяет её по run_uuid
             workflow_runs_active[run_uuid] = asyncio.current_task()
 
@@ -1290,11 +1297,17 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                         # workflow не попадает (см. `_workflow_variable_names`).
                         # Ставится и строкам без ответа («тишина»): ключ у
                         # строки от строки не зависит, а читатели решают сами.
+                        #
+                        # ⚠ Тем же ходом строка получает АДРЕС прогона
+                        # (`workflow_trace_uuid`, `20261107020008`): у текста
+                        # сочинивший прогон ровно один, поэтому ссылка
+                        # читается из строки, а не ищется по журналу.
                         if model.companion_session_message_id and model.request_uuid:
                             try:
                                 await CompanionSessionRepository().update(
                                     model.companion_session_message_id,
-                                    {'request_uuid': model.request_uuid})
+                                    {'request_uuid': model.request_uuid,
+                                     'workflow_trace_uuid': model.trace_run_uuid})
                             except Exception as e:
                                 # ⚠ Сбой моста не роняет прогон: он отвечает на
                                 # вопрос страницы, разговор продолжается и без

@@ -632,6 +632,10 @@ async def _composing_run_stamp(row_id: int, composing_message_id: int) -> None:
     по намерениям: сочиняет их прогон одного обмена, а привозит почтовик
     другого сервиса часам позже — своего ключа у строки от этого нет.
 
+    Тем же `UPDATE`-ом строка получает и адрес прогона
+    (`workflow_trace_uuid`, `20261107020008`): лента читает его из строки,
+    не ища по журналу.
+
     ⚠ Кладём ключ только строкам с пустым `request_uuid`: строку движка
     переставлять задним числом незачем, её ключ — правда прогона.
 
@@ -645,11 +649,16 @@ async def _composing_run_stamp(row_id: int, composing_message_id: int) -> None:
                 '   SET s.`request_uuid` = ('
                 '       SELECT t.`request_uuid` FROM `agent_workflow_trace` t'
                 '        WHERE t.`message_id` = %s AND t.`depth` = 0'
+                '        ORDER BY t.`id` LIMIT 1),'
+                '       s.`workflow_trace_uuid` = ('
+                '       SELECT t.`run_uuid` FROM `agent_workflow_trace` t'
+                '        WHERE t.`message_id` = %s AND t.`depth` = 0'
                 '        ORDER BY t.`id` LIMIT 1)'
                 " WHERE s.`id` = %s AND s.`request_uuid` = ''"
                 '   AND EXISTS (SELECT 1 FROM `agent_workflow_trace` t'
                 '                WHERE t.`message_id` = %s AND t.`depth` = 0)',
-                (composing_message_id, row_id, composing_message_id))
+                (composing_message_id, composing_message_id, row_id,
+                 composing_message_id))
             await db.connection.commit()
     except Exception as e:
         logger_info(f"⚠️ Не привязана строка двери к прогону: {e}")
