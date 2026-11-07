@@ -221,25 +221,58 @@ async def ai_workflow_trace_runs_stale_close() -> int:
 
     Признак брошенного — молчание: ни одного шага дольше `TRACE_RUN_STALE_SECONDS`
     (у прогона без шагов считаем от старта). Работающий прогон свои шаги пишет.
+
+    ## ⚠⚠ Почему тут предпроверка, а не сразу `UPDATE`
+
+    Такт конвейера (`task_pipeline`) идёт из cron **раз в минуту**, и звал эту
+    функцию каждый такт. Порог молчания — 9000 с, то есть проверялось раз в
+    минуту то, что меняется раз в два с половиной часа.
+
+    Цена измерена на проде по `journal_mysql`: 55 159 прогонов, **12.2 часа**
+    суммарного времени базы, самый долгий прогон — **623 с**. Прежний запрос
+    группировал `agent_workflow_trace_step` целиком (998 МБ, 223 тыс. строк)
+    ради максимума по каждому `run_id`, а потом `UPDATE` под `REPEATABLE-READ`
+    брал next-key-замок на каждую просмотренную строку трасс — ту самую
+    таблицу, в которую в этот момент пишутся живые прогоны. Отсюда 18-минутные
+    вставки шагов и «сайт висит»; это та же беда, от которой предостерегает
+    `ai_workflow_trace_trim` ниже, и наступили на неё второй раз.
+
+    Поэтому: сперва индексный `SELECT ... LIMIT 1`, и только если брошенное
+    действительно нашлось — тяжёлая правка. Условие предпроверки — следствие
+    условия правки (`GREATEST(started_at, …) < X` влечёт `started_at < X`),
+    так что пропустить брошенный прогон она не может.
     """
     try:
         async with mysql_get_db_async() as db:
+            # Индекс `idx_agent_workflow_trace_status_started` — ради этой строки.
+            await db.execute(
+                """
+                SELECT 1 FROM agent_workflow_trace
+                 WHERE status = 'running'
+                   AND started_at < NOW(3) - INTERVAL %s SECOND
+                 LIMIT 1
+                """,
+                (TRACE_RUN_STALE_SECONDS,)
+            )
+            if not await db.fetchone():
+                return 0
+
+            # Максимум по шагам — подзапросом на найденный прогон, а не группировкой
+            # всей таблицы шагов: прогонов в 'running' единицы, шагов — сотни тысяч.
             await db.execute(
                 """
                 UPDATE agent_workflow_trace r
-                LEFT JOIN (
-                    SELECT run_id, MAX(created_at) AS last_step_at
-                      FROM agent_workflow_trace_step
-                     GROUP BY run_id
-                ) s ON s.run_id = r.id
                 SET r.status = 'stopped',
                     r.error = 'Прерван рестартом сервера',
                     r.finished_at = NOW(3)
                 WHERE r.status = 'running'
-                  AND GREATEST(r.started_at, COALESCE(s.last_step_at, r.started_at))
+                  AND r.started_at < NOW(3) - INTERVAL %s SECOND
+                  AND COALESCE((SELECT MAX(s.created_at)
+                                  FROM agent_workflow_trace_step s
+                                 WHERE s.run_id = r.id), r.started_at)
                       < NOW(3) - INTERVAL %s SECOND
                 """,
-                (TRACE_RUN_STALE_SECONDS,)
+                (TRACE_RUN_STALE_SECONDS, TRACE_RUN_STALE_SECONDS)
             )
             count = db.rowcount
         if count:
