@@ -51,13 +51,29 @@ AI_WORKFLOW_TRACE_PDF_TEXT_MARKS = (
 )
 
 
-def ai_workflow_trace_pdf_text_pairs(raw, limit: int = AI_WORKFLOW_TRACE_PDF_TEXT_MAX) -> str:
+def ai_workflow_trace_pdf_text_value(raw, limit: int = AI_WORKFLOW_TRACE_PDF_TEXT_MAX) -> str:
     """
-    Объект — таблицей «ключ → значение», а не JSON-простынёй.
+    Любое значение прогона по-человечески: объект — парами, текст — абзацами.
 
-    Так показывают вход и выход шага. JSON там читать невозможно: значение
-    промпта — это тысячи знаков в одну строку, и единственное, что человек
-    хочет увидеть, — какому ключу что досталось.
+    Единственная точка показа значений в документе: ею идут и вход шага, и его
+    выход, и `Raw output`, и ответ прогона, и контракт вызова. Одна функция, а
+    не четыре похожих, по замеру на проде — формы у этих полей одни и те же:
+
+    | поле | текст | объект | список | с переносами |
+    |---|---|---|---|---|
+    | `output` шага | 231 | 68 | 3 | 142 из 400 |
+    | `result` прогона | 311 | 0 | 13 | **243 из 400** |
+
+    Разделять их значило бы чинить переносы дважды и разойтись на первой же
+    правке.
+
+    Что с чем делается:
+
+    - **объект** — таблица «ключ → значение», зеброй; значения внутри идут
+      этой же дорогой (вложенный объект сериализуется, текст остаётся текстом);
+    - **список** — та же таблица, ключ — номер (`[0]`, `[1]`): номер и есть
+      честное имя элемента, а JSON-простыня из списка так же нечитаема;
+    - **всё прочее** — текст абзацами, с подсветкой примет.
 
     ⚠⚠ **Переносы строк настоящие, а не `\\n` знаками.** Прежний рендер делал
     `json.dumps(json.loads(...))`, то есть разбирал строку и тут же
@@ -65,27 +81,24 @@ def ai_workflow_trace_pdf_text_pairs(raw, limit: int = AI_WORKFLOW_TRACE_PDF_TEX
     стена текста, где абзацы письма были видны как пунктуация `\\n`. Значения
     берутся прямо из разбора, и переносы в них уже настоящие; на бумаге их
     держит `white-space: pre-wrap`.
-
-    Не объект (список, число, не-JSON) — отдаётся обычным блоком: таблицы
-    «ключ → значение» из списка не выйдет, а врать формой нельзя.
     """
     if raw is None or raw == '' or raw == '{}':
         return '<pre class="v-empty">—</pre>'
 
-    data = raw if isinstance(raw, dict) else None
+    data = raw if isinstance(raw, (dict, list)) else None
     if data is None:
         try:
             data = json.loads(raw)
         except (ValueError, TypeError):
             data = None
-    if not isinstance(data, dict) or not data:
-        return ai_workflow_trace_pdf_text_block(ai_workflow_trace_pdf_text_json(raw), limit)
 
-    rows = ''.join(
-        f'<tr><td class="kv-key">{ai_workflow_trace_pdf_text_escape(key)}</td>'
-        f'<td class="kv-val">{_value_cell(value, limit)}</td></tr>'
-        for key, value in data.items())
-    return f'<table class="kv">{rows}</table>'
+    if isinstance(data, dict) and data:
+        return _rows(data.items(), limit)
+    if isinstance(data, list) and data:
+        return _rows(((f'[{i}]', item) for i, item in enumerate(data)), limit)
+    # Скаляр, пустой объект и не-JSON — это просто текст, и показывать его
+    # надо как текст: разбор ничего не добавил бы, кроме кавычек вокруг.
+    return _rich(str(raw), limit)
 
 
 def ai_workflow_trace_pdf_text_escape(value) -> str:
@@ -93,24 +106,13 @@ def ai_workflow_trace_pdf_text_escape(value) -> str:
     return html.escape('' if value is None else str(value), quote=True)
 
 
-def ai_workflow_trace_pdf_text_json(raw):
-    """Значение разложенным JSON, если это JSON; иначе — как пришло.
-
-    Возвращает строку (или None у пустого входа): разбирать JSON ради показа —
-    это про читаемость, а не про смысл, и несостоявшийся разбор не ошибка.
-    """
-    if raw is None or raw == '':
-        return None
-    if isinstance(raw, (dict, list)):
-        return json.dumps(raw, ensure_ascii=False, indent=2)
-    try:
-        return json.dumps(json.loads(raw), ensure_ascii=False, indent=2)
-    except (ValueError, TypeError):
-        return str(raw)
-
-
 def ai_workflow_trace_pdf_text_block(value, limit: int = AI_WORKFLOW_TRACE_PDF_TEXT_MAX) -> str:
-    """Значение блоком `<pre>`: пусто — прочерк, длинное — обрезано с пометкой."""
+    """Значение моноширинным блоком `<pre>`: пусто — прочерк, длинное — обрезано.
+
+    ⚠ Остался **только для трейсбеков**: у них значимы отступы и
+    моноширинность, а подсветка примет меняла бы то, что читают буква в букву.
+    Всё остальное идёт общим показом (`ai_workflow_trace_pdf_text_value`).
+    """
     if value is None or value == '' or value == '{}':
         return '<pre class="v-empty">—</pre>'
     text = str(value)
@@ -170,37 +172,53 @@ def ai_workflow_trace_pdf_text_moment(value, offset) -> str:
 
 # ── детали показа ──────────────────────────────────────────────────────────
 
+def _rows(pairs, limit: int) -> str:
+    """Таблица «ключ → значение» зеброй: и у объекта, и у списка она одна."""
+    body = ''.join(
+        f'<tr><td class="kv-key">{ai_workflow_trace_pdf_text_escape(key)}</td>'
+        f'<td class="kv-val">{_value_cell(value, limit)}</td></tr>'
+        for key, value in pairs)
+    return f'<table class="kv">{body}</table>'
+
+
 def _value_cell(value, limit: int) -> str:
     """Значение одного ключа: текст как текст, вложенный объект — JSON-ом.
 
     ⚠ Текстовое значение НЕ проходит через `json.dumps`: именно он превращал
     абзацы письма в `\\n` посреди строки. Вложенные list/dict сериализовать
-    по-прежнему надо — у них иначе нет письменной формы, — но внутри них
-    переносов и не бывает.
+    по-прежнему надо — у них иначе нет письменной формы.
     """
     if value is None:
         return '<span class="v-empty">пусто</span>'
     if isinstance(value, bool):
         return 'да' if value else 'нет'
     if isinstance(value, (dict, list)):
-        text, nested = json.dumps(value, ensure_ascii=False, indent=2), True
-    else:
-        # Серия пустых строк сжимается до одной: восемь переносов подряд — это
-        # треть листа пустоты, а абзац читается и от одного.
-        text, nested = AI_WORKFLOW_TRACE_PDF_TEXT_BLANKS.sub('\n\n', str(value)), False
+        return _cut(json.dumps(value, ensure_ascii=False, indent=2), limit,
+                    marks=False, css='kv-text kv-json')
+    return _rich(str(value), limit, css='kv-text')
+
+
+def _rich(text: str, limit: int, css: str = 'kv-text kv-solo') -> str:
+    """Текст абзацами: пустые серии сжаты, приметы подсвечены, переносы живы."""
+    # Серия пустых строк сжимается до одной: восемь переносов подряд — это
+    # треть листа пустоты, а абзац читается и от одного.
+    text = AI_WORKFLOW_TRACE_PDF_TEXT_BLANKS.sub('\n\n', text).strip('\n')
     if text == '':
         return '<span class="v-empty">пусто</span>'
+    return _cut(text, limit, marks=True, css=css)
 
-    cut = ''
+
+def _cut(text: str, limit: int, marks: bool, css: str) -> str:
+    """Общий хвост показа: обрезать по потолку, экранировать, подсветить."""
+    tail = ''
     if len(text) > limit:
-        cut = (f'<div class="cut">… обрезано: показано {limit} из {len(text)} знаков, '
-               f'целиком — на странице «Логи → Workflow Trace»</div>')
+        tail = (f'<div class="cut">… обрезано: показано {limit} из {len(text)} знаков, '
+                f'целиком — на странице «Логи → Workflow Trace»</div>')
         text = text[:limit]
-
     body = ai_workflow_trace_pdf_text_escape(text)
-    if not nested:
+    if marks:
         body = _marks(body)
-    return f'<div class="kv-text">{body}</div>{cut}'
+    return f'<div class="{css}">{body}</div>{tail}'
 
 
 def _marks(escaped: str) -> str:

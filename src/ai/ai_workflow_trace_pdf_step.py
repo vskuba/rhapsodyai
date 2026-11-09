@@ -16,7 +16,7 @@ from src.ai.ai_workflow_trace_pdf_text import (
     ai_workflow_trace_pdf_text_block,
     ai_workflow_trace_pdf_text_duration,
     ai_workflow_trace_pdf_text_escape,
-    ai_workflow_trace_pdf_text_pairs,
+    ai_workflow_trace_pdf_text_value,
 )
 
 # Сколько самых долгих шагов прогона красить красным. Три — столько же, сколько
@@ -78,14 +78,17 @@ def ai_workflow_trace_pdf_step_html(entry: dict, icons: dict) -> str:
                     f'{ai_workflow_trace_pdf_text_escape(title)}</a></div>')
     # ⚠ Вход и выход — таблицей «ключ → значение», а не JSON: значение промпта
     # это тысячи знаков, и в JSON-простыне не видно ни границ ключей, ни
-    # абзацев самого письма (см. `ai_workflow_trace_pdf_text_pairs`).
+    # абзацев самого письма (см. `ai_workflow_trace_pdf_text_value`).
     body.append('<div class="label">Вход — metadata после рендера</div>')
-    body.append(ai_workflow_trace_pdf_text_pairs(step.get('metadata_rendered')))
+    body.append(ai_workflow_trace_pdf_text_value(step.get('metadata_rendered')))
     body.append('<div class="label">Выход — изменённые переменные</div>')
-    body.append(ai_workflow_trace_pdf_text_pairs(step.get('variables_changed')))
+    body.append(ai_workflow_trace_pdf_text_value(step.get('variables_changed')))
     if step.get('output'):
         body.append('<div class="label">Raw output</div>')
-        body.append(ai_workflow_trace_pdf_text_block(step.get('output')))
+        # ⚠ Той же дорогой, что вход: по замеру на проде `output` в 68 случаях
+        # из 400 — объект (его и показываем парами), а в 142 несёт переносы
+        # строк. Монохромный `<pre>` врал на обоих.
+        body.append(ai_workflow_trace_pdf_text_value(step.get('output')))
     if step.get('error'):
         body.append('<div class="label">Ошибка</div>')
         body.append(f'<div class="err">{ai_workflow_trace_pdf_text_block(step.get("error"))}</div>')

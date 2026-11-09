@@ -211,15 +211,73 @@ class TestWorkflowTracePdfValues:
         assert '<script>' not in page
         assert '&lt;script&gt;' in page
 
-    def test_non_object_falls_back_to_block(self, run):
-        """Не объект (список, не-JSON) показывается блоком — формой не врём."""
-        run['steps'][0]['metadata_rendered'] = '[1, 2, 3]'
+    def test_list_is_rows_and_plain_text_is_text(self, run):
+        """Список — строки с номером ключа; не-JSON остаётся текстом.
+
+        ⚠ Номер и есть честное имя элемента списка, поэтому форма у него та же
+        таблица. А вот обычный текст в таблицу заворачивать нельзя: пары из
+        него не выйдет, и врать формой — хуже, чем показать как есть.
+        """
+        run['steps'][0]['metadata_rendered'] = '[10, 20]'
         run['steps'][0]['variables_changed'] = 'просто текст, не JSON'
         page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
-
         block = page.split('id="step-101"', 1)[1].split('id="step-102"', 1)[0]
-        assert 'просто текст, не JSON' in block
-        assert '<td class="kv-key">' not in block, 'из списка собрали таблицу пар'
+
+        assert '<td class="kv-key">[0]</td>' in block
+        assert '<td class="kv-key">[1]</td>' in block
+        # Текст показан текстом, без выдуманных ключей вокруг него
+        tail = block.split('Выход', 1)[1]
+        assert 'просто текст, не JSON' in tail
+        assert '<td class="kv-key">' not in tail, 'из текста собрали таблицу пар'
+
+    def test_raw_output_gets_the_same_care(self, run):
+        """`Raw output` — такое же значение: объект парами, текст абзацами.
+
+        ⚠ Замер на проде: `output` шага в 68 случаях из 400 — объект, и в 142
+        несёт переносы строк. Показывать его `<pre>`-лесенкой, когда соседний
+        «Вход» уже разложен парами, значило бы два ответа на один вопрос.
+        """
+        run['steps'][0]['output'] = json.dumps(
+            {'invite_keep': '1,2,4', 'invite_why': 'строка 3 повторяет\nстроку 2'},
+            ensure_ascii=False)
+        run['steps'][1]['output'] = 'Первая строка.\nВторая строка.'
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+
+        first = page.split('id="step-101"', 1)[1].split('id="step-102"', 1)[0]
+        assert '<td class="kv-key">invite_keep</td>' in first
+        assert 'строка 3 повторяет\nстроку 2' in first, 'перенос внутри значения потерян'
+
+        second = page.split('id="step-102"', 1)[1].split('id="run-900"', 1)[0]
+        assert 'Первая строка.\nВторая строка.' in second
+
+    def test_run_answer_gets_the_same_care(self, run):
+        """Ответ прогона — абзацами и с подсветкой, а не монохромной лесенкой.
+
+        ⚠ Замер на проде: 243 ответа из 400 несут переносы. Это письмо или
+        реплика собеседнику, а не код.
+        """
+        run['result'] = 'Привет.\n\n\n\n\nЯ [[girl_name]].\n=== Подпись ==='
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+        block = page.split('Ответ</div>', 1)[1].split('Request contract', 1)[0]
+
+        assert 'Привет.\n\nЯ' in block, 'серия пустых строк не сжата в ответе'
+        assert '<span class="mark-var">[[girl_name]]</span>' in block
+        assert '<span class="mark-section">=== Подпись ===</span>' in block
+
+    def test_failed_run_keeps_traceback_monospace(self, run):
+        """Отказ остаётся `<pre>`: трейсбек — код, у него значимы отступы.
+
+        ⚠ Исключение из общего показа, и намеренное: подсветка `%имя%` и
+        сжатие пустых строк в трейсбеке меняли бы то, что надо читать буквой
+        в букву.
+        """
+        run['status'] = 'error'
+        run['error'] = 'Traceback (most recent call last):\n  File "x.py", line 1\n    %boom%'
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+        block = page.split('Ошибка</div>', 1)[1].split('Request contract', 1)[0]
+
+        assert '<pre>' in block, 'трейсбек потерял моноширинный блок'
+        assert 'mark-var' not in block, 'в трейсбеке подсветили %имя%'
 
     def test_long_value_inside_a_pair_is_cut(self, run):
         """Обрезка работает и внутри пары, а не только у блока."""

@@ -41,7 +41,7 @@ from src.ai.ai_workflow_trace_pdf_text import (
     ai_workflow_trace_pdf_text_duration,
     ai_workflow_trace_pdf_text_escape,
     ai_workflow_trace_pdf_text_inline,
-    ai_workflow_trace_pdf_text_pairs,
+    ai_workflow_trace_pdf_text_value,
     ai_workflow_trace_pdf_text_moment,
 )
 
@@ -199,12 +199,21 @@ def _summary(run: dict) -> str:
     failed = run.get('status') in ('error', 'stopped')
     answer_label = {'error': 'Ошибка', 'stopped': 'Остановлен'}.get(run.get('status'), 'Ответ')
     answer = run.get('error') if failed else run.get('result')
+
+    # ⚠⚠ Ответ идёт общим показом значений, а не `<pre>`: по замеру на проде
+    # **243 ответа из 400 несут переносы строк** — это письмо или реплика, а не
+    # код, и монохромной лесенкой их читать невозможно.
+    #
+    # ⚠ Отказ (`error`) — исключение из этого правила и остаётся `<pre>`:
+    # трейсбек это код, у него значимы отступы и моноширинность.
+    answer_html = (ai_workflow_trace_pdf_text_block(answer) if failed
+                   else ai_workflow_trace_pdf_text_value(answer))
     return (f'{_heading(run, "summary", "1", "Сводка прогона")}'
             f'<div class="pair">'
             f'<div><div class="label">Запрос</div>'
-            f'{ai_workflow_trace_pdf_text_block(run.get("prompt_user"))}</div>'
+            f'{ai_workflow_trace_pdf_text_value(run.get("prompt_user"))}</div>'
             f'<div><div class="label">{answer_label}</div>'
-            f'{ai_workflow_trace_pdf_text_block(answer)}</div></div>'
+            f'{answer_html}</div></div>'
             f'<div class="pair">'
             f'<div><div class="label">Request contract</div>{_contract(run.get("request_json"))}</div>'
             f'<div><div class="label">Response contract</div>{_contract(run.get("response_json"))}</div>'
@@ -313,7 +322,7 @@ def _contract(raw) -> str:
                 'либо снят до появления записи</div>')
     # Контракт — такой же объект «ключ → значение», как вход шага, и
     # показывается так же: `question` там бывает длиной с письмо.
-    return ai_workflow_trace_pdf_text_pairs(raw)
+    return ai_workflow_trace_pdf_text_value(raw)
 
 
 def _llm_stats(run: dict) -> tuple:
