@@ -279,6 +279,65 @@ class TestWorkflowTracePdfValues:
         assert '<pre>' in block, 'трейсбек потерял моноширинный блок'
         assert 'mark-var' not in block, 'в трейсбеке подсветили %имя%'
 
+    def test_json_string_is_shown_decoded(self, run):
+        """Строка JSON показывается РАЗОБРАННОЙ, а не исходной с `\\n`.
+
+        ⚠⚠ Ровно эта беда и жила: `output` шага бывает строкой JSON, разбор
+        давал настоящие переносы, а в документ уезжала исходная строка — с
+        кавычками и `\\n`. Поймано замером на живом прогоне прода: 145
+        литеральных `\\n` там, где ожидался ноль.
+        """
+        run['steps'][0]['output'] = json.dumps('Строка раз.\nСтрока два.')
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+        block = page.split('id="step-101"', 1)[1].split('id="step-102"', 1)[0]
+
+        assert 'Строка раз.\nСтрока два.' in block
+        assert '\\n' not in block, 'показана исходная строка JSON, а не разобранная'
+
+    def test_nested_values_keep_their_line_breaks(self, run):
+        """Вложенный список объектов раскладывается, а не сериализуется в `\\n`.
+
+        ⚠⚠ Форма с прода: `variable_conversion` — список объектов, и у его
+        `text` внутри настоящие переносы. `json.dumps` на вложенном значении
+        съедал их все (34 штуки в одном поле).
+        """
+        run['steps'][0]['metadata_rendered'] = json.dumps({
+            'variable_conversion': [
+                {'variable': 'invite_done', 'text': 'Первая.\n---\nВторая.'},
+            ]}, ensure_ascii=False)
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+        block = page.split('id="step-101"', 1)[1].split('id="step-102"', 1)[0]
+
+        assert 'Первая.\n---\nВторая.' in block, 'переносы вложенного значения потеряны'
+        assert '<td class="kv-key">variable_conversion</td>' in block
+        assert '<td class="kv-key">text</td>' in block, 'вложенный объект не разложен'
+        assert '\\n' not in block
+
+    def test_nesting_stops_at_the_ceiling(self, run):
+        """Глубже потолка — JSON, а не бесконечные вложенные таблицы."""
+        deep = {'a': {'b': {'c': {'d': {'e': 'дно'}}}}}
+        run['steps'][0]['metadata_rendered'] = json.dumps(deep, ensure_ascii=False)
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+        block = page.split('id="step-101"', 1)[1].split('id="step-102"', 1)[0]
+
+        assert 'дно' in block, 'глубокое значение потерялось вовсе'
+        assert 'kv-json' in block, 'на потолке не перешли к JSON'
+
+    def test_literal_escapes_in_data_stay_literal(self, run):
+        """`\\n`, правда лежащие в данных, так и показываются — это не беда.
+
+        ⚠ В промпт движок вклеивает JSON прошлого шага строкой, и модель
+        видела там ровно `\\n`. Подменять их переносами значило бы врать о том,
+        чем её кормили.
+        """
+        run['steps'][0]['metadata_rendered'] = json.dumps(
+            {'prompt_user': 'Было прислано: {"why": "строка 1\\nстрока 2"}'},
+            ensure_ascii=False)
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+        block = page.split('id="step-101"', 1)[1].split('id="step-102"', 1)[0]
+
+        assert 'строка 1\\nстрока 2' in block, 'подменили данные переносами'
+
     def test_long_value_inside_a_pair_is_cut(self, run):
         """Обрезка работает и внутри пары, а не только у блока."""
         run['steps'][0]['metadata_rendered'] = json.dumps(

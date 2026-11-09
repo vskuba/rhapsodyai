@@ -44,6 +44,13 @@ AI_WORKFLOW_TRACE_PDF_TEXT_INLINE_MAX = 300
 # выжить: ради него вся правка и делалась, схлопывать переносы в пробел нельзя.
 AI_WORKFLOW_TRACE_PDF_TEXT_BLANKS = re.compile(r'\n{3,}')
 
+# До какой глубины вложенности раскладывать объект таблицами.
+#
+# ⚠ Глубже — JSON как есть: каждая вложенная таблица съедает ширину колонки
+# значения, и на третьем уровне читать там нечего. Трёх хватает на всё, что
+# встречается в трассе: список объектов внутри поля — это уже уровень два.
+AI_WORKFLOW_TRACE_PDF_TEXT_DEPTH = 3
+
 AI_WORKFLOW_TRACE_PDF_TEXT_MARKS = (
     (re.compile(r'\[\[[^\[\]\n]{1,80}\]\]'), 'mark-var'),
     (re.compile(r'%[A-Za-z_][\w.]{0,60}%'), 'mark-var'),
@@ -69,11 +76,13 @@ def ai_workflow_trace_pdf_text_value(raw, limit: int = AI_WORKFLOW_TRACE_PDF_TEX
 
     Что с чем делается:
 
-    - **объект** — таблица «ключ → значение», зеброй; значения внутри идут
-      этой же дорогой (вложенный объект сериализуется, текст остаётся текстом);
+    - **объект** — таблица «ключ → значение», зеброй;
     - **список** — та же таблица, ключ — номер (`[0]`, `[1]`): номер и есть
       честное имя элемента, а JSON-простыня из списка так же нечитаема;
     - **всё прочее** — текст абзацами, с подсветкой примет.
+
+    Вложенные объекты и списки идут **этой же дорогой вглубь**, до
+    `AI_WORKFLOW_TRACE_PDF_TEXT_DEPTH`.
 
     ⚠⚠ **Переносы строк настоящие, а не `\\n` знаками.** Прежний рендер делал
     `json.dumps(json.loads(...))`, то есть разбирал строку и тут же
@@ -81,24 +90,22 @@ def ai_workflow_trace_pdf_text_value(raw, limit: int = AI_WORKFLOW_TRACE_PDF_TEX
     стена текста, где абзацы письма были видны как пунктуация `\\n`. Значения
     берутся прямо из разбора, и переносы в них уже настоящие; на бумаге их
     держит `white-space: pre-wrap`.
+
+    ⚠⚠ Показывается **разобранное** значение, а не исходная строка. Звучит
+    очевидно, но первая версия на этом и спотыкалась: `output` шага бывает
+    строкой JSON (`"{'str': 'текст\\n---\\n…'}"`), разбор давал настоящие
+    переносы, а в документ всё равно уезжала исходная строка — с кавычками и
+    `\\n`. Поймано замером на живом прогоне прода: 145 литеральных `\\n` в
+    документе, где их ожидалось ноль.
+
+    ⚠ Литеральные `\\n`, **правда лежащие в данных**, так и показываются — и
+    это не недосмотр. В промпт движок вклеивает JSON прошлого шага строкой, и
+    модель видела там ровно `\\n`; подменять их переносами значило бы врать о
+    том, чем её кормили.
     """
     if raw is None or raw == '' or raw == '{}':
         return '<pre class="v-empty">—</pre>'
-
-    data = raw if isinstance(raw, (dict, list)) else None
-    if data is None:
-        try:
-            data = json.loads(raw)
-        except (ValueError, TypeError):
-            data = None
-
-    if isinstance(data, dict) and data:
-        return _rows(data.items(), limit)
-    if isinstance(data, list) and data:
-        return _rows(((f'[{i}]', item) for i, item in enumerate(data)), limit)
-    # Скаляр, пустой объект и не-JSON — это просто текст, и показывать его
-    # надо как текст: разбор ничего не добавил бы, кроме кавычек вокруг.
-    return _rich(str(raw), limit)
+    return _shape(_decode(raw), limit, 0)
 
 
 def ai_workflow_trace_pdf_text_escape(value) -> str:
@@ -172,30 +179,50 @@ def ai_workflow_trace_pdf_text_moment(value, offset) -> str:
 
 # ── детали показа ──────────────────────────────────────────────────────────
 
-def _rows(pairs, limit: int) -> str:
-    """Таблица «ключ → значение» зеброй: и у объекта, и у списка она одна."""
-    body = ''.join(
-        f'<tr><td class="kv-key">{ai_workflow_trace_pdf_text_escape(key)}</td>'
-        f'<td class="kv-val">{_value_cell(value, limit)}</td></tr>'
-        for key, value in pairs)
-    return f'<table class="kv">{body}</table>'
+def _decode(raw):
+    """Строку JSON — в значение; всё прочее отдать как есть.
 
-
-def _value_cell(value, limit: int) -> str:
-    """Значение одного ключа: текст как текст, вложенный объект — JSON-ом.
-
-    ⚠ Текстовое значение НЕ проходит через `json.dumps`: именно он превращал
-    абзацы письма в `\\n` посреди строки. Вложенные list/dict сериализовать
-    по-прежнему надо — у них иначе нет письменной формы.
+    ⚠ Разбор нужен именно ради переносов: в строке JSON они записаны как `\\n`,
+    и только разбор делает их настоящими.
     """
+    if isinstance(raw, (dict, list)):
+        return raw
+    try:
+        return json.loads(raw)
+    except (ValueError, TypeError):
+        return raw
+
+
+def _shape(value, limit: int, depth: int) -> str:
+    """Показать разобранное значение по его форме; вглубь — той же дорогой."""
     if value is None:
         return '<span class="v-empty">пусто</span>'
     if isinstance(value, bool):
         return 'да' if value else 'нет'
+
+    if isinstance(value, (dict, list)) and value:
+        if depth >= AI_WORKFLOW_TRACE_PDF_TEXT_DEPTH:
+            # Глубже потолка — JSON как есть: дальше вложенные таблицы ужимают
+            # колонку значения до нечитаемой ширины.
+            return _cut(json.dumps(value, ensure_ascii=False, indent=2), limit,
+                        marks=False, css='kv-text kv-json')
+        pairs = (value.items() if isinstance(value, dict)
+                 else ((f'[{i}]', item) for i, item in enumerate(value)))
+        return _rows(pairs, limit, depth)
     if isinstance(value, (dict, list)):
-        return _cut(json.dumps(value, ensure_ascii=False, indent=2), limit,
-                    marks=False, css='kv-text kv-json')
-    return _rich(str(value), limit, css='kv-text')
+        return '<span class="v-empty">пусто</span>'
+
+    css = 'kv-text kv-solo' if depth == 0 else 'kv-text'
+    return _rich(str(value), limit, css=css)
+
+
+def _rows(pairs, limit: int, depth: int) -> str:
+    """Таблица «ключ → значение» зеброй: и у объекта, и у списка она одна."""
+    body = ''.join(
+        f'<tr><td class="kv-key">{ai_workflow_trace_pdf_text_escape(key)}</td>'
+        f'<td class="kv-val">{_shape(value, limit, depth + 1)}</td></tr>'
+        for key, value in pairs)
+    return f'<table class="kv">{body}</table>'
 
 
 def _rich(text: str, limit: int, css: str = 'kv-text kv-solo') -> str:
