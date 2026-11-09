@@ -10,6 +10,7 @@
 """
 import html
 import json
+import re
 
 from datetime_.datetime_ import datetime_offset_apply
 
@@ -27,6 +28,64 @@ AI_WORKFLOW_TRACE_PDF_TEXT_MAX = 6000
 # «что это за значение» — таблица на сотню имён из многострочных значений
 # перестаёт быть таблицей.
 AI_WORKFLOW_TRACE_PDF_TEXT_INLINE_MAX = 300
+
+# Приметы, которые в тексте промпта ищут глазами: подстановка движка
+# (`[[имя]]`, `%имя%`) и рамка раздела (`=== Заголовок ===`). Подсветка нужна
+# ровно потому, что текст длинный и сплошной: без неё место подстановки ищут
+# перечитыванием абзаца.
+#
+# ⚠ Образцы применяются к УЖЕ экранированному тексту, поэтому в разметку они
+# подставляют только свои же совпадения — чужой `<` до них не доживает.
+# Подряд идущие пустые строки, сжимаемые до одной пустой (то есть до абзаца).
+#
+# ⚠⚠ Это НЕ косметика. Живой `dating_mail_write` присылает в промпте серии до
+# восьми переносов подряд (замер на проде: 12 таких серий в одном значении), и
+# на бумаге каждая — дыра в треть листа посреди текста. Абзац при этом обязан
+# выжить: ради него вся правка и делалась, схлопывать переносы в пробел нельзя.
+AI_WORKFLOW_TRACE_PDF_TEXT_BLANKS = re.compile(r'\n{3,}')
+
+AI_WORKFLOW_TRACE_PDF_TEXT_MARKS = (
+    (re.compile(r'\[\[[^\[\]\n]{1,80}\]\]'), 'mark-var'),
+    (re.compile(r'%[A-Za-z_][\w.]{0,60}%'), 'mark-var'),
+    (re.compile(r'={2,}[^=\n]{1,120}={2,}'), 'mark-section'),
+)
+
+
+def ai_workflow_trace_pdf_text_pairs(raw, limit: int = AI_WORKFLOW_TRACE_PDF_TEXT_MAX) -> str:
+    """
+    Объект — таблицей «ключ → значение», а не JSON-простынёй.
+
+    Так показывают вход и выход шага. JSON там читать невозможно: значение
+    промпта — это тысячи знаков в одну строку, и единственное, что человек
+    хочет увидеть, — какому ключу что досталось.
+
+    ⚠⚠ **Переносы строк настоящие, а не `\\n` знаками.** Прежний рендер делал
+    `json.dumps(json.loads(...))`, то есть разбирал строку и тут же
+    сериализовал её обратно — экранируя переносы заново. В документ уезжала
+    стена текста, где абзацы письма были видны как пунктуация `\\n`. Значения
+    берутся прямо из разбора, и переносы в них уже настоящие; на бумаге их
+    держит `white-space: pre-wrap`.
+
+    Не объект (список, число, не-JSON) — отдаётся обычным блоком: таблицы
+    «ключ → значение» из списка не выйдет, а врать формой нельзя.
+    """
+    if raw is None or raw == '' or raw == '{}':
+        return '<pre class="v-empty">—</pre>'
+
+    data = raw if isinstance(raw, dict) else None
+    if data is None:
+        try:
+            data = json.loads(raw)
+        except (ValueError, TypeError):
+            data = None
+    if not isinstance(data, dict) or not data:
+        return ai_workflow_trace_pdf_text_block(ai_workflow_trace_pdf_text_json(raw), limit)
+
+    rows = ''.join(
+        f'<tr><td class="kv-key">{ai_workflow_trace_pdf_text_escape(key)}</td>'
+        f'<td class="kv-val">{_value_cell(value, limit)}</td></tr>'
+        for key, value in data.items())
+    return f'<table class="kv">{rows}</table>'
 
 
 def ai_workflow_trace_pdf_text_escape(value) -> str:
@@ -107,3 +166,51 @@ def ai_workflow_trace_pdf_text_moment(value, offset) -> str:
     """
     local = datetime_offset_apply(value, offset)
     return local.strftime('%Y-%m-%d %H:%M:%S') if local else '—'
+
+
+# ── детали показа ──────────────────────────────────────────────────────────
+
+def _value_cell(value, limit: int) -> str:
+    """Значение одного ключа: текст как текст, вложенный объект — JSON-ом.
+
+    ⚠ Текстовое значение НЕ проходит через `json.dumps`: именно он превращал
+    абзацы письма в `\\n` посреди строки. Вложенные list/dict сериализовать
+    по-прежнему надо — у них иначе нет письменной формы, — но внутри них
+    переносов и не бывает.
+    """
+    if value is None:
+        return '<span class="v-empty">пусто</span>'
+    if isinstance(value, bool):
+        return 'да' if value else 'нет'
+    if isinstance(value, (dict, list)):
+        text, nested = json.dumps(value, ensure_ascii=False, indent=2), True
+    else:
+        # Серия пустых строк сжимается до одной: восемь переносов подряд — это
+        # треть листа пустоты, а абзац читается и от одного.
+        text, nested = AI_WORKFLOW_TRACE_PDF_TEXT_BLANKS.sub('\n\n', str(value)), False
+    if text == '':
+        return '<span class="v-empty">пусто</span>'
+
+    cut = ''
+    if len(text) > limit:
+        cut = (f'<div class="cut">… обрезано: показано {limit} из {len(text)} знаков, '
+               f'целиком — на странице «Логи → Workflow Trace»</div>')
+        text = text[:limit]
+
+    body = ai_workflow_trace_pdf_text_escape(text)
+    if not nested:
+        body = _marks(body)
+    return f'<div class="kv-text">{body}</div>{cut}'
+
+
+def _marks(escaped: str) -> str:
+    """Подсветить в уже экранированном тексте подстановки и рамки разделов.
+
+    ⚠⚠ Работает по экранированному тексту и ровно по своим образцам, поэтому
+    добавить в документ чужую разметку не может: к этому моменту `<` из данных
+    уже стал `&lt;`. Порядок замен не важен — образцы не пересекаются.
+    """
+    out = escaped
+    for pattern, css in AI_WORKFLOW_TRACE_PDF_TEXT_MARKS:
+        out = pattern.sub(lambda m: f'<span class="{css}">{m.group(0)}</span>', out)
+    return out

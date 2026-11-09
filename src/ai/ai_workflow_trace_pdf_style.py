@@ -235,6 +235,69 @@ h2 .h2-num { color: #6366f1; margin-right: 6px; }
 .step-body .label { margin-top: 6px; }
 .step-body .label:first-child { margin-top: 0; }
 
+/* ── «ключ → значение» вместо JSON ─────────────────────────────────────── */
+.kv {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid #e2e8f0;
+    border-radius: 3px;
+}
+
+.kv td {
+    padding: 5px 7px;
+    vertical-align: top;
+    border-bottom: 1px solid #eef2f7;
+}
+
+.kv tr:last-child td { border-bottom: none; }
+
+/* ⚠⚠ Зебра задаётся ОБОИМ ячейкам строки, а не `tr`: фон на `tr` под
+   `border-collapse: collapse` Chrome при печати местами теряет, и полоса
+   выходит рваной. На `td` он красится всегда. */
+.kv tr:nth-child(odd) td { background: #f8fafc; }
+.kv tr:nth-child(even) td { background: #fff; }
+
+.kv .kv-key {
+    width: 23%;
+    font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+    font-size: 7pt;
+    font-weight: 700;
+    color: #4338ca;
+    word-break: break-word;
+    border-right: 1px solid #eef2f7;
+}
+
+.kv .kv-val { font-size: 7.5pt; color: #0f172a; }
+
+/* ⚠⚠ `pre-wrap` — ровно то, ради чего затевалась правка: абзацы письма
+   приходят в значении настоящими переносами, и схлопывать их в пробел
+   (как делает обычный HTML) значит снова показать стену текста. */
+.kv .kv-text {
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    line-height: 1.45;
+}
+
+/* Приметы внутри значения: подстановка и рамка раздела. Ищутся глазами в
+   сплошном тексте, поэтому подсвечены заливкой, а не только цветом букв —
+   цветное слово в абзаце теряется, плашка нет. */
+.mark-var {
+    background: #e0e7ff;
+    color: #3730a3;
+    border-radius: 2px;
+    padding: 0 2px;
+    font-weight: 700;
+}
+
+.mark-section {
+    background: #fef3c7;
+    color: #92400e;
+    border-radius: 2px;
+    padding: 0 2px;
+    font-weight: 700;
+}
+
 .err pre { background: #fdf2f1; border-color: #f5c6c0; border-left-color: #e74c3c; color: #922b21; }
 
 /* ── переход ───────────────────────────────────────────────────────────── */

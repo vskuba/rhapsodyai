@@ -10,6 +10,7 @@
 ссылка в PDF не видна ничем: она просто не срабатывает по щелчку, и узнают об
 этом не раньше, чем кто-то щёлкнет.
 """
+import json
 import re
 
 import pytest
@@ -142,3 +143,89 @@ class TestWorkflowTracePdfDocument:
         name = ai_workflow_trace_pdf_filename(run)
         assert name.isascii() and name.endswith('.pdf')
         assert '/' not in name and ' ' not in name
+
+
+class TestWorkflowTracePdfValues:
+    """Как показан вход шага: пары «ключ → значение», живые переносы, приметы."""
+
+    def test_line_breaks_stay_breaks(self, run):
+        """Перенос в значении остаётся переносом, а не знаками `\\n` в тексте.
+
+        ⚠ Главный сторож этого класса. Прежний рендер делал
+        `json.dumps(json.loads(...))` и экранировал переносы заново — абзацы
+        письма приезжали в документ пунктуацией посреди строки. Глазами это
+        ловится только на кадре, а здесь — одной подстрокой.
+        """
+        run['steps'][0]['metadata_rendered'] = json.dumps(
+            {'prompt_user': 'Первая строка.\nВторая строка.\n\nНовый абзац.'},
+            ensure_ascii=False)
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+
+        assert '\\n' not in page, 'переносы уехали в документ знаками `\\n`'
+        assert 'Первая строка.\nВторая строка.' in page
+
+    def test_blank_line_runs_collapse_but_paragraphs_live(self, run):
+        """Серия пустых строк сжата до абзаца: восемь подряд — дыра в треть листа.
+
+        ⚠ Замер на проде: живой `dating_mail_write` шлёт до восьми переносов
+        подряд, по 12 таких серий на значение. Сам абзац при этом обязан
+        остаться — ради него вся правка и делалась.
+        """
+        run['steps'][0]['metadata_rendered'] = json.dumps(
+            {'prompt_user': 'До.' + '\n' * 8 + 'После.\n\nОбычный абзац.'},
+            ensure_ascii=False)
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+
+        assert 'До.\n\nПосле.' in page, 'серия пустых строк не сжата'
+        assert 'После.\n\nОбычный абзац.' in page, 'сжали и настоящий абзац'
+
+    def test_object_becomes_key_value_rows(self, run):
+        """Объект показан строками «ключ → значение», а не JSON-простынёй."""
+        run['steps'][0]['metadata_rendered'] = json.dumps(
+            {'prompt_user': 'текст', 'temperature': 0.8}, ensure_ascii=False)
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+
+        assert '<td class="kv-key">prompt_user</td>' in page
+        assert '<td class="kv-key">temperature</td>' in page
+        # Фигурных скобок и кавычек JSON в показе объекта больше нет
+        block = page.split('id="step-101"', 1)[1].split('Выход', 1)[0]
+        assert '"prompt_user":' not in block
+
+    def test_markers_are_highlighted(self, run):
+        """Подстановки и рамки разделов подсвечены — их ищут глазами."""
+        run['steps'][0]['metadata_rendered'] = json.dumps(
+            {'prompt_user': '=== Раздел ===\nЗовут [[girl_name]], поле %companion_name%.'},
+            ensure_ascii=False)
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+
+        assert '<span class="mark-var">[[girl_name]]</span>' in page
+        assert '<span class="mark-var">%companion_name%</span>' in page
+        assert '<span class="mark-section">=== Раздел ===</span>' in page
+
+    def test_marks_cannot_smuggle_markup(self, run):
+        """Подсветка не превращает данные в разметку: `<` до неё уже экранирован."""
+        run['steps'][0]['metadata_rendered'] = json.dumps(
+            {'prompt_user': '[[<script>alert(1)</script>]]'}, ensure_ascii=False)
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+
+        assert '<script>' not in page
+        assert '&lt;script&gt;' in page
+
+    def test_non_object_falls_back_to_block(self, run):
+        """Не объект (список, не-JSON) показывается блоком — формой не врём."""
+        run['steps'][0]['metadata_rendered'] = '[1, 2, 3]'
+        run['steps'][0]['variables_changed'] = 'просто текст, не JSON'
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+
+        block = page.split('id="step-101"', 1)[1].split('id="step-102"', 1)[0]
+        assert 'просто текст, не JSON' in block
+        assert '<td class="kv-key">' not in block, 'из списка собрали таблицу пар'
+
+    def test_long_value_inside_a_pair_is_cut(self, run):
+        """Обрезка работает и внутри пары, а не только у блока."""
+        run['steps'][0]['metadata_rendered'] = json.dumps(
+            {'prompt_user': 'я' * 50_000}, ensure_ascii=False)
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+
+        assert 'обрезано: показано' in page
+        assert 'я' * 20_000 not in page

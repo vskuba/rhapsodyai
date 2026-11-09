@@ -41,7 +41,7 @@ from src.ai.ai_workflow_trace_pdf_text import (
     ai_workflow_trace_pdf_text_duration,
     ai_workflow_trace_pdf_text_escape,
     ai_workflow_trace_pdf_text_inline,
-    ai_workflow_trace_pdf_text_json,
+    ai_workflow_trace_pdf_text_pairs,
     ai_workflow_trace_pdf_text_moment,
 )
 
@@ -311,7 +311,9 @@ def _contract(raw) -> str:
     if not raw:
         return ('<div class="note">не записан — прогон начат не через <code>/chat/ask</code> '
                 'либо снят до появления записи</div>')
-    return ai_workflow_trace_pdf_text_block(ai_workflow_trace_pdf_text_json(raw))
+    # Контракт — такой же объект «ключ → значение», как вход шага, и
+    # показывается так же: `question` там бывает длиной с письмо.
+    return ai_workflow_trace_pdf_text_pairs(raw)
 
 
 def _llm_stats(run: dict) -> tuple:
