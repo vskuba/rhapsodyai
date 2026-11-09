@@ -16,7 +16,11 @@
 |------|------|
 | `src/ai/ai_workflow_trace.py` | Модуль записи: `ai_workflow_trace_run_start/finish`, `ai_workflow_trace_step`, `ai_workflow_trace_runs_stale_close` |
 | `src/ai/framework/agent/ai_framework_manager.py` | Вызывает трейс-функции из `_framework_workflow_run` и `_workflow_steps_run` |
-| `src/uvicorn/routers/workflow/workflow_trace.py` | REST API: list, detail, replay, stop, delete |
+| `src/uvicorn/routers/workflow/workflow_trace.py` | REST API: list, detail, **pdf**, replay, stop, delete |
+| `src/ai/ai_workflow_trace_pdf.py` | Выгрузка в PDF: документ целиком и печать |
+| `src/ai/ai_workflow_trace_pdf_step.py` | …её середина: план обхода, шаг, переход, подпоток |
+| `src/ai/ai_workflow_trace_pdf_text.py` | …её низ: значение, длительность, бейдж, метка времени |
+| `src/ai/ai_workflow_trace_pdf_style.py` | …её оформление: лист, типографика, цвета состояний |
 | `data/uvicorn/template/admin/workflow_trace.html` | Страница `/admin/workflow_trace` |
 | `src/auth/auth_permission.py` | `WORKFLOW_TRACE_VIEW/DELETE/REPLAY/STOP` |
 | `migrations/20260101000000_initial_schema.sql` | DDL: `agent_workflow_trace`, `agent_workflow_trace_step` |
@@ -189,6 +193,7 @@ framework_model.tokens_output = _usage.response_tokens  # исходящие
 |-------|------|-------|------------|
 | GET | `/workflow_trace/run/list` | `WORKFLOW_TRACE_VIEW` | Список запусков (depth=0), пагинация |
 | GET | `/workflow_trace/run/{run_uuid}` | `WORKFLOW_TRACE_VIEW` | Запуск + шаги + дерево дочерних BFS |
+| GET | `/workflow_trace/run/{run_uuid}/pdf` | `WORKFLOW_TRACE_VIEW` | Тот же прогон печатным документом |
 | POST | `/workflow_trace/run/{run_uuid}/replay` | `WORKFLOW_TRACE_REPLAY` | Повтор с variables_start |
 | POST | `/workflow_trace/run/{run_uuid}/stop` | `WORKFLOW_TRACE_STOP` | Отмена живой задачи |
 | DELETE | `/workflow_trace/run/{run_uuid}` | `WORKFLOW_TRACE_DELETE` | Удаление (каскад FK) |
@@ -236,6 +241,79 @@ framework_model.tokens_output = _usage.response_tokens  # исходящие
 3. Один JOIN-запрос за шагами всех запусков дерева (`s.*, l.name AS llm_name`).
 4. Собирает дерево: каждый запуск получает `steps: []` и `children: []`.
 5. Возвращает корень с вложенными `children` и `steps`.
+
+### GET `/workflow_trace/run/{run_uuid}/pdf` — прогон печатным документом
+
+Та же выборка, что у ручки детали (обе зовут `_trace_run_tree`), только
+отданная не JSON-ом, а готовым PDF: `Content-Disposition: attachment`,
+имя вида `trace-201406-dating_mail_write.pdf`.
+
+**Зачем она есть.** Страница отвечает на вопрос «что тут случилось» тому, у
+кого есть доступ к панели. Выгрузка отвечает на другой: **отдать прогон целиком
+наружу** — приложить к задаче, к письму, к разбору жалобы. Поэтому документ
+самодостаточен и повторяет не экран, а данные.
+
+#### Что внутри
+
+| Раздел | Содержимое |
+|---|---|
+| обложка | workflow, агент, состояние, плитки (шагов, подпотоков, LLM-вызовов, токены, tok/s), паспорт: `run_uuid`, `session_uuid`, `request_uuid`, `message_id`, время в поясе настройки `timezone` |
+| § Содержание | каждый шаг и каждый подпоток строкой-ссылкой, с состоянием и длительностью |
+| 1. Сводка | запрос и ответ движка слева, `request_json` / `response_json` справа — ровно как на странице |
+| 2. Переменные | снапшот старта, поверх него изменения шагов; у строки — **источник** (`старт` / `шаг #N`) |
+| 3. Шаги | у каждого: вход (`metadata_rendered`), выход (`variables_changed`), `Raw output`, ошибка, переход схемой «откуда → куда» |
+
+#### Ссылки внутри документа — то, ради чего он не картинка
+
+Chrome превращает `href="#…"` в настоящие внутренние ссылки PDF
+(`/Subtype /Link` с именованным `/Dest`), и в документе их четыре рода:
+
+- содержание → шаг или подпоток;
+- шаг → «↑ содержание» обратно;
+- **переход → шаг-цель**: карточка «куда» кликабельна;
+- подпоток ↔ породивший его шаг, в обе стороны.
+
+⚠⚠ **У петли карточки перехода смотрят в разные стороны.** `transition` хранит
+только `step_id`, а шаг в петле исполняется много раз: «куда» — ближайшее
+исполнение **после** текущего, «откуда» — ближайшее **не позже**. Без этого
+различия второй заход петли показывал в «откуда» пятый заход вместо второго.
+Шаг, до которого прогон не дошёл, честно подписан «шага нет в прогоне» и
+ссылкой не притворяется. Сторож — `test_transition_points_at_the_right_pass_of_the_loop`.
+
+#### Обрезка значений — названа вслух
+
+Значение длиннее `AI_WORKFLOW_TRACE_PDF_TEXT_MAX` (6000 знаков) обрезается с
+пометкой «обрезано: показано N из M». Арифметика: трасса пишет до 20 000 знаков
+на значение, значений у шага три, у живого `dating_talk` бывает 170 шагов — это
+10 МБ текста, сотни страниц и минуты работы Chrome.
+
+#### Печать
+
+Печатает `pdf_print_html` общего слоя — тот же движок (Skia), которым браузер
+печатает страницу сам. Бинарь ищется `web_shot_browser()`: PATH, а следом кэш
+playwright — в контейнере приложения браузер стоит именно там
+(`chromium_headless_shell`), и до этой правки `pdf_chrome()` его не находил.
+
+⚠⚠ Вызов идёт через `asyncio.to_thread`: запуск Chrome подпроцессом блокирует
+поток на сотни миллисекунд, а в событийном цикле это остановило бы **весь**
+процесс — и ручки, и воркеры, и бота.
+
+⚠ Колонтитула `position: fixed` в документе нет, и это не недосмотр. Chrome
+такой элемент на каждой странице печати действительно повторяет, но кладёт его
+вниз только на страницах, заполненных потоком: на странице, начатой
+принудительным разрывом (а здесь так начинается каждый раздел), он встаёт под
+заголовок, в начало текста. Воспроизведено отдельной пробой. Поэтому подпись
+«чей это прогон» — обычный элемент потока под заголовком раздела.
+
+⚠ Замер на прогоне из 6 шагов с подпотоком: документ 8 страниц, 215 КБ,
+**0.5 с** от запроса до ответа.
+
+#### Кнопка на странице
+
+«📄 Export PDF» в шапке открытого прогона, слева от «Удалить лог». Качает
+`getFile` из `js/api.js` — через `fetch`, а не ссылкой: отказ ручки тогда
+приезжает обычным уведомлением, а не вкладкой с голым JSON, и на время сборки
+кнопка говорит «Печатается…».
 
 ### POST `/workflow_trace/run/{run_uuid}/replay`
 
@@ -768,6 +846,7 @@ tests_e2e_run_case(case, 1440, '/tmp/e2e', base='http://localhost:8011',
 
 ### Действия
 
+- **Export PDF** — GET `/pdf`, качает прогон документом (раздел выше).
 - **Replay** — POST `/replay`, открывает результат в той же панели.
 - **Stop** — POST `/stop`, доступно для `status=running` запусков.
 - **Delete** — DELETE, с подтверждением.

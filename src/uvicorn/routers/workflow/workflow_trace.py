@@ -3,16 +3,22 @@ import time
 import uuid
 
 from fastapi import APIRouter, Request, Depends, HTTPException
+from fastapi.responses import Response
 
 from src.ai.ai_llm import ai_llm_node_get
 from json_.json_ import json_from_string
-from logging_.logging_ import logger_info
+from logging_.logging_ import logger_info, logger_exception
 from mysql_.mysql_ import mysql_get_db_async
+from setting_.setting_ import setting_get
 from src.ai.ai_workflow import ai_workflow_load
+from src.ai.ai_workflow_trace_pdf import (ai_workflow_trace_pdf_build,
+                                          ai_workflow_trace_pdf_filename)
 from src.ai.framework.agent.ai_framework_manager import workflow_runs_active
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
 from src.mysql_.repository.agent_repository import AgentRepository
+from src.mysql_.repository.agent_workflow_step_type_repository import \
+    AgentWorkflowStepTypeRepository
 
 router = APIRouter()
 
@@ -243,121 +249,45 @@ async def workflow_trace_run_detail(
         user=Depends(AuthChecker([AuthPermission.WORKFLOW_TRACE_VIEW]))
 ):
     """Запуск с шагами и деревом дочерних запусков (sub-workflow)."""
-    async with mysql_get_db_async() as db:
-        await db.execute(
-            """
-            SELECT r.*, w.title AS workflow_title, w.name AS workflow_name,
-                   a.title AS agent_title, a.name AS agent_name
-            FROM agent_workflow_trace r
-            LEFT JOIN agent_workflow w ON w.id = r.workflow_id
-            LEFT JOIN agent a ON a.id = r.agent_id
-            WHERE r.run_uuid = %s
-            """,
-            (run_uuid,)
-        )
-        root = await db.fetchone()
-        if not root:
-            raise HTTPException(status_code=404, detail="Запуск не найден")
+    return {"result": await _trace_run_tree(run_uuid)}
 
-        # Собираем всех потомков по уровням (BFS по parent_run_id)
-        runs = {root['id']: root}
-        layer = [root['id']]
-        while layer:
-            placeholders = ', '.join(['%s'] * len(layer))
-            await db.execute(
-                f"""
-                SELECT r.*, w.title AS workflow_title, w.name AS workflow_name,
-                       a.title AS agent_title, a.name AS agent_name
-                FROM agent_workflow_trace r
-                LEFT JOIN agent_workflow w ON w.id = r.workflow_id
-                LEFT JOIN agent a ON a.id = r.agent_id
-                WHERE r.parent_run_id IN ({placeholders})
-                """,
-                layer
-            )
-            children = await db.fetchall()
-            layer = [c['id'] for c in children]
-            for c in children:
-                runs[c['id']] = c
 
-        # Все шаги всех запусков одним запросом (с JOIN на LLM)
-        run_ids = list(runs.keys())
-        placeholders = ', '.join(['%s'] * len(run_ids))
-        await db.execute(
-            f"""
-            SELECT s.*, l.name AS llm_name
-            FROM agent_workflow_trace_step s
-            LEFT JOIN llm l ON l.id = s.llm_id
-            WHERE s.run_id IN ({placeholders})
-            ORDER BY s.run_id, s.exec_index, s.id
-            """,
-            run_ids
-        )
-        all_steps = await db.fetchall()
+@router.get("/workflow_trace/run/{run_uuid}/pdf")
+async def workflow_trace_run_pdf(
+        request: Request,
+        run_uuid: str,
+        user=Depends(AuthChecker([AuthPermission.WORKFLOW_TRACE_VIEW]))
+):
+    """Прогон печатным документом: обложка, содержание, шаги, переменные.
 
-    # Сборка дерева: у каждого запуска — шаги и дочерние запуски
-    for run in runs.values():
-        run['steps'] = []
-        run['children'] = []
-    for step in all_steps:
-        runs[step['run_id']]['steps'].append(step)
-    for run in runs.values():
-        parent_id = run.get('parent_run_id')
-        if parent_id and parent_id in runs:
-            runs[parent_id]['children'].append(run)
+    Право то же, что у просмотра: выгрузка показывает ровно то, что человек и
+    так видит на странице, — заводить под неё отдельное право значило бы
+    выдавать его всем, у кого есть `WORKFLOW_TRACE_VIEW`.
 
-    # Для running-запусков вычисляем текущий (ещё не завершённый) шаг из определения workflow
-    for run in runs.values():
-        if run.get('status') != 'running':
-            continue
-        wf_id = run.get('workflow_id')
-        if not wf_id:
-            continue
-        try:
-            wf_data = await ai_workflow_load(wf_id)
-            wf_steps = wf_data.get('steps') or []
-            completed_steps = run['steps']
+    ⚠⚠ Печать идёт `asyncio.to_thread`: `ai_workflow_trace_pdf_build` запускает
+    Chrome подпроцессом и блокирует поток на секунды. В событийном цикле это
+    встало бы колом для **всего** процесса — и ручек, и воркеров, и бота.
+    """
+    run = await _trace_run_tree(run_uuid)
+    icons = {t['name']: t.get('icon') for t in
+             await AgentWorkflowStepTypeRepository().find_by({}, 'id ASC')}
+    offset = await setting_get('timezone', '+0')
 
-            if not wf_steps:
-                continue
+    try:
+        document = await asyncio.to_thread(ai_workflow_trace_pdf_build, run, icons, offset)
+    except Exception as e:
+        # ⚠ Отказ печати — это «браузера нет» или «Chrome не справился», и
+        # сказать это надо словами: пустой ответ читался бы как пустой прогон.
+        logger_exception(f'[workflow_trace] PDF не собрался для {run_uuid}: {e}')
+        raise HTTPException(status_code=500, detail=f'Не удалось напечатать PDF: {e}')
 
-            # Строим карту step_id -> позиция
-            step_pos = {s['id']: i for i, s in enumerate(wf_steps)}
-
-            if not completed_steps:
-                # Ещё ни один шаг не завершён → первый шаг
-                candidate = wf_steps[0]
-            else:
-                # Последний завершённый шаг
-                last = max(completed_steps, key=lambda s: s.get('exec_index', 0))
-                last_step_id = last.get('step_id')
-                transition_raw = last.get('transition')
-
-                next_step = None
-                if transition_raw:
-                    import json as _json
-                    t = transition_raw if isinstance(transition_raw, dict) else _json.loads(transition_raw or '{}')
-                    to_id = t.get('to_step_id')
-                    if to_id:
-                        next_step = next((s for s in wf_steps if s['id'] == to_id), None)
-
-                if next_step is None and last_step_id in step_pos:
-                    pos = step_pos[last_step_id]
-                    if pos + 1 < len(wf_steps):
-                        next_step = wf_steps[pos + 1]
-
-                candidate = next_step
-
-            if candidate:
-                run['current_step'] = {
-                    'step_id': candidate['id'],
-                    'step_title': candidate.get('title', ''),
-                    'step_type': candidate.get('step_type_name', ''),
-                }
-        except Exception:
-            pass
-
-    return {"result": root}
+    name = ai_workflow_trace_pdf_filename(run)
+    return Response(
+        content=document,
+        media_type='application/pdf',
+        headers={'Content-Disposition': f'attachment; filename="{name}"',
+                 'Content-Length': str(len(document))},
+    )
 
 
 @router.post("/workflow_trace/run/{run_uuid}/replay")
@@ -508,6 +438,131 @@ async def workflow_trace_run_delete(
     async with mysql_get_db_async() as db:
         await db.execute("DELETE FROM agent_workflow_trace WHERE run_uuid = %s", (run_uuid,))
     return {"result": "success"}
+
+
+async def _trace_run_tree(run_uuid: str) -> dict:
+    """Прогон с шагами и деревом подпотоков — общий сбор для детали и выгрузки.
+
+    ⚠ Сбор живёт одной функцией намеренно: детали страницы и печатный документ
+    обязаны показывать одно и то же дерево. Второй такой же запрос разошёлся бы
+    с первым на первой же правке — и «на экране так, а в PDF иначе» разбирали
+    бы как ошибку движка, а не как две копии выборки.
+    """
+    async with mysql_get_db_async() as db:
+        await db.execute(
+            """
+            SELECT r.*, w.title AS workflow_title, w.name AS workflow_name,
+                   a.title AS agent_title, a.name AS agent_name
+            FROM agent_workflow_trace r
+            LEFT JOIN agent_workflow w ON w.id = r.workflow_id
+            LEFT JOIN agent a ON a.id = r.agent_id
+            WHERE r.run_uuid = %s
+            """,
+            (run_uuid,)
+        )
+        root = await db.fetchone()
+        if not root:
+            raise HTTPException(status_code=404, detail="Запуск не найден")
+
+        # Собираем всех потомков по уровням (BFS по parent_run_id)
+        runs = {root['id']: root}
+        layer = [root['id']]
+        while layer:
+            placeholders = ', '.join(['%s'] * len(layer))
+            await db.execute(
+                f"""
+                SELECT r.*, w.title AS workflow_title, w.name AS workflow_name,
+                       a.title AS agent_title, a.name AS agent_name
+                FROM agent_workflow_trace r
+                LEFT JOIN agent_workflow w ON w.id = r.workflow_id
+                LEFT JOIN agent a ON a.id = r.agent_id
+                WHERE r.parent_run_id IN ({placeholders})
+                """,
+                layer
+            )
+            children = await db.fetchall()
+            layer = [c['id'] for c in children]
+            for c in children:
+                runs[c['id']] = c
+
+        # Все шаги всех запусков одним запросом (с JOIN на LLM)
+        run_ids = list(runs.keys())
+        placeholders = ', '.join(['%s'] * len(run_ids))
+        await db.execute(
+            f"""
+            SELECT s.*, l.name AS llm_name
+            FROM agent_workflow_trace_step s
+            LEFT JOIN llm l ON l.id = s.llm_id
+            WHERE s.run_id IN ({placeholders})
+            ORDER BY s.run_id, s.exec_index, s.id
+            """,
+            run_ids
+        )
+        all_steps = await db.fetchall()
+
+    # Сборка дерева: у каждого запуска — шаги и дочерние запуски
+    for run in runs.values():
+        run['steps'] = []
+        run['children'] = []
+    for step in all_steps:
+        runs[step['run_id']]['steps'].append(step)
+    for run in runs.values():
+        parent_id = run.get('parent_run_id')
+        if parent_id and parent_id in runs:
+            runs[parent_id]['children'].append(run)
+
+    # Для running-запусков вычисляем текущий (ещё не завершённый) шаг из определения workflow
+    for run in runs.values():
+        if run.get('status') != 'running':
+            continue
+        wf_id = run.get('workflow_id')
+        if not wf_id:
+            continue
+        try:
+            wf_data = await ai_workflow_load(wf_id)
+            wf_steps = wf_data.get('steps') or []
+            completed_steps = run['steps']
+
+            if not wf_steps:
+                continue
+
+            # Строим карту step_id -> позиция
+            step_pos = {s['id']: i for i, s in enumerate(wf_steps)}
+
+            if not completed_steps:
+                # Ещё ни один шаг не завершён → первый шаг
+                candidate = wf_steps[0]
+            else:
+                # Последний завершённый шаг
+                last = max(completed_steps, key=lambda s: s.get('exec_index', 0))
+                last_step_id = last.get('step_id')
+                transition_raw = last.get('transition')
+
+                next_step = None
+                if transition_raw:
+                    import json as _json
+                    t = transition_raw if isinstance(transition_raw, dict) else _json.loads(transition_raw or '{}')
+                    to_id = t.get('to_step_id')
+                    if to_id:
+                        next_step = next((s for s in wf_steps if s['id'] == to_id), None)
+
+                if next_step is None and last_step_id in step_pos:
+                    pos = step_pos[last_step_id]
+                    if pos + 1 < len(wf_steps):
+                        next_step = wf_steps[pos + 1]
+
+                candidate = next_step
+
+            if candidate:
+                run['current_step'] = {
+                    'step_id': candidate['id'],
+                    'step_title': candidate.get('title', ''),
+                    'step_type': candidate.get('step_type_name', ''),
+                }
+        except Exception:
+            pass
+
+    return root
 
 
 def _trace_search_where() -> str:

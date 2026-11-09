@@ -1,0 +1,144 @@
+"""Выгрузка прогона в PDF: сборка документа и ссылки внутри него.
+
+⚠⚠ Проверяется **разметка**, а не байты PDF: документ собирает
+`ai_workflow_trace_pdf_html`, а печатает его Chrome, и печать в тесте стоила бы
+запуска браузера на каждый прогон сюиты. Всё, что здесь может сломаться,
+ломается в разметке — Chrome из неё делает ровно то, что в ней написано
+(проверено живьём: 25 ссылок разметки стали 25 аннотациями `/Subtype /Link`).
+
+⚠ Сторож ссылок (`test_every_link_has_its_target`) — главный в файле. Висячая
+ссылка в PDF не видна ничем: она просто не срабатывает по щелчку, и узнают об
+этом не раньше, чем кто-то щёлкнет.
+"""
+import re
+
+import pytest
+
+from src.ai.ai_workflow_trace_pdf import (ai_workflow_trace_pdf_filename,
+                                          ai_workflow_trace_pdf_html)
+
+pytestmark = pytest.mark.ai
+
+ICONS = {'topic_action': '🌿', 'llm_to_json': '🧠', 'workflow_invoke': '🇼'}
+
+
+def _step(trace_id, exec_index, step_id, title, step_type, **extra):
+    """Строка шага трассы — ровно те поля, что отдаёт ручка детали."""
+    step = {'id': trace_id, 'exec_index': exec_index, 'step_id': step_id,
+            'step_title': title, 'step_type': step_type, 'status': 'success',
+            'duration_ms': 1000, 'metadata_rendered': '{"a": 1}',
+            'variables_changed': '{"b": 2}', 'output': 'ok', 'transition': None,
+            'error': None, 'llm_name': None, 'tokens_input': None,
+            'tokens_output': None}
+    step.update(extra)
+    return step
+
+
+@pytest.fixture
+def run():
+    """Прогон с петлёй, подпотоком и переходом в неисполненный шаг."""
+    child = {
+        'id': 900, 'run_uuid': 'child-uuid', 'parent_step_id': 30, 'depth': 1,
+        'workflow_title': 'Полировка', 'workflow_name': 'polish',
+        'status': 'success', 'duration_ms': 5000, 'variables_start': '{}',
+        'prompt_user': 'Отполируй', 'result': 'ok', 'steps': [
+            _step(910, 1, 301, 'Полировка текста', 'llm_to_json'),
+        ], 'children': [],
+    }
+    return {
+        'id': 500, 'run_uuid': 'root-uuid', 'depth': 0, 'status': 'success',
+        'workflow_title': 'Рассылка: шаблон', 'workflow_name': 'dating_mail_write',
+        'agent_title': 'Рассылка', 'agent_name': 'mail', 'duration_ms': 66200,
+        'started_at': None, 'finished_at': None, 'session_uuid': 's-1',
+        'request_uuid': 'r-1', 'message_id': 77,
+        'prompt_user': 'Напиши шаблон письма.', 'result': 'Hello there.',
+        'request_json': '{"question": "Напиши шаблон письма."}',
+        'response_json': None, 'error': None,
+        'variables_start': '{"girl_name": "Валентина"}',
+        'steps': [
+            # Шаг 20 исполняется дважды — петля: ровно та форма, на которой
+            # ссылка «откуда» показывала чужой заход.
+            _step(101, 1, 20, 'Проверка темы', 'topic_action',
+                  transition='{"phase": "after", "condition": "t == 1",'
+                             ' "from_step_id": 20, "to_step_id": 30}'),
+            _step(102, 2, 30, 'Вызов подпотока', 'workflow_invoke'),
+            _step(103, 3, 20, 'Проверка темы', 'topic_action',
+                  transition='{"phase": "after", "condition": "t == 2",'
+                             ' "from_step_id": 20, "to_step_id": 999}'),
+        ],
+        'children': [child],
+    }
+
+
+class TestWorkflowTracePdfDocument:
+
+    def test_every_link_has_its_target(self, run):
+        """Ни одна ссылка документа не висит: у каждой `href="#x"` есть `id="x"`."""
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+        targets = set(re.findall(r'id="([^"]+)"', page))
+        links = set(re.findall(r'href="#([^"]+)"', page))
+        assert links, 'в документе нет ни одной внутренней ссылки'
+        assert links <= targets, f'ссылки в никуда: {sorted(links - targets)}'
+
+    def test_contents_lists_every_step_and_subflow(self, run):
+        """Содержание перечисляет все шаги и подпотоки — и ровно в порядке тела."""
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+        contents, body = page.split('id="summary"', 1)
+
+        in_toc = re.findall(r'href="#((?:step|run)-\d+)"', contents)
+        in_body = re.findall(r'<div class="(?:step|child)[^"]*" id="((?:step|run)-\d+)"', body)
+        assert in_toc == in_body, 'содержание и тело документа разошлись порядком'
+        assert set(in_toc) == {'step-101', 'step-102', 'step-103', 'run-900', 'step-910'}
+
+    def test_transition_points_at_the_right_pass_of_the_loop(self, run):
+        """У петли «откуда» — свой заход шага, «куда» — следующий, а не первый."""
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+        # ⚠ Границей блока берётся следующий шаг (или конец документа), а не
+        # первое `</div></div>`: закрывающих пар внутри одного шага много, и
+        # срез по ним обрезал бы блок на середине перехода.
+        block = re.split(r'<div class="step[ "]', page.split('id="step-103"', 1)[1])[0]
+
+        # Третий шаг — второй заход в step_id 20: «откуда» это он сам (#3),
+        # а не первый заход (#1), который показывался до починки.
+        assert '#3 · Проверка темы (ID 20)' in block
+        assert '#1 · Проверка темы (ID 20)' not in block
+        # Переход ведёт в шаг, которого в прогоне нет, — так и сказано.
+        assert 'шага нет в прогоне' in block
+
+    def test_subflow_links_both_ways(self, run):
+        """Подпоток и породивший его шаг ссылаются друг на друга."""
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+        step = page.split('id="step-102"', 1)[1].split('id="run-900"', 1)[0]
+        child = page.split('id="run-900"', 1)[1]
+
+        assert 'href="#run-900"' in step, 'из шага нет ссылки вниз в подпоток'
+        assert 'href="#step-102"' in child.split('</div>', 3)[0], \
+            'из подпотока нет возврата в породивший шаг'
+
+    def test_long_value_is_cut_and_the_cut_is_named(self, run):
+        """Длинное значение обрезано, и обрезка названа — молча не теряем ничего."""
+        run['steps'][0]['output'] = 'я' * 50_000
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+        assert 'обрезано: показано' in page
+        assert 'я' * 20_000 not in page, 'значение попало в документ целиком'
+
+    def test_markup_from_data_is_escaped(self, run):
+        """Данные прогона не становятся разметкой: заголовок шага экранирован."""
+        run['steps'][0]['step_title'] = '<script>alert(1)</script>'
+        run['prompt_user'] = '<img src=x onerror=alert(2)>'
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+        assert '<script>alert(1)</script>' not in page
+        assert '<img src=x' not in page
+        assert '&lt;script&gt;' in page
+
+    def test_missing_contract_says_why(self, run):
+        """Пустой контракт объясняется словами, а не прочерком."""
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+        assert 'не записан' in page.split('Response contract', 1)[1][:400]
+
+    def test_filename_stays_ascii(self, run):
+        """Имя файла остаётся ASCII без пробелов: оно уезжает в заголовок HTTP."""
+        run['workflow_name'] = 'рассылка/шаблон письма'
+        name = ai_workflow_trace_pdf_filename(run)
+        assert name.isascii() and name.endswith('.pdf')
+        assert '/' not in name and ' ' not in name

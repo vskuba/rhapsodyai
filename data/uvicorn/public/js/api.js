@@ -66,3 +66,57 @@ export async function deleteData(url) {
     if (!response.ok) throw await apiError(response);
     return await response.json();
 }
+
+/**
+ * Забрать с ручки файл и отдать его человеку — имя берётся у сервера.
+ *
+ * ⚠⚠ Почему не `<a href>` и не `window.open`: сессия в куке, и ссылка бы
+ * сработала — но отказ ручки открылся бы вкладкой с голым JSON `{"detail": …}`
+ * вместо уведомления, а пока файл собирается (печать PDF — это секунды),
+ * человек не видел бы ничего. Через `fetch` отказ приезжает обычным
+ * исключением `apiError`, то есть ровно тем же, что у соседних функций.
+ *
+ * ⚠ Имя файла назначает сервер (`Content-Disposition`), а не вызывающий:
+ * оно собрано там же, где содержимое, и второй источник имени разошёлся бы
+ * с первым. `fallbackName` — только на случай ручки без заголовка.
+ *
+ * @param {string} url адрес ручки.
+ * @param {string} fallbackName имя, если сервер своего не назвал.
+ * @returns {Promise<string>} имя, под которым файл сохранён.
+ */
+export async function getFile(url, fallbackName = 'download') {
+    const response = await fetch(url, {method: 'GET', credentials: 'include'});
+    if (!response.ok) throw await apiError(response);
+
+    const blob = await response.blob();
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = fileNameOf(response.headers.get('Content-Disposition')) || fallbackName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    // ⚠ Отзыв ссылки отложен: синхронный `revokeObjectURL` сразу после click()
+    // обрывает скачивание крупного файла — браузер не успевает прочитать Blob.
+    setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
+    return link.download;
+}
+
+// Имя файла из заголовка `Content-Disposition`; пусто, если его там нет.
+//
+// ⚠ Сперва `filename*` (RFC 5987, процентное кодирование UTF-8), потом простое
+// `filename`: когда имя неASCII, сервер шлёт оба, и простое в таком случае —
+// транслитерация или знаки вопроса.
+function fileNameOf(header) {
+    if (!header) return '';
+    const extended = header.match(/filename\*=UTF-8''([^;]+)/i);
+    if (extended) {
+        try {
+            return decodeURIComponent(extended[1]);
+        } catch {
+            // битое кодирование — пробуем простое имя ниже
+        }
+    }
+    const plain = header.match(/filename="?([^";]+)"?/i);
+    return plain ? plain[1] : '';
+}

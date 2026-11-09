@@ -997,6 +997,9 @@
         font-size: 12px;
     }
 
+    /* ⚠ Отступ `8px`, а не `auto`: вправо ряд кнопок отжимает сосед слева
+       (`.btn-pdf-run`), и второй `auto` в том же flex-ряду разделил бы
+       свободное место поровну — между выгрузкой и удалением зиял бы провал. */
     .btn-delete-run {
         background: transparent;
         color: #e74c3c;
@@ -1005,7 +1008,31 @@
         padding: 3px 10px;
         font-size: 12px;
         cursor: pointer;
+        margin-left: 8px;
+    }
+
+    /* Выгрузка прогона в PDF. Стоит слева от «Удалить лог»: это чтение, а не
+       правка, и соседство с разрушающей кнопкой у неё только пространственное —
+       отсюда нейтральный серо-синий, а не красный и не синий «Повторить». */
+    .btn-pdf-run {
+        background: transparent;
+        color: #475569;
+        border: 1px solid #cbd5e1;
+        border-radius: 4px;
+        padding: 3px 10px;
+        font-size: 12px;
+        cursor: pointer;
         margin-left: auto;
+    }
+
+    .btn-pdf-run:hover {
+        border-color: #6366f1;
+        color: #4338ca;
+    }
+
+    .btn-pdf-run:disabled {
+        opacity: 0.5;
+        cursor: default;
     }
 
     .btn-replay-run {
@@ -1240,7 +1267,7 @@
 {% block scripts %}
 <script src="/static/js/sidebar_resizer.js"></script>
 <script type="module">
-    import {getData, postData, deleteData} from '/static/js/api.js';
+    import {getData, postData, deleteData, getFile} from '/static/js/api.js';
     import {showNotification} from '/static/js/notification.js';
     // Правило «к какой группе относится переменная» живёт отдельным чистым модулем:
     // список трассы и панель редактора размечают группы одним кодом.
@@ -1992,8 +2019,31 @@
             }
         };
 
+        // Export PDF: прогон уходит документом — обложка, содержание, каждый шаг
+        // с входом, выходом и переходом, подпотоки и значения переменных.
+        //
+        // ⚠ Печатает сервер, а не `window.print()` страницы: на экране шаги
+        // свёрнуты аккордеонами, а печать берёт DOM как есть — в документ попали
+        // бы одни заголовки. Сборка идёт из тех же данных, что уже привёз
+        // `GET /workflow_trace/run/{run_uuid}`.
+        const pdfBtn = el('button', 'btn-pdf-run', '📄 Export PDF');
+        pdfBtn.title = 'Скачать прогон документом PDF: содержание со ссылками на шаги, '
+            + 'переходы, подпотоки, переменные';
+        pdfBtn.onclick = async () => {
+            pdfBtn.disabled = true;
+            pdfBtn.textContent = 'Печатается…';
+            try {
+                const name = await getFile(`/workflow_trace/run/${run.run_uuid}/pdf`);
+                showNotification(`PDF собран: ${name}`, 'success');
+            } catch (e) {
+                showNotification(`Ошибка экспорта PDF: ${e.message}`, 'error');
+            } finally {
+                pdfBtn.disabled = false;
+                pdfBtn.textContent = '📄 Export PDF';
+            }
+        };
+
         const delBtn = el('button', 'btn-delete-run', 'Удалить лог');
-        delBtn.style.float = 'right';
         delBtn.onclick = async () => {
             if (!confirm('Удалить этот запуск из журнала?')) return;
             try {
@@ -2007,6 +2057,7 @@
                 showNotification(`Ошибка удаления: ${e.message}`, 'error');
             }
         };
+        headRow.appendChild(pdfBtn);
         headRow.appendChild(delBtn);
         headRow.appendChild(replayBtn);
 
