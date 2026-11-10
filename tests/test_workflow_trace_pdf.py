@@ -22,17 +22,36 @@ pytestmark = pytest.mark.ai
 
 ICONS = {'topic_action': '🌿', 'llm_to_json': '🧠', 'workflow_invoke': '🇼'}
 
+# Описание жребия ровно той формы, что лежит на проде: доля числом и доля
+# «остатком», у `dice_batch` выпадает серия.
+DICE_SPEC = {
+    'dice_mail_opening': {'вспомнила о тебе': 40, 'новость про себя': 35,
+                          'вопрос в лоб': 25},
+    'dice_mail_story': {'да': 35, 'нет': 'rest'},
+}
 
-def _step(trace_id, exec_index, step_id, title, step_type, **extra):
-    """Строка шага трассы — ровно те поля, что отдаёт ручка детали."""
-    step = {'id': trace_id, 'exec_index': exec_index, 'step_id': step_id,
-            'step_title': title, 'step_type': step_type, 'status': 'success',
-            'duration_ms': 1000, 'metadata_rendered': '{"a": 1}',
-            'variables_changed': '{"b": 2}', 'output': 'ok', 'transition': None,
-            'error': None, 'llm_name': None, 'tokens_input': None,
-            'tokens_output': None}
-    step.update(extra)
-    return step
+# Настройка прогона — то, что ручке отдаёт `ai_workflow_trace_pdf_source`.
+SOURCE = {
+    'agents': [{
+        'id': 232, 'name': 'mail', 'title': 'Рассылка: шаблон',
+        'node_name': 'Ladadate',
+        'prompt_system': 'Ты пишешь письма от имени [[girl_name]].\n\nБудь краткой.',
+        'agent_variable': '{"girl_name": "Валентина", "girl_age": 36}',
+        'workflow_variable': None,
+    }],
+    'inputs': {
+        7: [{'name': 'girl_name', 'default': None, 'description': 'Имя девушки'},
+            {'name': 'tone', 'default': 'тёплый', 'description': None}],
+    },
+    'dice': {
+        7: [{'step_id': 40, 'title': 'Жребий: приём письма', 'tool_name': 'dice',
+             'spec_ref': 'dice_mail_spec',
+             'outputs_map': {'dice_mail_opening': 'dice_mail_opening',
+                             'dice_mail_story': 'dice_mail_story'}},
+            {'step_id': 41, 'title': 'Жребий: не дошли', 'tool_name': 'dice',
+             'spec_ref': 'dice_other_spec', 'outputs_map': {}}],
+    },
+}
 
 
 @pytest.fixture
@@ -48,6 +67,7 @@ def run():
     }
     return {
         'id': 500, 'run_uuid': 'root-uuid', 'depth': 0, 'status': 'success',
+        'workflow_id': 7, 'agent_id': 232,
         'workflow_title': 'Рассылка: шаблон', 'workflow_name': 'dating_mail_write',
         'agent_title': 'Рассылка', 'agent_name': 'mail', 'duration_ms': 66200,
         'started_at': None, 'finished_at': None, 'session_uuid': 's-1',
@@ -55,7 +75,9 @@ def run():
         'prompt_user': 'Напиши шаблон письма.', 'result': 'Hello there.',
         'request_json': '{"question": "Напиши шаблон письма."}',
         'response_json': None, 'error': None,
-        'variables_start': '{"girl_name": "Валентина"}',
+        'variables_start': json.dumps(
+            {'girl_name': 'Валентина', 'dice_mail_spec': json.dumps(DICE_SPEC, ensure_ascii=False)},
+            ensure_ascii=False),
         'steps': [
             # Шаг 20 исполняется дважды — петля: ровно та форма, на которой
             # ссылка «откуда» показывала чужой заход.
@@ -66,6 +88,12 @@ def run():
             _step(103, 3, 20, 'Проверка темы', 'topic_action',
                   transition='{"phase": "after", "condition": "t == 2",'
                              ' "from_step_id": 20, "to_step_id": 999}'),
+            # ⚠ Жребий стоит ПОСЛЕДНИМ намеренно: соседние тесты адресуют
+            # `steps[0]`/`steps[1]`, и вставка в начало сдвинула бы их молча.
+            _step(104, 4, 40, 'Жребий: приём письма', 'tool_invoke',
+                  variables_changed=json.dumps(
+                      {'dice_mail_opening': 'новость про себя',
+                       'dice_mail_story': 'нет'}, ensure_ascii=False)),
         ],
         'children': [child],
     }
@@ -89,7 +117,8 @@ class TestWorkflowTracePdfDocument:
         in_toc = re.findall(r'href="#((?:step|run)-\d+)"', contents)
         in_body = re.findall(r'<div class="(?:step|child)[^"]*" id="((?:step|run)-\d+)"', body)
         assert in_toc == in_body, 'содержание и тело документа разошлись порядком'
-        assert set(in_toc) == {'step-101', 'step-102', 'step-103', 'run-900', 'step-910'}
+        assert set(in_toc) == {'step-101', 'step-102', 'step-103', 'step-104',
+                               'run-900', 'step-910'}
 
     def test_transition_points_at_the_right_pass_of_the_loop(self, run):
         """У петли «откуда» — свой заход шага, «куда» — следующий, а не первый."""
@@ -346,3 +375,81 @@ class TestWorkflowTracePdfValues:
 
         assert 'обрезано: показано' in page
         assert 'я' * 20_000 not in page
+
+
+class TestWorkflowTracePdfSetup:
+    """Разделы «Агент» и «Workflow»: чем прогон был задан, а не что в нём было."""
+
+    def test_sections_are_absent_without_source(self, run):
+        """Нет справочников — нет и разделов: документ обязан собраться без них."""
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0')
+        assert 'id="agent"' not in page
+        assert 'id="workflow"' not in page
+        assert 'id="steps"' in page, 'без справочников развалился весь документ'
+
+    def test_agent_shows_prompt_and_variables(self, run):
+        """Агент: системный промпт и переменные агента — и оговорка «на сейчас»."""
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0', SOURCE)
+
+        block = page.split('id="agent"', 1)[1].split('id="workflow"', 1)[0]
+        # ⚠ Подстановка в промпте подсвечена, поэтому строка разрезана
+        # span-ом — проверяем обе половины и саму подсветку.
+        assert 'Ты пишешь письма от имени' in block
+        assert '<span class="mark-var">[[girl_name]]</span>' in block
+        assert 'Будь краткой.' in block
+        assert '<td class="kv-key">girl_name</td>' in block
+        assert 'Валентина' in block
+        # ⚠ Оговорка обязательна: промпт трасса не хранит, и с тех пор его
+        # могли править. Без неё раздел читался бы как «вот чем кормили».
+        assert 'какая она сейчас' in block
+
+    def test_workflow_shows_declared_inputs_with_values(self, run):
+        """Входящие переменные ветки — с их значениями и источником значения."""
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0', SOURCE)
+        block = page.split('id="workflow"', 1)[1].split('id="variables"', 1)[0]
+
+        assert '%girl_name%' in block
+        assert 'Валентина' in block and 'прогон' in block
+        # Объявленная, но не присланная — показывает умолчание, а не пустоту
+        assert '%tone%' in block and 'умолчание' in block and 'тёплый' in block
+
+    def test_dice_lists_every_option_and_marks_the_rolled_one(self, run):
+        """Жребий: все варианты с долями, выпавший помечен."""
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0', SOURCE)
+        block = page.split('id="workflow"', 1)[1].split('id="variables"', 1)[0]
+
+        # Все варианты на месте, а не только выпавший
+        for option in ('вспомнила о тебе', 'новость про себя', 'вопрос в лоб'):
+            assert option in block, f'вариант «{option}» потерян'
+        # Выпавший помечен строкой-попаданием
+        hit = [row for row in block.split('<tr') if 'новость про себя' in row]
+        assert hit and 'dice-hit' in hit[0], 'выпавший вариант не помечен'
+        assert '40%' in block and '25%' in block
+
+    def test_dice_rest_share_is_named(self, run):
+        """Доля «остаток» показана числом, а не словом `rest`."""
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0', SOURCE)
+        block = page.split('id="workflow"', 1)[1].split('id="variables"', 1)[0]
+        assert 'остаток (65%)' in block, 'rest не переведён в проценты'
+
+    def test_dice_that_never_fired_is_still_listed(self, run):
+        """Жребий, до которого прогон не дошёл, остаётся в списке и подписан."""
+        page = ai_workflow_trace_pdf_html(run, ICONS, '+0', SOURCE)
+        block = page.split('id="workflow"', 1)[1].split('id="variables"', 1)[0]
+
+        assert 'Жребий: не дошли' in block
+        assert 'не бросали' in block, 'несработавший жребий выдан за сработавший'
+
+
+# ── вспомогательное ────────────────────────────────────────────────────────
+
+def _step(trace_id, exec_index, step_id, title, step_type, **extra):
+    """Строка шага трассы — ровно те поля, что отдаёт ручка детали."""
+    step = {'id': trace_id, 'exec_index': exec_index, 'step_id': step_id,
+            'step_title': title, 'step_type': step_type, 'status': 'success',
+            'duration_ms': 1000, 'metadata_rendered': '{"a": 1}',
+            'variables_changed': '{"b": 2}', 'output': 'ok', 'transition': None,
+            'error': None, 'llm_name': None, 'tokens_input': None,
+            'tokens_output': None}
+    step.update(extra)
+    return step

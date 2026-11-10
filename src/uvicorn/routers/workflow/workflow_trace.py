@@ -13,6 +13,7 @@ from setting_.setting_ import setting_get
 from src.ai.ai_workflow import ai_workflow_load
 from src.ai.ai_workflow_trace_pdf import (ai_workflow_trace_pdf_build,
                                           ai_workflow_trace_pdf_filename)
+from src.ai.ai_workflow_trace_pdf_source import ai_workflow_trace_pdf_source
 from src.ai.framework.agent.ai_framework_manager import workflow_runs_active
 from src.auth.auth import AuthChecker
 from src.auth.auth_permission import AuthPermission
@@ -272,9 +273,13 @@ async def workflow_trace_run_pdf(
     icons = {t['name']: t.get('icon') for t in
              await AgentWorkflowStepTypeRepository().find_by({}, 'id ASC')}
     offset = await setting_get('timezone', '+0')
+    # Настройка, которой прогон был задан: агент, входящие переменные веток,
+    # жребии. Собирается ДО печати — та идёт в отдельном потоке и в базу не ходит.
+    source = await ai_workflow_trace_pdf_source(run)
 
     try:
-        document = await asyncio.to_thread(ai_workflow_trace_pdf_build, run, icons, offset)
+        document = await asyncio.to_thread(ai_workflow_trace_pdf_build, run, icons,
+                                           offset, source)
     except Exception as e:
         # ⚠ Отказ печати — это «браузера нет» или «Chrome не справился», и
         # сказать это надо словами: пустой ответ читался бы как пустой прогон.

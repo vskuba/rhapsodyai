@@ -34,6 +34,7 @@ from src.ai.ai_workflow_trace_pdf_step import (
     ai_workflow_trace_pdf_step_html,
     ai_workflow_trace_pdf_step_plan,
 )
+from src.ai.ai_workflow_trace_pdf_dice import ai_workflow_trace_pdf_dice
 from src.ai.ai_workflow_trace_pdf_style import AI_WORKFLOW_TRACE_PDF_CSS
 from src.ai.ai_workflow_trace_pdf_text import (
     ai_workflow_trace_pdf_text_badge,
@@ -53,7 +54,8 @@ from src.ai.ai_workflow_trace_pdf_text import (
 AI_WORKFLOW_TRACE_PDF_TIMEOUT = 180
 
 
-def ai_workflow_trace_pdf_build(run: dict, icons: dict, offset) -> bytes:
+def ai_workflow_trace_pdf_build(run: dict, icons: dict, offset,
+                                source: dict = None) -> bytes:
     """
     Напечатать прогон workflow в PDF; вернуть готовый документ байтами.
 
@@ -63,6 +65,9 @@ def ai_workflow_trace_pdf_build(run: dict, icons: dict, offset) -> bytes:
         icons: `{имя типа шага: значок}` из `agent_workflow_step_type`.
         offset: часовой пояс установки (настройка `timezone`) — метки времени
             показываются в нём, а хранятся в UTC.
+        source: настройка, которой прогон был задан (`..._pdf_source`) —
+            агенты, входящие переменные веток, жребии. Без неё разделы
+            «Агент» и «Workflow» не рисуются.
 
     Returns:
         bytes: содержимое PDF.
@@ -75,7 +80,7 @@ def ai_workflow_trace_pdf_build(run: dict, icons: dict, offset) -> bytes:
     через `asyncio.to_thread`, иначе на время печати встанет весь событийный
     цикл процесса — а это секунды.
     """
-    html = ai_workflow_trace_pdf_html(run, icons, offset)
+    html = ai_workflow_trace_pdf_html(run, icons, offset, source)
     with tempfile.TemporaryDirectory(prefix='trace-pdf-') as folder:
         page = os.path.join(folder, 'trace.html')
         out = os.path.join(folder, 'trace.pdf')
@@ -86,18 +91,27 @@ def ai_workflow_trace_pdf_build(run: dict, icons: dict, offset) -> bytes:
             return fh.read()
 
 
-def ai_workflow_trace_pdf_html(run: dict, icons: dict, offset) -> str:
+def ai_workflow_trace_pdf_html(run: dict, icons: dict, offset, source: dict = None) -> str:
     """
     Документ прогона целиком одной HTML-строкой — то, что уйдёт в печать.
 
     Отдельная от печати функция не ради чистоты: разметку проверяют тестом и
     смотрят глазами в браузере, а это дешевле делать без запуска Chrome.
+
+    `source` — настройка, которой прогон был задан (`..._pdf_source`): агенты,
+    объявленные входящие переменные веток, шаги жребия. Без неё разделы
+    «Агент» и «Workflow» просто не рисуются: документ обязан собираться и
+    тогда, когда справочников не достать.
     """
+    source = source or {}
     plan = ai_workflow_trace_pdf_step_plan(run)
+    dice = ai_workflow_trace_pdf_dice(run, source.get('dice') or {})
     body = ''.join([
         _cover(run, plan, offset),
-        _contents(run, plan, icons),
+        _contents(run, plan, icons, source, dice),
         _summary(run),
+        _agent(run, source),
+        _workflow(run, source, dice),
         _variables(run),
         _steps(run, plan, icons),
     ])
@@ -171,11 +185,17 @@ def _cover(run: dict, plan: list, offset) -> str:
             f'<table class="facts">{facts_html}</table></div>')
 
 
-def _contents(run: dict, plan: list, icons: dict) -> str:
+def _contents(run: dict, plan: list, icons: dict, source: dict, dice: list) -> str:
     """Содержание: разделы и каждый шаг ссылкой на своё место в документе."""
-    rows = [_toc_row('', 'Сводка прогона', '#summary', ''),
-            _toc_row('', 'Переменные прогона', '#variables', ''),
-            _toc_row('', 'Шаги выполнения', '#steps', '')]
+    rows = [_toc_row('', 'Сводка прогона', '#summary', '')]
+    if source.get('agents'):
+        rows.append(_toc_row('', 'Агент', '#agent',
+                             f'агентов: {len(source["agents"])}'))
+    if source.get('inputs') or dice:
+        rows.append(_toc_row('', 'Workflow', '#workflow',
+                             f'жребиев: {len(dice)}' if dice else ''))
+    rows += [_toc_row('', 'Переменные прогона', '#variables', ''),
+             _toc_row('', 'Шаги выполнения', '#steps', '')]
     for entry in plan:
         if entry['kind'] == 'run':
             child = entry['run']
@@ -220,6 +240,65 @@ def _summary(run: dict) -> str:
             f'</div></div>')
 
 
+def _agent(run: dict, source: dict) -> str:
+    """Агент: системный промпт и переменные агента — чем он отличается от соседа.
+
+    ⚠⚠ Это **настройка на сейчас**, а не снимок на момент прогона: промпт в
+    трассе не хранится, и с тех пор его могли править. Сказано об этом прямо —
+    молчание здесь читалось бы как «вот чем кормили», и разбор жалобы пошёл бы
+    не туда.
+    """
+    agents = source.get('agents') or []
+    if not agents:
+        return ''
+
+    blocks = []
+    for agent in agents:
+        rows = [('Имя', _pair(agent.get('title'), agent.get('name'))),
+                ('Нода', agent.get('node_name') or '—')]
+        facts = ''.join(
+            f'<tr><th>{label}</th><td>'
+            f'{ai_workflow_trace_pdf_text_escape(value)}</td></tr>'
+            for label, value in rows)
+        blocks.append(
+            f'<div class="card"><div class="card-head">'
+            f'<span class="card-kicker">Агент #{agent.get("id")}</span></div>'
+            f'<table class="facts">{facts}</table>'
+            f'<div class="label">Системный промпт</div>'
+            f'{ai_workflow_trace_pdf_text_value(agent.get("prompt_system"))}'
+            f'<div class="label">Переменные агента</div>'
+            f'{ai_workflow_trace_pdf_text_value(agent.get("agent_variable"))}</div>')
+
+    return (f'{_heading(run, "agent", "2", "Агент")}'
+            f'<div class="note">Настройка показана такой, какая она сейчас: '
+            f'промпт и переменные агента трасса не хранит, и с момента прогона '
+            f'их могли править.</div>{"".join(blocks)}</div>')
+
+
+def _workflow(run: dict, source: dict, dice: list) -> str:
+    """Workflow: объявленные входящие переменные с их значениями и жребии."""
+    inputs = source.get('inputs') or {}
+    if not inputs and not dice:
+        return ''
+
+    blocks = []
+    for node in _branches(run):
+        rows = _input_rows(node, inputs.get(node.get('workflow_id')) or [])
+        if not rows:
+            continue
+        name = node.get('workflow_title') or node.get('workflow_name') or 'workflow'
+        blocks.append(
+            f'<div class="card"><div class="card-head">'
+            f'<span class="card-kicker">Входящие переменные</span>'
+            f'<span class="card-name">{ai_workflow_trace_pdf_text_escape(name)}</span>'
+            f'</div><table class="vars">'
+            f'<tr><th>Переменная</th><th>Значение</th><th>Откуда</th></tr>'
+            f'{rows}</table></div>')
+
+    return (f'{_heading(run, "workflow", "3", "Workflow")}'
+            f'{"".join(blocks) or ""}{_dice_html(dice)}</div>')
+
+
 def _variables(run: dict) -> str:
     """Переменные прогона: последнее значение каждой и то, откуда оно взялось."""
     snapshot = run.get('variables_start') or ''
@@ -262,7 +341,7 @@ def _steps(run: dict, plan: list, icons: dict) -> str:
               else ai_workflow_trace_pdf_step_html(entry, icons)
               for entry in plan]
     body = ''.join(blocks) or '<div class="note">Шагов в прогоне нет.</div>'
-    return f'{_heading(run, "steps", "3", "Шаги выполнения")}{body}</div>'
+    return f'{_heading(run, "steps", "5", "Шаги выполнения")}{body}</div>'
 
 
 # ── мелочи разметки ────────────────────────────────────────────────────────
@@ -287,7 +366,7 @@ def _heading(run: dict, anchor: str, number: str, title: str) -> str:
 def _variables_section(run: dict, inner: str, qty: int | None = None) -> str:
     """Обёртка раздела переменных: заголовок со счётчиком и тело."""
     counter = f' ({qty})' if qty is not None else ''
-    return f'{_heading(run, "variables", "2", f"Переменные прогона{counter}")}{inner}</div>'
+    return f'{_heading(run, "variables", "4", f"Переменные прогона{counter}")}{inner}</div>'
 
 
 def _toc_row(number: str, name: str, href: str, meta: str, depth: int = 0, sub: bool = False) -> str:
@@ -298,6 +377,99 @@ def _toc_row(number: str, name: str, href: str, meta: str, depth: int = 0, sub: 
             f'<span class="toc-name"><a href="{href}">'
             f'{ai_workflow_trace_pdf_text_escape(name)}</a></span>'
             f'<span class="toc-meta">{ai_workflow_trace_pdf_text_escape(meta)}</span></div>')
+
+
+def _branches(run: dict) -> list:
+    """Ветки дерева по порядку: корень, затем подпотоки — как в теле документа."""
+    out = []
+
+    def walk(node):
+        out.append(node)
+        for child in node.get('children') or []:
+            walk(child)
+
+    walk(run)
+    return out
+
+
+def _input_rows(node: dict, declared: list) -> str:
+    """Строки входящих переменных ветки: значение из прогона либо умолчание.
+
+    ⚠ Значение берётся из **снимка старта**, а не из последнего состояния: это
+    контракт вызова — с чем ветку позвали. Чем переменная стала потом, видно в
+    разделе «Переменные прогона».
+    """
+    try:
+        values = json.loads(node.get('variables_start') or '{}')
+    except (ValueError, TypeError):
+        values = {}
+    if not isinstance(values, dict):
+        values = {}
+
+    rows = []
+    for item in declared:
+        name = item.get('name')
+        if name in values:
+            value, origin = values[name], 'прогон'
+        else:
+            value, origin = item.get('default'), 'умолчание'
+        note = item.get('description')
+        rows.append(
+            f'<tr><td class="v-name">%{ai_workflow_trace_pdf_text_escape(name)}%'
+            + (f'<div class="v-note">{ai_workflow_trace_pdf_text_escape(note)}</div>'
+               if note else '')
+            + f'</td><td class="v-value">{ai_workflow_trace_pdf_text_inline(value)}</td>'
+              f'<td class="v-from">{origin}</td></tr>')
+    return ''.join(rows)
+
+
+def _dice_html(dice: list) -> str:
+    """Жребии: все варианты с долями, выпавшее помечено.
+
+    ⚠⚠ Показываются и те жребии, до которых прогон **не дошёл**: они
+    описывают, каким он мог быть, а в трассе их нет вовсе. Такой шаг подписан
+    «не бросали».
+    """
+    if not dice:
+        return ''
+
+    cards = []
+    for item in dice:
+        head = [f'<span class="card-kicker">Жребий</span>',
+                f'<span class="card-name">'
+                f'{ai_workflow_trace_pdf_text_escape(item["title"])}</span>',
+                f'<span class="badge badge-tokens">'
+                f'{ai_workflow_trace_pdf_text_escape(item["tool_name"])}</span>']
+        if item['fired']:
+            where = (f'<a class="step-up" href="#{item["anchor"]}">↓ шаг '
+                     f'#{item["exec_index"]}</a>' if item['anchor'] else '')
+            head.append(where)
+        else:
+            head.append('<span class="badge badge-stopped">не бросали</span>')
+
+        if not item['groups']:
+            body = ('<div class="note">Описание жребия в переменных прогона не '
+                    f'нашлось — оно задаётся переменной '
+                    f'<code>{ai_workflow_trace_pdf_text_escape(item["spec_ref"] or "?")}</code>.'
+                    '</div>')
+        else:
+            body = ''.join(_dice_group(group) for group in item['groups'])
+
+        cards.append(f'<div class="card"><div class="card-head">{"".join(head)}</div>'
+                     f'{body}</div>')
+    return ''.join(cards)
+
+
+def _dice_group(group: dict) -> str:
+    """Одна переменная жребия: её варианты с долями, выпавшие помечены."""
+    rows = ''.join(
+        f'<tr class="{"dice-hit" if option["rolled"] else ""}">'
+        f'<td class="dice-mark">{"✔" if option["rolled"] else ""}</td>'
+        f'<td class="dice-share">{ai_workflow_trace_pdf_text_escape(option["share"])}</td>'
+        f'<td class="dice-label">{ai_workflow_trace_pdf_text_escape(option["label"])}</td>'
+        f'</tr>' for option in group['options'])
+    return (f'<div class="label">%{ai_workflow_trace_pdf_text_escape(group["name"])}%</div>'
+            f'<table class="kv dice">{rows}</table>')
 
 
 def _pair(title, name) -> str:

@@ -360,6 +360,63 @@ h2 .h2-num { color: #6366f1; margin-right: 6px; }
 .child-kicker { font-size: 6.5pt; text-transform: uppercase; letter-spacing: .07em; color: #7c3aed; font-weight: 700; }
 .child-name { font-weight: 700; color: #0f172a; }
 
+/* ── карточка раздела: агент, входящие ветки, жребий ───────────────────── */
+.card {
+    border: 1px solid #e2e8f0;
+    border-radius: 5px;
+    padding: 7px 9px;
+    margin-bottom: 8px;
+    page-break-inside: avoid;
+}
+
+.card-head {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-bottom: 5px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #eef2f7;
+}
+
+.card-kicker {
+    font-size: 6.5pt;
+    text-transform: uppercase;
+    letter-spacing: .07em;
+    color: #6366f1;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.card-name { font-weight: 700; color: #0f172a; flex: 1; word-break: break-word; }
+
+/* ── жребий: доля слева, вариант справа, выпавшее помечено ─────────────── */
+.dice .dice-mark {
+    width: 14px;
+    text-align: center;
+    color: #1e8449;
+    font-weight: 700;
+}
+
+.dice .dice-share {
+    width: 64px;
+    font-family: "DejaVu Sans Mono", "Liberation Mono", monospace;
+    font-size: 7pt;
+    color: #475569;
+    white-space: nowrap;
+    text-align: right;
+}
+
+.dice .dice-label { font-size: 7.5pt; color: #0f172a; word-break: break-word; }
+
+/* ⚠ Выпавшее красится фоном И кромкой слева: доля вариантов бывает в десяток
+   строк, и один лишь оттенок фона на бумаге теряется среди зебры. */
+.dice tr.dice-hit td {
+    background: #eafaf1;
+    font-weight: 700;
+}
+
+.dice tr.dice-hit .dice-label { box-shadow: inset 2px 0 0 #2f9e44; }
+
 /* ── переменные ────────────────────────────────────────────────────────── */
 .vars { width: 100%; border-collapse: collapse; }
 
@@ -386,6 +443,7 @@ h2 .h2-num { color: #6366f1; margin-right: 6px; }
 .vars .v-from { color: #94a3b8; width: 12%; white-space: nowrap; }
 .vars .v-value { color: #334155; }
 .vars .v-empty { color: #cbd5e1; font-style: italic; }
+.vars .v-note { color: #94a3b8; font-size: 6.5pt; font-weight: normal; margin-top: 1px; }
 
 .cut { color: #b45309; font-style: italic; font-size: 6.5pt; }
 """
