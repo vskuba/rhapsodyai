@@ -913,6 +913,31 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
 
             # -----------------------------------------------------------------------
 
+            # Продолжение мастера на другую сторону запроса: индекс следующего шага
+            # и переменные этого прогона пишутся в метаданные сессии — следующее
+            # сообщение пользователя продолжит workflow с сохранённого места.
+            # Общий выход двух финальных шагов: `return_response_text` и
+            # `return_response_llm`.
+            async def save_workflow_continuation(next_index: int) -> None:
+                ai_session_metadata = await ai_session_metadata_get(model.session_uuid)
+                ai_session_metadata['workflow_step_current_index'] = next_index
+                # Изменения переменных этого запуска (+ восстановленные ранее):
+                # выбор пользователя в мастерах переживает границу запросов.
+                # Переменные запроса (type='global') в снапшот не попадают —
+                # каждое сообщение приносит их заново
+                variables_protected = await self._workflow_variables_protected()
+                ai_session_metadata['workflow_variables_saved'] = {
+                    var_name: var_value
+                    for var_name, var_value in {
+                        **model.workflow_variables_restored,
+                        **ai_workflow_trace_variables_diff(variables_run_start, variables),
+                    }.items()
+                    if var_name not in variables_protected
+                }
+                await ai_session_metadata_set(model.session_uuid, ai_session_metadata)
+
+            # -----------------------------------------------------------------------
+
             # Переменная prompt_system переопределяет системный промпт агента.
             # Нужна sub-workflow: model принадлежит запустившему агенту (например,
             # workflow-оболочке тестера), а отвечать LLM должна от имени целевого
@@ -1573,6 +1598,26 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                 trace_tokens_input = model.tokens_input
                 trace_tokens_output = model.tokens_output
 
+                # Ответ — в выбранную на форме переменную, той же дорогой, что
+                # результат tool-шагов (ср. `output_variable` у llm_to_image).
+                output_variable = step_meta.get('output_variable') or ''
+                if output_variable:
+                    variables[output_variable] = response_from_llm
+                    logger_info(f"🏷️ Переменная '%{output_variable}%' получила значение '{variables[output_variable]}'")
+
+                # Продолжение — как у return_response_text: ответ уходит сейчас,
+                # workflow продолжается следующим сообщением пользователя.
+                # Чипс отмены сюда не добавляем: баббл ответа пишет фреймворк по
+                # своим сообщениям, а с грамматикой в ответ не протолкнуть ничего
+                # кроме слова из списка; слово отмены перехватывается и без чипса.
+                continue_workflow = step_meta.get('continue_workflow', False)
+                next_index = current_index + 1
+                if continue_workflow and next_index < steps_count:
+                    if depth > 0:
+                        logger_info("⚠️ continue_workflow внутри sub-workflow игнорируется")
+                    elif steps[next_index]:
+                        await save_workflow_continuation(next_index)
+
                 trace_output = response_from_llm
                 await trace_current_step()
                 return response_from_llm
@@ -1607,22 +1652,7 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
                     if depth > 0:
                         logger_info("⚠️ continue_workflow внутри sub-workflow игнорируется")
                     elif steps[next_index]:
-                        ai_session_metadata = await ai_session_metadata_get(model.session_uuid)
-                        ai_session_metadata['workflow_step_current_index'] = next_index
-                        # Изменения переменных этого запуска (+ восстановленные ранее):
-                        # выбор пользователя в мастерах переживает границу запросов.
-                        # Переменные запроса (type='global') в снапшот не попадают —
-                        # каждое сообщение приносит их заново
-                        variables_protected = await self._workflow_variables_protected()
-                        ai_session_metadata['workflow_variables_saved'] = {
-                            var_name: var_value
-                            for var_name, var_value in {
-                                **model.workflow_variables_restored,
-                                **ai_workflow_trace_variables_diff(variables_run_start, variables),
-                            }.items()
-                            if var_name not in variables_protected
-                        }
-                        await ai_session_metadata_set(model.session_uuid, ai_session_metadata)
+                        await save_workflow_continuation(next_index)
 
                 trace_output = model.prompt_user
                 await trace_current_step()

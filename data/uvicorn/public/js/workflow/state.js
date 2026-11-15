@@ -61,6 +61,18 @@ export const WORKFLOW_STEP_CONFIG = {
         {
             key: 'gbnf',
             type: 'widget_gbnf_enum',
+        },
+        {
+            key: 'output_variable',
+            label: 'Переменная для ответа',
+            type: 'variable_select',
+            placeholder: '-- Не сохранять --'
+        },
+        {
+            key: 'continue_workflow',
+            label: 'Продолжить workflow',
+            type: 'checkbox',
+            placeholder: ''
         }
     ],
     'return_response_text': [ // ID типа "Вернуть ответ"
