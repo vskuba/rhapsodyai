@@ -57,6 +57,10 @@ export const WORKFLOW_STEP_CONFIG = {
             label: 'User prompt',
             type: 'textarea',
             placeholder: ''
+        },
+        {
+            key: 'gbnf',
+            type: 'widget_gbnf_enum',
         }
     ],
     'return_response_text': [ // ID типа "Вернуть ответ"

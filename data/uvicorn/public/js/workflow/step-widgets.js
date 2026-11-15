@@ -1176,6 +1176,143 @@ export function renderCustomStepFields(step, metadata) {
             imgContainer.appendChild(qualitySelect);
             fieldWrapper.appendChild(imgContainer);
 
+        } else if (field.type === 'widget_gbnf_enum') {
+            // --- Виджет GBNF: ответ строго один из перечисленных ---
+            // Чипсы уходят в метаданные списком `{on, enum}`. Грамматику из
+            // списка собирает движок сам (`ai_gbnf_enum_grammar` ->
+            // `root ::= "yes" | "no"`), а нода gx10 передаёт её отдельным полем
+            // запроса `grammar`. Второго источника правды нет: предпросмотр ниже
+            // выводится из чипсов, а не наполняется с них.
+
+            let gbnf = (currentValue && typeof currentValue === 'object') ? currentValue : {};
+            let gbnfList = Array.isArray(gbnf.enum)
+                ? gbnf.enum.map(v => String(v ?? '').trim()).filter(v => v !== '')
+                : [];
+            let gbnfOn = gbnf.on === true;
+
+            const gbnfBox = document.createElement('div');
+            gbnfBox.id = `field_${field.key}`;
+            gbnfBox.style = "display: flex; flex-direction: column; gap: 8px;"
+                + " padding: 10px 12px; background: #faf7fd;"
+                + " border: 1px solid #dcc8ec; border-radius: 6px;";
+
+            const gbnfCheck = document.createElement('input');
+            gbnfCheck.type = 'checkbox';
+            gbnfCheck.checked = gbnfOn;
+
+            const gbnfPill = document.createElement('span');
+            gbnfPill.textContent = 'GBNF';
+            gbnfPill.style = "font-size: 10px; font-weight: 700; letter-spacing: .5px;"
+                + " color: #5b2c6f; background: #e8daef; border: 1px solid #8e44ad;"
+                + " border-radius: 10px; padding: 1px 8px;";
+
+            const gbnfTitle = document.createElement('label');
+            gbnfTitle.style = "display: flex; align-items: center; gap: 8px;"
+                + " font-size: 12px; font-weight: 600; color: #5b2c6f; cursor: pointer;";
+            gbnfTitle.append(gbnfCheck, document.createTextNode('Ответ — строго одно значение из списка'), gbnfPill);
+
+            // Чипсы — теми же классами, что метки тем (`topic.js`): стили уже на
+            // странице, второй копии того же виджета тут не место.
+            const gbnfEditor = document.createElement('div');
+            gbnfEditor.className = 'tag-editor';
+
+            const gbnfInput = document.createElement('input');
+            gbnfInput.className = 'tag-input';
+            gbnfInput.placeholder = 'yes, no — Enter или запятая';
+            gbnfEditor.appendChild(gbnfInput);
+
+            const gbnfHint = document.createElement('div');
+            gbnfHint.style = "font-size: 11px; color: #6b7280;";
+
+            const gbnfSave = () => saveChanges({on: gbnfOn, enum: gbnfList});
+
+            const gbnfAddValues = (raw) => {
+                raw.split(',').forEach(part => {
+                    const value = part.trim();
+                    // Повтор молча не добавляется: в грамматике он схлопнулся бы
+                    // в одну ветку, а в списке только путает.
+                    if (value && !gbnfList.includes(value)) gbnfList.push(value);
+                });
+            };
+
+            const gbnfChanged = () => {
+                gbnfRenderChips();
+                gbnfSave();
+            };
+
+            const gbnfRenderChips = () => {
+                // Перерисовываем только чипсы, поле ввода остаётся на месте:
+                // пересборка блока уносила бы фокус и набранный текст (тот же
+                // приём, что `tagsEditorRender` в `topic.js`).
+                gbnfEditor.querySelectorAll('.tag-chip').forEach(node => node.remove());
+                gbnfList.forEach((value, index) => {
+                    const chip = document.createElement('span');
+                    chip.className = 'tag-chip';
+                    chip.textContent = value;
+
+                    const remove = document.createElement('button');
+                    remove.type = 'button';
+                    remove.className = 'tag-x';
+                    remove.textContent = '×';
+                    remove.title = 'убрать значение';
+                    remove.onclick = () => {
+                        gbnfList.splice(index, 1);
+                        gbnfChanged();
+                    };
+
+                    chip.appendChild(remove);
+                    gbnfEditor.insertBefore(chip, gbnfInput);
+                });
+
+                gbnfEditor.style.opacity = gbnfOn ? '' : '.45';
+                gbnfEditor.style.pointerEvents = gbnfOn ? '' : 'none';
+
+                if (!gbnfOn) {
+                    gbnfHint.style.color = '#6b7280';
+                    gbnfHint.textContent = 'Выключено — модель отвечает свободным текстом, как сейчас.';
+                    return;
+                }
+                if (!gbnfList.length) {
+                    // «Включено, но собирать нечего» видно сразу, а не в прогоне.
+                    gbnfHint.style.color = '#b7791f';
+                    gbnfHint.textContent = 'Список пуст — грамматика не соберётся, шаг отвечает как сейчас.';
+                    return;
+                }
+                gbnfHint.style.color = '#6b7280';
+                gbnfHint.textContent = 'root ::= ' + gbnfList.map(v => `"${v}"`).join(' | ');
+                gbnfHint.style.fontFamily = 'monospace';
+                gbnfHint.title = 'Так модель увидит запрос; размышления при грамматике гасятся сами.';
+            };
+
+            gbnfCheck.onchange = () => {
+                gbnfOn = gbnfCheck.checked;
+                gbnfChanged();
+            };
+
+            gbnfInput.onkeydown = (event) => {
+                if (event.key === 'Enter' || event.key === ',') {
+                    event.preventDefault();
+                    gbnfAddValues(gbnfInput.value);
+                    gbnfInput.value = '';
+                    gbnfChanged();
+                } else if (event.key === 'Backspace' && gbnfInput.value === '' && gbnfList.length) {
+                    gbnfList.pop();
+                    gbnfChanged();
+                }
+            };
+
+            gbnfInput.onblur = () => {
+                if (gbnfInput.value.trim()) {
+                    gbnfAddValues(gbnfInput.value);
+                    gbnfInput.value = '';
+                    gbnfChanged();
+                }
+            };
+
+            gbnfBox.append(gbnfTitle, gbnfEditor, gbnfHint);
+            fieldWrapper.appendChild(gbnfBox);
+            gbnfRenderChips();
+
         } else if (field.type === 'variable_select') {
             // --- Селект переменной workflow ---
             inputElement = document.createElement('select');

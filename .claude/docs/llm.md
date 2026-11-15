@@ -218,6 +218,16 @@ balance is too low». Это важно, потому что 400 **нет** в �
 
 `gx10` поддерживает режим "thinking" через `extra_body`. Флаг `framework_model.thinking_enable: bool = False` (поле `AiFrameworkModel`) передаётся в `ModelSettings`. Включается при создании `AiFrameworkModel` если агент поддерживает thinking.
 
+### GX10 и GBNF-грамматика
+
+`framework_model.gbnf_grammar: str` (поле `AiFrameworkModel`) — непустой строкой
+уезжает в `extra_body['grammar']`, и `enable_thinking` при этом принудится `false`:
+reasoning-блок в грамматику не влезает, и с размышлениями нода возвращает пустой
+`content` (замер на ноде). Просьбу собирает вызывающий, не провайдер: workflow-шаг
+`return_response_llm` — из чипсов ответов через `ai_gbnf_enum_grammar`
+(`py_modules/ai/ai_gbnf.py`). Поле понимает только llama.cpp; остальные сервисы его
+не получают — ответ свободный.
+
 ## Генерация изображений — `ai_llm_image_generate()`
 
 **Файл:** `src/ai/ai_llm.py`

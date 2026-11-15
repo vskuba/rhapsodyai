@@ -23,6 +23,7 @@ from src.ai.ai_fact_collection import ai_fact_collection_metadata_get
 from src.ai.ai_tool import ai_tool_args_prepare
 from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
 from src.ai.framework.agent.ai_framework import AiFrameworkAgent
+from ai.ai_gbnf import ai_gbnf_enum_grammar
 from ai.ai_think import ai_think_strip
 from ai.framework.ai_framework_manager import AbstractAiFrameworkManager
 from src.mysql_.repository.agent_specialization_repository import AgentSpecializationRepository
@@ -918,6 +919,14 @@ class AiFrameworkAgentManager(AbstractAiFrameworkManager):
             # агента — его персона передается через inputs_map
             model.prompt_system = variables.get('prompt_system') or await self.prompt_system_create(model.metadata)
             model.prompt_user = step_meta.get('prompt_user', '')
+
+            # GBNF: чипсы «строго одно значение из списка» на шаге. Собираем для
+            # каждого шага, а не только там, где грамматика нужна: `model` — один
+            # объект на весь прогон, и поле, положенное на одном шаге, иначе
+            # уехало бы с собой на следующий. Пустой список чипсов — '' (как и
+            # выключенные чипсы): провайдер без поля ведёт себя как раньше.
+            _gbnf = step_meta.get('gbnf') or {}
+            model.gbnf_grammar = ai_gbnf_enum_grammar(_gbnf.get('enum')) if _gbnf.get('on') else ''
 
             # system/user-prompt пишем в историю только на верхнем уровне:
             # sub-workflow не должен дублировать сообщения сессии
