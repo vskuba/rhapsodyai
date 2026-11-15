@@ -10,6 +10,7 @@ __pycache__/
 .tmp
 .dsh
 .superpowers
+/mockups
 
 # Конфиги и секреты
 .env
