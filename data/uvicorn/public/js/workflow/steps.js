@@ -474,7 +474,14 @@ export function collectTransitions(type) {
         const valEl = row.querySelector('.tr-value'); // Селектор инпута
         const targetEl = row.querySelector('.tr-target');
 
-        if (targetEl && targetEl.value) {
+        // ⚠ Строка живёт, только если в ней выбрана переменная. У новой строки
+        // цель заполнена всегда (селект раскрывается первым шагом), так что
+        // одна только цель от пустой строки не отличает: семь кликов «добавить»
+        // рождали семь пустых условий, которые движок при каждом прогоне
+        // вежливо пропускает с предупреждением. Мера выбрана минимальная:
+        // строки с потерянной, но названной переменной остаются — их чинит
+        // человек, а не сборщик.
+        if (targetEl && targetEl.value && varEl && varEl.value) {
             const varName = varEl ? varEl.value : '';
             const opName = opEl ? opEl.value : '==';
             const valueText = valEl ? valEl.value.trim() : ''; // Забираем текст
