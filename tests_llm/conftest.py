@@ -444,7 +444,9 @@ async def agent_of(client):
         if name in _FOUND:
             return _FOUND[name]
 
-        answer = await client.get(f'/agent/name/{name}')
+        # ⚠ Путь под `/api`: с 03.11.2026 роутеры `chat`, `agent` и `detective`
+        # подключены только так (`main_uvicorn.py`, `API_PREFIX`).
+        answer = await client.get(f'/api/agent/name/{name}')
 
         if answer.status_code == 404:
             pytest.skip(f'агента «{name}» нет в этой базе — занятие тут не заводили')
@@ -485,15 +487,21 @@ async def ask(client, agent_of, llm_answers, llm_plan):
             случайный хвост.
         variables: переменные вызова. ⚠ Только объявленные входящими у этого
             workflow: незаявленную ручка отвергает `400` (`chat.py`).
+        session: следующая реплика уже начатого прогона — передав `Talk.session`
+            прошлого вызова, сообщение попадёт в тот же мастер (продолжение
+            `continue_workflow`). Пусто — своя новая сессия.
 
     Returns:
         Talk: ответ, маршрут, промпты и выводы шагов.
 
     ⚠ Каждый вызов — **своя сессия**: иначе история одного теста доезжает до
-    следующего, и маршрут зависит от порядка запуска.
+    следующего, и маршрут зависит от порядка запуска. ⚠ Реплика мастера —
+    исключение: ей передают `session` прошлого ответа, и она продолжает тот же
+    прогон.
     """
 
-    async def _ask(agent: str, question: str, variables: dict = None) -> Talk:
+    async def _ask(agent: str, question: str, variables: dict = None,
+                   session: str = '') -> Talk:
         # ⚠⚠ Заготовка папки — **запасной вариант, а не указ**. Тест, которому
         # нужен иной сценарий, зовёт `llm_answers` сам, и его выбор обязан
         # победить.
@@ -510,7 +518,9 @@ async def ask(client, agent_of, llm_answers, llm_plan):
 
         agent_id = await agent_of(agent)
         asked = _unique(question)
-        session = str(uuid.uuid4())
+        # Реплика мастера держит свой ключ: он и есть продолжение прогона.
+        resumed = bool(session)
+        session = session or str(uuid.uuid4())
 
         # ⚠⚠ Сценарий кладём **под ключ этого вызова**: у подменного сервиса ячейка
         # на прогон, и ключом служит `session_uuid`. Без этого правила лежали бы в
@@ -524,7 +534,8 @@ async def ask(client, agent_of, llm_answers, llm_plan):
 
         for attempt in range(1, LLM_ATTEMPTS + 1):
             try:
-                answer = await client.post('/chat/ask', json=payload)
+                # ⚠ Путь под `/api` — по той же причине, что и `/api/agent/name`.
+                answer = await client.post('/api/chat/ask', json=payload)
             except httpx.HTTPError as e:
                 last = f'связь: {e}'
                 await asyncio.sleep(2)
@@ -553,9 +564,12 @@ async def ask(client, agent_of, llm_answers, llm_plan):
 
             last = f'{answer.status_code}: {answer.text[:300]}'
             # ⚠ Новая сессия на повтор: прошлая уже несёт оборванный прогон, и
-            # маршрут смешался бы из двух попыток.
-            session = str(uuid.uuid4())
-            payload['session_uuid'] = session
+            # маршрут смешался бы из двух попыток. Реплика мастера ключ не меняет:
+            # её прогресс живёт в метаданных сессии, с новым ключом мастер
+            # начался бы заново.
+            if not resumed:
+                session = str(uuid.uuid4())
+                payload['session_uuid'] = session
             # ⚠⚠ И сценарий — под новый ключ. Забудь мы это, повтор пошёл бы к
             # пустой ячейке и ответил бы пустотой: «модель решила иначе» вместо
             # понятного отказа.
