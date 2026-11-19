@@ -16,7 +16,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from browser_.browser_scenario import (BROWSER_SCENARIO_ACTIONS,
+from browser_.scenario.browser_scenario import (BROWSER_SCENARIO_ACTIONS,
                                        BROWSER_SCENARIO_RETURNS,
                                        BROWSER_SCENARIO_STEP_TIMEOUT_MS,
                                        BrowserScenario,

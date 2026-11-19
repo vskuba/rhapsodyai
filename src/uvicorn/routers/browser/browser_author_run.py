@@ -28,7 +28,7 @@ import time
 
 from pydantic import BaseModel, Field
 
-from browser_.browser_scenario import (
+from browser_.scenario.browser_scenario import (
     BROWSER_SCENARIO_ACTIONS,
     BrowserScenario,
     BrowserScenarioStep,

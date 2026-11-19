@@ -29,7 +29,7 @@ class TestSchema:
 
     def test_watch_needs_nothing(self):
         """`net_watch` без полей законен: пусто — писать всё."""
-        from browser_.browser_scenario import BrowserScenarioStep
+        from browser_.scenario.browser_scenario import BrowserScenarioStep
 
         step = BrowserScenarioStep(action='net_watch')
 
@@ -37,7 +37,7 @@ class TestSchema:
         assert step.value == ''
 
     def test_watch_takes_a_filter(self):
-        from browser_.browser_scenario import BrowserScenarioStep
+        from browser_.scenario.browser_scenario import BrowserScenarioStep
 
         step = BrowserScenarioStep(action='net_watch', value='ladadate.com')
 
@@ -48,13 +48,13 @@ class TestSchema:
         безымянный `net_dump` молча выбрасывал бы весь съём."""
         from pydantic import ValidationError
 
-        from browser_.browser_scenario import BrowserScenarioStep
+        from browser_.scenario.browser_scenario import BrowserScenarioStep
 
         with pytest.raises(ValidationError):
             BrowserScenarioStep(action='net_dump')
 
     def test_dump_with_a_name(self):
-        from browser_.browser_scenario import BrowserScenarioStep
+        from browser_.scenario.browser_scenario import BrowserScenarioStep
 
         step = BrowserScenarioStep(action='net_dump', name='запросы', value='/api/chat')
 
@@ -65,7 +65,7 @@ class TestSchema:
         делали бы, а автор сценария думал бы, что сбор настроен."""
         from pydantic import ValidationError
 
-        from browser_.browser_scenario import BrowserScenarioStep
+        from browser_.scenario.browser_scenario import BrowserScenarioStep
 
         with pytest.raises(ValidationError):
             BrowserScenarioStep(action='net_dump', name='x',
@@ -76,7 +76,7 @@ class TestRow:
     """Что попадает в запись о запросе."""
 
     def test_row_keeps_what_is_needed_to_repeat_the_request(self):
-        from browser_.browser_scenario_net import _row as _net_row
+        from browser_.scenario.browser_scenario_net import _row as _net_row
 
         got = _net_row(_Request(
             method='POST', url='https://site.com/chat-send',
@@ -97,7 +97,7 @@ class TestRow:
         Для повторения запроса они и не нужны: свою сессию вызывающий подставит
         сам.
         """
-        from browser_.browser_scenario_net import _row as _net_row
+        from browser_.scenario.browser_scenario_net import _row as _net_row
 
         got = _net_row(_Request(
             headers={'cookie': 'session=secret-value',
@@ -112,7 +112,7 @@ class TestRow:
         """⚠ У GET тела нет вовсе, и у загрузки файла его не спросить. Пустая
         строка честнее исключения посреди слушателя: оно уронило бы не шаг, а
         весь прогон."""
-        from browser_.browser_scenario_net import _row as _net_row
+        from browser_.scenario.browser_scenario_net import _row as _net_row
 
         got = _net_row(_Request(method='GET', post_data=None, raises=True))
 
@@ -121,8 +121,8 @@ class TestRow:
 
     def test_long_body_is_cut(self):
         """Тело бывает мегабайтом (загрузка файла), и в журнал такому не место."""
-        from browser_.browser_scenario import BROWSER_SCENARIO_NET_BODY_LIMIT
-        from browser_.browser_scenario_net import _row as _net_row
+        from browser_.scenario.browser_scenario import BROWSER_SCENARIO_NET_BODY_LIMIT
+        from browser_.scenario.browser_scenario_net import _row as _net_row
 
         got = _net_row(_Request(post_data='x' * 99999))
 

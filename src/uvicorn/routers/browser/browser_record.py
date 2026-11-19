@@ -14,7 +14,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from browser_.browser_scenario import BrowserScenario
+from browser_.scenario.browser_scenario import BrowserScenario
 from mysql_.mysql_ import mysql_get_db_async
 
 from src.auth.auth import AuthChecker

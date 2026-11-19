@@ -783,7 +783,7 @@ docker exec -d uvicorn python3 tests/proxy_stand.py --port 8899 --user u --passw
 
 Обязанности разделены пополам: **шаги выполняет контейнер** (там живут страницы),
 **хранит и журналирует `uvicorn`**. Схема шагов при этом одна на двоих —
-`py_modules/browser_/browser_scenario.py` не импортирует ни Playwright, ни MySQL, поэтому
+`py_modules/browser_/scenario/browser_scenario.py` не импортирует ни Playwright, ни MySQL, поэтому
 её одинаково видят обе стороны, и сценарий проверяется схемой уже при сохранении.
 
 **Действия шага** (`action` + обязательные поля):
