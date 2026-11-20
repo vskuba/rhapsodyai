@@ -1,0 +1,19 @@
+{
+  "policy": {
+    "description": "Журналы приложений (app-logs-YYYY.MM.dd): хранить 14 дней, потом удалять",
+    "default_state": "hot",
+    "states": [
+      {
+        "name": "hot",
+        "actions": [],
+        "transitions": [{"state_name": "delete", "conditions": {"min_index_age": "14d"}}]
+      },
+      {
+        "name": "delete",
+        "actions": [{"delete": {}}],
+        "transitions": []
+      }
+    ],
+    "ism_template": [{"index_patterns": ["app-logs-*"], "priority": 100}]
+  }
+}

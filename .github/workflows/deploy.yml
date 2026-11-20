@@ -259,6 +259,11 @@ jobs:
             # `|| true`: уборка не повод ронять уже состоявшийся деплой.
             echo "Чистим кэш сборки старше недели..."
             docker builder prune -af --filter until=168h || true
+
+            # Срок хранения журналов в OpenSearch — 14 дней (политика ISM). Погашен
+            # OpenSearch — скрипт выходит молча и ничего не поднимает.
+            echo "Политика хранения журналов OpenSearch..."
+            bash docker/opensearch/ism_apply.sh || true
             docker system df
 
             echo "Текущий коммит:"
