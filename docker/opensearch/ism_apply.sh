@@ -33,6 +33,14 @@ q=""
 run -XPUT "$OS/_plugins/_ism/policies/$NAME$q" -H 'Content-Type: application/json' \
     --data-binary @- < "$HERE/ism_app_logs.json"; echo
 
-# Существующим индексам без политики — навесить.
-run -XPOST "$OS/_plugins/_ism/add/app-logs-*" -H 'Content-Type: application/json' \
-    -d "{\"policy_id\": \"$NAME\"}"; echo
+# Существующим индексам без политики — навесить. ⚠ Индекс, у которого политика
+# уже есть, ISM числит в `failures` («already has a policy») — на повторном
+# запуске это норма, а не отказ, и печатается словами.
+got=$(run -XPOST "$OS/_plugins/_ism/add/app-logs-*" -H 'Content-Type: application/json' \
+    -d "{\"policy_id\": \"$NAME\"}")
+other=$(echo "$got" | grep -o '"reason":"[^"]*"' | grep -v 'already has a policy' || true)
+if [ -n "$other" ]; then
+    echo "$got"
+else
+    echo "Политика навешена: $(echo "$got" | grep -o '"updated_indices":[0-9]*'), прочие индексы уже под ней"
+fi
