@@ -237,19 +237,19 @@ function _renderResponse(el, text) {
 }
 
 /**
- * Открыт только последний вопрос, и только пока после него нет сообщения
- * человека: ответ уже ушёл — оболочка диалог закрыла, повторное нажатие
- * попало бы в поле ввода как новый промпт.
+ * Открыт только вопрос, после которого в сессии ничего не появлялось. Ответ
+ * человека, экран Submit следующим вопросом, «на вопрос ответили в терминале»
+ * от оболочки — любая новая строка значит, что диалог в терминале уже другой
+ * или закрыт, и повторное нажатие попало бы в Claude Code новым промптом.
+ * dynamic-строки (квота) к диалогу не относятся и не считаются.
  */
 function _dialogRefreshState(rows) {
-    const lastUserId = Math.max(0, ...rows.filter(r => !r.dynamic && r.content).map(r => r.id));
-    const dialogs = [...state.claude.renderedResponses.entries()]
-        .filter(([, entry]) => entry.el.classList.contains('claude-dialog'))
-        .sort(([a], [b]) => a - b);
-    dialogs.forEach(([id, entry], n) => {
-        const open = n === dialogs.length - 1 && id > lastUserId && state.claude.pendingUserCount === 0;
+    const lastRowId = Math.max(0, ...rows.filter(r => !r.dynamic).map(r => r.id));
+    for (const [id, entry] of state.claude.renderedResponses) {
+        if (!entry.el.classList.contains('claude-dialog')) continue;
+        const open = id === lastRowId && state.claude.pendingUserCount === 0;
         claudeDialogSetClosed(entry.el, !open);
-    });
+    }
 }
 
 export async function loadClaudeMessages(isInitialLoad = false) {
