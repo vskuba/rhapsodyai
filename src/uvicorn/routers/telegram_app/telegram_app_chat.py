@@ -3,19 +3,9 @@ import os
 from fastapi import APIRouter, Request, UploadFile, File
 
 from src.faster_whisper.faster_whisper_model import faster_whisper_model_transcribe
-from src.uvicorn.routers.telegram_app.telegram_app_common import (
-    _require_telegram_owner,
-    _telegram_agent_chat_ask,
-    TELEGRAM_CHAT_AGENT_NAME,
-)
+from src.uvicorn.routers.telegram_app.telegram_app_common import _require_telegram_owner
 
 router = APIRouter()
-
-
-@router.post("/telegram-app/chat/ask")
-async def telegram_app_chat_ask(request: Request, data: dict):
-    _require_telegram_owner(request)
-    return await _telegram_agent_chat_ask(data, TELEGRAM_CHAT_AGENT_NAME)
 
 
 @router.post("/telegram-app/chat/voice")

@@ -32,7 +32,6 @@
 | `test_browser_site_open.py` | Chromium + контейнер | нет: свой сайт-закладка |
 | `test_team_task_pages.py` | Chromium | нет: своя панель |
 | `test_workflow_*.py` | Chromium | нет: своя панель |
-| `test_telegram_app_task_*.py` | Chromium | нет: местная разметка |
 
 ⚠ Телеграмные рисуют местную разметку и в интернет не ходят вовсе. Они здесь по
 второму признаку — **живой Chromium**: запуск браузера стоит секунд и роняется

@@ -617,3 +617,114 @@ html, body {
     height: 16px;
     flex-shrink: 0;
 }
+
+/* --- Claude: вопрос с кнопками (claude_dialog.js) --- */
+#tab-claude .chat-bubble.claude-dialog {
+    max-width: 92%;
+    width: 92%;
+    white-space: normal;
+    border-color: #f6c9b4;
+}
+.claude-dialog-head {
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+.claude-dialog-question {
+    white-space: pre-wrap;
+    margin: 8px 0 6px;
+}
+.claude-dialog-block + .claude-dialog-block {
+    border-top: 1px solid #edf2f7;
+    margin-top: 8px;
+}
+.claude-dialog-mode {
+    font-size: 11px;
+    color: #94a3b8;
+    white-space: nowrap;
+}
+.claude-dialog-options {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.claude-dialog-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    color: #2c3e50;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+/* Метка варианта: кружок — один из списка, квадрат — можно несколько */
+.claude-dialog-mark {
+    flex: 0 0 18px;
+    height: 18px;
+    border: 2px solid #cbd5e0;
+    background: #ffffff;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    font-size: 12px;
+    line-height: 1;
+}
+.claude-dialog-option.single .claude-dialog-mark { border-radius: 50%; }
+.claude-dialog-option.multi .claude-dialog-mark { border-radius: 4px; }
+.claude-dialog-option.picked {
+    background: #fdf0ea;
+    border-color: #D97757;
+}
+.claude-dialog-option.single.picked .claude-dialog-mark {
+    border-color: #D97757;
+    box-shadow: inset 0 0 0 3px #ffffff;
+    background: #D97757;
+}
+.claude-dialog-option.multi.picked .claude-dialog-mark {
+    border-color: #D97757;
+    background: #D97757;
+}
+.claude-dialog-option.multi.picked .claude-dialog-mark::after { content: '✓'; }
+.claude-dialog-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+.claude-dialog-submit,
+.claude-dialog-cancel {
+    font: inherit;
+    border-radius: 10px;
+    padding: 8px 14px;
+    cursor: pointer;
+}
+.claude-dialog-submit {
+    flex: 1;
+    background: #D97757;
+    color: #ffffff;
+    border: 1px solid #D97757;
+    font-weight: 600;
+}
+.claude-dialog-cancel {
+    background: transparent;
+    color: #64748b;
+    border: 1px solid #e2e8f0;
+}
+.claude-dialog-submit:disabled { opacity: 0.45; cursor: default; }
+.claude-dialog-hint {
+    font-size: 11px;
+    color: #94a3b8;
+    margin-top: 6px;
+}
+/* Ответ ушёл или вопрос уже не последний: видно, о чём спрашивали, но не жмётся */
+.claude-dialog-closed .claude-dialog-option,
+.claude-dialog-sent .claude-dialog-option { cursor: default; }
+.claude-dialog-closed .claude-dialog-actions,
+.claude-dialog-closed .claude-dialog-hint { display: none; }
+.claude-dialog-closed .claude-dialog-option:not(.picked) { opacity: 0.6; }

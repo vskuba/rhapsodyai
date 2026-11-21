@@ -210,8 +210,7 @@
 
 ⚠ Таймаут (504) накопленное не отдаёт: ответ ошибки несёт только `detail`.
 
-⚠ Ключа **нет** в ответе `/telegram-app/chat/ask` — у той ручки свой контракт
-`{result, session_uuid}` и своя сборка модели (`telegram_app_common.py`).
+(Ручка `/telegram-app/chat/ask` со своим контрактом снята вместе с вкладкой «Чат» Mini App.)
 
 Сторожа связки — `tests/test_chat_intentions.py` (имя инструмента, накопление,
 чтение полем) и набор `CHAT_ASK_KEYS` в `tests/test_companion_session_message_id.py`

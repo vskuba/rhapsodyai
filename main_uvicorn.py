@@ -107,7 +107,6 @@ from src.uvicorn.routers.telegram_app import telegram_app_chat
 from src.uvicorn.routers.telegram_app import telegram_app_claude
 from src.uvicorn.routers.telegram_app import telegram_app_claude_session
 from src.uvicorn.routers.telegram_app import telegram_app_plan
-from src.uvicorn.routers.telegram_app import telegram_app_task
 from src.uvicorn.routers.tool import tool
 from src.uvicorn.routers.translate import translate
 from src.uvicorn.routers.workflow import (workflow, workflow_step, workflow_variable,
@@ -717,7 +716,6 @@ app.include_router(telegram_app_chat.router, include_in_schema=False)
 app.include_router(telegram_app_claude.router, include_in_schema=False)
 app.include_router(telegram_app_claude_session.router, include_in_schema=False)
 app.include_router(telegram_app_plan.router, include_in_schema=False)
-app.include_router(telegram_app_task.router, include_in_schema=False)
 app.include_router(event_router.router, include_in_schema=False)
 # ⚠⚠ Журнал запросов подключается РАНЬШЕ журнала ошибок, и порядок здесь не
 # косметика: у соседа объявлено `DELETE /api/journal/{record_id}` с номером

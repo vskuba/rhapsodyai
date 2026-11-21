@@ -3,17 +3,20 @@ import { state } from './state.js';
 import { appendBubble, appendTypingIndicator, linkify, confirmDialog } from './utils.js';
 import { createVoiceRecorder } from './voice.js';
 import { setSidebarPageMode, updateInputBarsVisibility } from './sidebar.js';
+import { claudeDialogParse, claudeDialogRender, claudeDialogSetClosed } from './claude_dialog.js';
 
 const tg = window.Telegram?.WebApp;
 
 let _claudeEl = null;
 let _sessionListEl = null;
 let _quickCmdPopup = null;
+let _sendRefs = null;     // поле ввода и полоса прогресса: ими же шлют ответ кнопки вопроса
 
 export function initClaude({ bar, textarea, sendBtn, micBtn, micCancel, progress, quickCmdBtn }) {
     _claudeEl = document.getElementById('claudeMessages');
     _sessionListEl = document.getElementById('claudeSessionListView');
     _quickCmdPopup = document.getElementById('claudeQuickCmdPopup');
+    _sendRefs = { textarea, progress };
 
     sendBtn.addEventListener('click', () => sendClaudeMessage({ textarea, progress }));
     textarea.addEventListener('keydown', e => {
@@ -128,7 +131,7 @@ export function closeClaudeSessionView() {
     updateClaudeStatusPolling();
 }
 
-async function sendClaudeMessage({ textarea, progress }) {
+async function sendClaudeMessage({ textarea, progress }, onCancel = null) {
     const message = textarea.value.trim();
     if (!message || !state.claude.sessionUuid) return;
     textarea.value = '';
@@ -195,6 +198,50 @@ async function sendClaudeMessage({ textarea, progress }) {
         clearTimeout(sendTimer);
         clearInterval(countdownInterval);
         row.remove();
+        if (onCancel) onCancel();
+    });
+}
+
+/**
+ * Ответ кнопкой на вопрос Claude: уходит тем же путём, что набранный руками
+ * (с отсчётом и крестиком отмены), — оболочка не отличает одно от другого.
+ */
+function _sendDialogAnswer(answer, onCancel) {
+    if (!_sendRefs) return;
+    _sendRefs.textarea.value = answer;
+    sendClaudeMessage(_sendRefs, onCancel);
+}
+
+/**
+ * Пузырь ответа Claude: вопрос с вариантами рисуем кнопками, остальное — текстом.
+ */
+function _renderResponse(el, text) {
+    const dialog = claudeDialogParse(text);
+    if (dialog) {
+        claudeDialogRender(el, dialog, _sendDialogAnswer);
+        return;
+    }
+    el.classList.remove('claude-dialog', 'claude-dialog-closed', 'claude-dialog-sent');
+    el.innerHTML = linkify(text);
+    el.querySelectorAll('a.chat-link').forEach(a => {
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+    });
+}
+
+/**
+ * Открыт только последний вопрос, и только пока после него нет сообщения
+ * человека: ответ уже ушёл — оболочка диалог закрыла, повторное нажатие
+ * попало бы в поле ввода как новый промпт.
+ */
+function _dialogRefreshState(rows) {
+    const lastUserId = Math.max(0, ...rows.filter(r => !r.dynamic && r.content).map(r => r.id));
+    const dialogs = [...state.claude.renderedResponses.entries()]
+        .filter(([, entry]) => entry.el.classList.contains('claude-dialog'))
+        .sort(([a], [b]) => a - b);
+    dialogs.forEach(([id, entry], n) => {
+        const open = n === dialogs.length - 1 && id > lastUserId && state.claude.pendingUserCount === 0;
+        claudeDialogSetClosed(entry.el, !open);
     });
 }
 
@@ -231,13 +278,10 @@ export async function loadClaudeMessages(isInitialLoad = false) {
                 if (!existing) {
                     newResponsesAdded = true;
                     const el = appendBubble('assistant', row.response, false, _claudeEl);
+                    if (claudeDialogParse(row.response)) _renderResponse(el, row.response);
                     state.claude.renderedResponses.set(row.id, { text: row.response, el });
                 } else if (existing.text !== row.response) {
-                    existing.el.innerHTML = linkify(row.response);
-                    existing.el.querySelectorAll('a.chat-link').forEach(a => {
-                        a.target = '_blank';
-                        a.rel = 'noopener noreferrer';
-                    });
+                    _renderResponse(existing.el, row.response);
                     existing.text = row.response;
                     _claudeEl.scrollTop = _claudeEl.scrollHeight;
                 }
@@ -252,6 +296,8 @@ export async function loadClaudeMessages(isInitialLoad = false) {
                 state.claude.renderedResponses.delete(id);
             }
         }
+
+        _dialogRefreshState(rows);
 
         // Пузырь управляется ПОСЛЕ цикла — один раз, на основе реального состояния.
         // Так не возникает нескольких пузырей при нескольких pending-сообщениях.

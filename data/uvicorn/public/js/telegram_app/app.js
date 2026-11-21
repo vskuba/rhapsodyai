@@ -3,9 +3,7 @@ import { state } from './state.js';
 import { createInputBar } from './input_bar.js';
 import { initSidebar, setSidebarPageMode, updateInputBarsVisibility } from './sidebar.js';
 import { loadEvents, shouldReloadEvents } from './events.js';
-import { initChat } from './chat.js';
 import { initClaude, loadClaudeSessionList, updateClaudePolling, updateClaudeStatusPolling, closeClaudeSessionView } from './claude.js';
-import { initTasks, loadTasks } from './tasks.js';
 
 const tg = window.Telegram?.WebApp;
 
@@ -27,14 +25,9 @@ async function init() {
     const appWrapper = document.querySelector('.app-wrapper');
 
     const claudeBar     = createInputBar({ id: 'claudeInputBar',  progressId: 'claudeProgress',  placeholder: 'Сообщение для Claude Code...', hasQuickCmd: true });
-    const chatBar       = createInputBar({ id: 'chatInputBar',    progressId: 'chatProgress',    placeholder: 'Сообщение...' });
-
-    // Поле для задач не заводим: ответ на вопрос пишет панель вопросов (`questions.js`),
-    // она же рисует варианты и поле уточнения. Плановое поле с голосовым созданием
-    // плана уехало вместе с вкладкой Планов.
 
     // progress вставляется перед bar (анимация над полем ввода)
-    for (const { progress, bar } of [claudeBar, chatBar]) {
+    for (const { progress, bar } of [claudeBar]) {
         appWrapper.appendChild(progress);
         appWrapper.appendChild(bar);
     }
@@ -43,13 +36,11 @@ async function init() {
 
     const inputBars = {
         claude:     { bar: claudeBar.bar,     progress: claudeBar.progress },
-        chat:       { bar: chatBar.bar,       progress: chatBar.progress },
     };
 
     initSidebar({
         inputBars,
         onTabChange(tab) {
-            if (tab === 'tasks') loadTasks();
             if (tab === 'claude' && !state.claude.sessionUuid) loadClaudeSessionList();
             updateClaudePolling();
             updateClaudeStatusPolling();
@@ -57,12 +48,7 @@ async function init() {
         onGoHome: goHome,
     });
 
-    initChat(chatBar);
     initClaude(claudeBar);
-    // Список задач заводится здесь, а не в шаблоне: импорты модулей вкладки идут через
-    // эту точку, и проверка «модуль загружен страницей» (`test_every_module_actually_loads`)
-    // считает запросы именно отсюда.
-    initTasks();
     initHomePing();
 
     await loadEvents();
