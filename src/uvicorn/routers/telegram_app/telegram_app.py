@@ -10,6 +10,7 @@ from fastapi.responses import HTMLResponse
 from config.config import config_get
 from mysql_.mysql_ import mysql_get_db_async
 from src.setting.setting_config import setting_config_public
+from src.telegram_.telegram_app_version import telegram_app_version_get
 from src.uvicorn.routers.telegram_app.telegram_app_common import _require_telegram_owner
 
 router = APIRouter()
@@ -28,7 +29,9 @@ async def telegram_app_page(request: Request):
 
 @router.get("/telegram-app/ping")
 async def telegram_app_ping():
-    return {"ok": True}
+    """Жив ли сервер, и какой у него фронтенд Mini App (`version` — отпечаток файлов:
+    открытая страница, увидев другой, перезагружается сама)."""
+    return {"ok": True, "version": telegram_app_version_get()}
 
 
 @router.post("/telegram-app/auth")

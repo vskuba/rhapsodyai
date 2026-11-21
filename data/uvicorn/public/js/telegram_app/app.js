@@ -81,15 +81,43 @@ async function pingServer() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 1000);
     try {
-        await fetch('/telegram-app/ping', { signal: controller.signal });
+        const res = await fetch('/telegram-app/ping', { signal: controller.signal });
         state.pingFailCount = 0;
         homeBtn.classList.remove('pulsing');
+        _versionCheck((await res.json().catch(() => ({}))).version);
     } catch {
         state.pingFailCount++;
         if (state.pingFailCount >= 2) homeBtn.classList.add('pulsing');
     } finally {
         clearTimeout(timeout);
     }
+}
+
+// ─── Автоперезагрузка после выкладки ───────────────────────────────────────
+// Telegram держит Mini App в памяти: свёрнутое стрелкой ∨ при возврате показывает
+// ту же страницу со старым кодом. Пинг отдаёт отпечаток файлов фронтенда
+// (`telegram_app_version.py`); первый запоминаем, другой — повод перезагрузиться.
+let _appVersion = '';
+let _reloadPending = false;
+
+function _versionCheck(version) {
+    if (!version) return;
+    if (!_appVersion) { _appVersion = version; return; }
+    if (version !== _appVersion) _reloadPending = true;
+    if (_reloadPending && _reloadSafe()) window.location.reload();
+}
+
+/**
+ * Перезагружать можно, только когда ничего не потеряется: нет набранного текста
+ * (в поле ввода или в «свой вариант»), не идёт отсчёт отправки, не пишется голос.
+ * Иначе ждём следующего пинга.
+ */
+function _reloadSafe() {
+    const typed = [...document.querySelectorAll('textarea, input[type="text"]')]
+        .some(el => el.value.trim());
+    const sending = document.querySelector('.chat-bubble.user.sending');
+    const recording = document.querySelector('.mic-btn.recording, .mic-wrap.recording');
+    return !typed && !sending && !recording;
 }
 
 init();

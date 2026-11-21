@@ -37,7 +37,10 @@ class TestTelegramAppPing:
     async def test_ping_returns_ok(self, client: httpx.AsyncClient):
         response = await client.get("/telegram-app/ping")
         assert response.status_code == 200
-        assert response.json() == {"ok": True}
+        body = response.json()
+        assert body["ok"] is True
+        # Отпечаток фронтенда: по нему открытый Mini App перезагружается после выкладки.
+        assert isinstance(body["version"], str) and len(body["version"]) == 12
 
     async def test_ping_is_fast(self, client: httpx.AsyncClient):
         import time
