@@ -15,6 +15,10 @@ CLAUDE_MESSAGE_STATUS_ALLOWED = (
     CLAUDE_MESSAGE_STATUS_FAILED,
 )
 
+# Заголовок вопроса Claude Code: так его начинает оболочка claude-shell
+# (`shell.py`, `_permission_notify`), по нему же Mini App рисует кнопки.
+CLAUDE_MESSAGE_DIALOG_MARK = '🔐 Claude ждёт ответа:'
+
 
 async def claude_message_user(prompt_user: str, session_uuid: str, dynamic: int = 0) -> dict:
     """
@@ -65,9 +69,13 @@ async def claude_message_cloud(session_uuid: str, response: str, inbox_id: int |
                 (response, status, inbox_id)
             )
         else:
+            # Спонтанное сообщение сменяет предыдущее (промежуточный статус живёт до
+            # следующего), но вопросы Claude не стираем: по ним человек видит, на что
+            # уже отвечал, а экран Submit иначе стирал бы сам вопрос, к которому он идёт.
             await db.execute(
-                "DELETE FROM ai_claude_session WHERE session_uuid = %s AND content = '' AND handled = 1",
-                (session_uuid,)
+                "DELETE FROM ai_claude_session WHERE session_uuid = %s AND content = '' AND handled = 1 "
+                "AND response NOT LIKE %s",
+                (session_uuid, f"%{CLAUDE_MESSAGE_DIALOG_MARK}%")
             )
             await db.execute(
                 "INSERT INTO ai_claude_session (session_uuid, content, handled, response, responded_at, status) "

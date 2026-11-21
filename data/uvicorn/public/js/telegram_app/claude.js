@@ -184,11 +184,18 @@ async function sendClaudeMessage({ textarea, progress }, onCancel = null) {
             if (askRes && askRes.result && askRes.result.id) {
                 state.claude.renderedUserIds.add(askRes.result.id);
             }
+            // Строка легла в базу и уже нарисована — «в пути» её больше нет. Снимать
+            // счётчик в цикле опроса нельзя: id выше уже помечен, и цикл эту строку
+            // пропустит; счётчик застревал, следующий вопрос считался закрытым, а
+            // «…» висело до перезапуска мини-приложения.
+            state.claude.pendingUserCount = Math.max(0, state.claude.pendingUserCount - 1);
             updateClaudePolling();
         } catch (err) {
+            state.claude.pendingUserCount = Math.max(0, state.claude.pendingUserCount - 1);
             state.claude.typingBubble?.remove();
             state.claude.typingBubble = null;
             appendBubble('assistant', '⚠️ ' + (err.message || 'Ошибка'), false, _claudeEl);
+            if (onCancel) onCancel();
         } finally {
             progress.classList.remove('active');
         }
@@ -267,10 +274,11 @@ export async function loadClaudeMessages(isInitialLoad = false) {
 
             if (row.content && !state.claude.renderedUserIds.has(row.id)) {
                 state.claude.renderedUserIds.add(row.id);
+                // Свою отправку пузырём рисует sendClaudeMessage; при первой загрузке
+                // рисуем всю историю. Счётчик «в пути» здесь не трогаем — его снимает
+                // сама отправка, когда /ask вернул id.
                 if (isInitialLoad) {
                     appendBubble('user', row.content, false, _claudeEl, true);
-                } else if (state.claude.pendingUserCount > 0) {
-                    state.claude.pendingUserCount--;
                 }
             }
             if (row.response) {
