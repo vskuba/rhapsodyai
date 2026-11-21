@@ -26,6 +26,8 @@ const CLAUDE_DIALOG_HEAD = '🔐 Claude ждёт ответа:';
 const CLAUDE_DIALOG_TAIL_MULTI = 'Ответь номерами вариантов';
 const CLAUDE_DIALOG_TAIL_SINGLE = 'Ответь номером';
 const CLAUDE_DIALOG_CANCEL = 'нет';
+// Строки подсказки в хвосте простого вопроса — их пропускаем снизу до вариантов.
+const CLAUDE_DIALOG_HINT_PREFIXES = [CLAUDE_DIALOG_TAIL_SINGLE, 'Свой ответ'];
 
 const CLAUDE_DIALOG_QUESTION_RE = /^Вопрос (\d+)\.\s*(.*)$/;
 const CLAUDE_DIALOG_OPTION_RE = /^\s*(\d+)\.\s+(.+)$/;
@@ -56,6 +58,11 @@ export function claudeDialogParse(text) {
  * переезжает, в мультивыборе (галочки) копится. Уходит ответ кнопкой
  * «Отправить» — она загорается, когда отмечено хоть что-то.
  *
+ * «✎ Свой вариант» — ещё один пункт того же вопроса (радио или галочка): под
+ * ним открывается поле, и текст уходит строкой «N:= текст». Оболочка вписывает
+ * его в пункт Claude Code «Type something», и Claude получает его ответом на
+ * вопрос, а не отказом с отдельной просьбой.
+ *
  * @param {HTMLElement} bubble — пузырь ответа Claude
  * @param {object} dialog — результат claudeDialogParse
  * @param {function(string, function):void} onAnswer — отправить строку ответа;
@@ -73,20 +80,37 @@ export function claudeDialogRender(bubble, dialog, onAnswer) {
         onAnswer(answer, () => bubble.classList.remove('claude-dialog-sent'));
     };
 
-    bubble.querySelectorAll('[data-q]').forEach(btn =>
+    const refresh = () => {
+        bubble.querySelectorAll('[data-own-input]').forEach(input => {
+            const own = bubble.querySelector(`[data-own][data-q="${input.dataset.ownInput}"]`);
+            input.hidden = !own.classList.contains('picked');
+        });
+        submit.disabled = !_answer(bubble, dialog);
+    };
+
+    bubble.querySelectorAll('button[data-q]').forEach(btn =>
         btn.addEventListener('click', () => {
             if (!claudeDialogIsActive(bubble)) return;
             const question = _questions(dialog)[Number(btn.dataset.q)];
             if (!question.multi) {
-                bubble.querySelectorAll(`[data-q="${btn.dataset.q}"]`).forEach(other => {
+                bubble.querySelectorAll(`button[data-q="${btn.dataset.q}"]`).forEach(other => {
                     if (other !== btn) other.classList.remove('picked');
                 });
                 btn.classList.add('picked');
             } else {
                 btn.classList.toggle('picked');
             }
-            submit.disabled = !_answer(bubble, dialog);
+            refresh();
+            if (btn.hasAttribute('data-own') && btn.classList.contains('picked')) {
+                bubble.querySelector(`[data-own-input="${btn.dataset.q}"]`).focus();
+            }
         }));
+    bubble.querySelectorAll('[data-own-input]').forEach(input => {
+        input.addEventListener('input', refresh);
+        input.addEventListener('keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); submit.click(); }
+        });
+    });
     submit.addEventListener('click', () => {
         const answer = _answer(bubble, dialog);
         if (answer) send(answer);
@@ -107,6 +131,7 @@ export function claudeDialogIsActive(bubble) {
  */
 export function claudeDialogSetClosed(bubble, closed) {
     bubble.classList.toggle('claude-dialog-closed', closed);
+    bubble.querySelectorAll('[data-own-input]').forEach(input => { input.disabled = closed; });
     bubble.querySelectorAll('button').forEach(btn => {
         if (btn.hasAttribute('data-submit')) {
             btn.disabled = closed || !_answer(bubble, bubble._claudeDialog);
@@ -123,7 +148,8 @@ function _parseSingle(lines) {
     // вариантов. Всё, что выше блока, — текст вопроса (в нём самом могут
     // встретиться строки «1. …», поэтому сверху вниз искать нельзя).
     let end = lines.length - 1;
-    while (end >= 0 && (!lines[end].trim() || lines[end].startsWith(CLAUDE_DIALOG_TAIL_SINGLE))) end--;
+    while (end >= 0 && (!lines[end].trim()
+        || CLAUDE_DIALOG_HINT_PREFIXES.some(prefix => lines[end].startsWith(prefix)))) end--;
 
     const options = [];
     let i = end;
@@ -179,18 +205,32 @@ function _questions(dialog) {
  * Строка ответа в формате оболочки. Простой вид — голая цифра: так отвечают и
  * на диалоги разрешений, где «1: 2» оболочка приняла бы за отказ. Сложный —
  * «1: 2,3; 2: 1» с явными номерами вопросов; неотмеченный вопрос пропускается.
+ * Свой вариант — отдельной строкой «N:= текст» (у разрешения оболочка отдаст
+ * его Claude просьбой). Отмеченный, но пустой свой вариант не считается.
  */
 function _answer(bubble, dialog) {
     if (!dialog) return '';
-    const picked = (n) => [...bubble.querySelectorAll(`[data-q="${n}"].picked`)].map(b => b.dataset.digit);
-    if (dialog.kind === 'single') return picked(0)[0] || '';
+    const picked = (n) => [...bubble.querySelectorAll(`[data-digit][data-q="${n}"].picked`)].map(b => b.dataset.digit);
+    const own = (n) => {
+        const btn = bubble.querySelector(`[data-own][data-q="${n}"]`);
+        const input = bubble.querySelector(`[data-own-input="${n}"]`);
+        if (!btn || !input || !btn.classList.contains('picked')) return '';
+        return input.value.replace(/\s+/g, ' ').trim();
+    };
+    if (dialog.kind === 'single') {
+        const text = own(0);
+        return text ? `1:= ${text}` : (picked(0)[0] || '');
+    }
 
     const groups = [];
+    const texts = [];
     dialog.questions.forEach((question, n) => {
         const digits = picked(n);
         if (digits.length) groups.push(`${question.index}: ${digits.join(',')}`);
+        const text = own(n);
+        if (text) texts.push(`${question.index}:= ${text}`);
     });
-    return groups.join('; ');
+    return [groups.join('; '), ...texts].filter(Boolean).join('\n');
 }
 
 function _html(dialog) {
@@ -213,12 +253,18 @@ function _html(dialog) {
                 + `data-q="${n}" data-digit="${esc(o.digit)}">`
                 + '<span class="claude-dialog-mark"></span>'
                 + `<span class="claude-dialog-label">${esc(o.label)}</span></button>`).join('')
+            + `<button type="button" class="claude-dialog-option claude-dialog-own ${question.multi ? 'multi' : 'single'}" `
+            + `data-q="${n}" data-own>`
+            + '<span class="claude-dialog-mark"></span>'
+            + '<span class="claude-dialog-label">✎ Свой вариант</span></button>'
+            + `<input type="text" class="claude-dialog-own-input" data-own-input="${n}" `
+            + 'placeholder="Ваш ответ на этот вопрос" maxlength="500" hidden>'
             + '</div></div>';
     }).join('');
 
     const hint = dialog.kind === 'multi' && questions.length > 1
         ? 'Вопрос можно пропустить — не отмечайте в нём ничего'
-        : 'Или напишите текстом, что делать вместо этого';
+        : 'Не подходит ни один — «✎ Свой вариант»';
 
     return '<div class="claude-dialog-head">🔐 Claude ждёт ответа</div>'
         + blocks

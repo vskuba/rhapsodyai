@@ -728,3 +728,18 @@ html, body {
 .claude-dialog-closed .claude-dialog-actions,
 .claude-dialog-closed .claude-dialog-hint { display: none; }
 .claude-dialog-closed .claude-dialog-option:not(.picked) { opacity: 0.6; }
+/* Свой вариант: пункт вопроса и поле под ним (claude_dialog.js) */
+.claude-dialog-own .claude-dialog-label { color: #64748b; }
+.claude-dialog-own.picked .claude-dialog-label { color: #2c3e50; }
+.claude-dialog-own-input {
+    width: 100%;
+    box-sizing: border-box;
+    font: inherit;
+    padding: 9px 12px;
+    border: 1px solid #D97757;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #2c3e50;
+}
+.claude-dialog-own-input:focus { outline: 2px solid #fdf0ea; }
+.claude-dialog-own-input:disabled { border-color: #e2e8f0; color: #94a3b8; }
