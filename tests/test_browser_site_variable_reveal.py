@@ -217,7 +217,7 @@ class TestRevealRoundTrip:
         response = await qa.post('/api/browser/variable', json={
             'site_id': site_id, 'name': 'api_key', 'value': new_password, 'is_secret': True,
         })
-        assert response.status_code == 201, response.text
+        assert response.status_code == 200, response.text
         variable_id = response.json()['id']
 
         from mysql_.mysql_ import mysql_get_db_async
