@@ -5,6 +5,7 @@ Tests cover:
 - Executing the Qdrant sync cronjob (POST /cronjob)
 - Handling non-existent cronjob files
 - Restricting execution to allowed cronjob directories
+- Guarding the endpoint by the X-Forwarded-For chain (private hops pass, public or unparsable — 403)
 """
 import os
 import pytest
@@ -114,3 +115,73 @@ class TestCronjobFlow:
         payload = {"cronjob_path": "src/cronjob/fact/fact_qdrant_sync.py", "metadata": {}, "timeout": 5}
         response = await client.post("/cronjob", json=payload, headers={"X-Forwarded-For": "93.184.216.34"})
         assert response.status_code == 403
+
+    @pytest.mark.parametrize("forwarded_for", [
+        "10.0.0.5",
+        "10.0.0.5, 172.16.5.9, 192.168.10.20",
+        "192.168.10.20, 10.0.0.5",
+    ])
+    async def test_private_forwarded_for_chain_passes_guard(self, client: httpx.AsyncClient,
+                                                            forwarded_for: str):
+        """Цепочка только из частных адресов (`10.x`, `172.16.x`, `192.168.x`) — защита не мешает.
+
+        `net_private_request` смотрит не на приватность клиента, а чтобы в
+        `X-Forwarded-For` не было ни одного публичного хопа: цепочка из внутренних
+        прокси — docker-сеть, Caddy — норма, запрос идёт в обработчик.
+
+        ⚠ Файл берём заведомо несуществующий: 400 «не найден» — значит, ручка
+        дошла до проверки пути, то есть защита пропустила. С 403 до этого текста
+        дело бы не дошло.
+        """
+        response = await client.post("/cronjob", json={
+            "cronjob_path": "src/cronjob/fact/nonexistent_cronjob.py",
+            "metadata": {},
+            "timeout": 5,
+        }, headers={"X-Forwarded-For": forwarded_for})
+        assert response.status_code != 403, response.text
+        assert response.status_code == 400, response.text
+        assert "не найден" in response.json()["detail"]
+
+    @pytest.mark.parametrize("forwarded_for", [
+        "93.184.216.34, 10.0.0.5",
+        "10.0.0.5, 93.184.216.34, 192.168.10.20",
+        "192.168.10.20, 172.16.5.9, 8.8.8.8",
+    ])
+    async def test_mixed_forwarded_for_chain_is_forbidden(self, client: httpx.AsyncClient,
+                                                          forwarded_for: str):
+        """Хоть один публичный адрес в цепочке — 403, в какой бы позиции он ни стоял.
+
+        `net_private_request` требует `all(...)`: публичный хоп не прячется ни в
+        начале (клиент шёл снаружи), ни в середине или в конце цепочки прокси.
+        Ровно `172.16.x` — частная (`/12`), а `8.8.8.8` и `93.184.216.34` —
+        публичные; документальные сети (`192.0.2.x`, `203.0.113.x`) тут не годятся:
+        `ipaddress` считает их частными.
+        """
+        response = await client.post("/cronjob", json={
+            "cronjob_path": "src/cronjob/fact/nonexistent_cronjob.py",
+            "metadata": {},
+            "timeout": 5,
+        }, headers={"X-Forwarded-For": forwarded_for})
+        assert response.status_code == 403, response.text
+
+    @pytest.mark.parametrize("forwarded_for", [
+        "garbage",
+        "999.999.999.999",
+        "10.0.0.5, not-an-ip, 192.168.10.20",
+    ])
+    async def test_unparsable_forwarded_for_is_forbidden(self, client: httpx.AsyncClient,
+                                                         forwarded_for: str):
+        """Мусор вместо адреса в цепочке — 403: неразобранный хоп считается чужим.
+
+        Прокси, который пишет в `X-Forwarded-For` имя хоста вместо IP, не должен
+        открывать ручку: `net_private_address` на не-адрес отвечает False, и вся
+        цепочка считается внешней — закрытая по умолчанию, а не по умолчанию
+        открытая. Мусор и в середине цепочки между настоящими частными адресами
+        тоже отсекает: позиция не спасает.
+        """
+        response = await client.post("/cronjob", json={
+            "cronjob_path": "src/cronjob/fact/nonexistent_cronjob.py",
+            "metadata": {},
+            "timeout": 5,
+        }, headers={"X-Forwarded-For": forwarded_for})
+        assert response.status_code == 403, response.text
