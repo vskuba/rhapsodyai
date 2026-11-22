@@ -290,7 +290,7 @@ mysql_.execute → mysql_watch_note     (общий слой: счёт в пам
 # живая запись: ошибка из контейнера должна появиться в журнале
 docker exec uvicorn python3 -c "
 from logging_.logging_ import logging_init, logger_exception
-from src.journal.journal_handler import journal_install_here
+from dashboard.src.page.journal.journal_install import journal_install_here
 logging_init(); journal_install_here('cronjob')
 try: {}['нет']
 except Exception as e: logger_exception(f'проверка журнала: {e}')

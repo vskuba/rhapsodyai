@@ -28,7 +28,7 @@
 | `POST` | `/api/backup/restore/{name}` | Восстановить БД из бэкапа |
 | `DELETE` | `/api/backup/{name}` | Удалить файл |
 
-**Файл роутера:** `src/uvicorn/routers/backup/backup.py`
+**Файл роутера:** `dashboard/src/panel/panel_backup_api.py`
 
 ## Создание бэкапа
 
@@ -74,9 +74,9 @@ mysqldump --single-transaction --routines --triggers --default-character-set=utf
 
 | Путь | Роль |
 |------|------|
-| `src/uvicorn/routers/backup/backup.py` | API роутер |
+| `dashboard/src/panel/panel_backup_api.py` | API роутер |
 | `data/backups/backup_*.sql.gz` | Хранилище бэкапов |
-| `data/uvicorn/template/admin/backup.html` | UI страница |
+| `dashboard/template/admin/backup.html` | UI страница |
 | `docker/uvicorn/dockerfile` | `default-mysql-client` для mysqldump/mysql |
 
 ## Отличие от Seed

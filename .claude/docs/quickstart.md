@@ -217,7 +217,7 @@ QA_PASSWORD=...
 с пустым паролем, `/auth/login` отвечает **400**, и вся сьюита валится.
 Роль `qa` имеет полный набор прав — см. `auth.md`.
 
-Браузерные тесты (`tests/test_team_task_pages.py`) требуют Playwright с установленным
+Браузерные тесты (`tests_browser/test_team_task_pages.py`) требуют Playwright с установленным
 chromium: `.venv/bin/python3 -m playwright install chromium`.
 
 **Сюита убирает за собой по префиксам, до и после прогона.** Сессионные фикстуры

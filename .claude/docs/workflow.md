@@ -1622,7 +1622,7 @@ UI и БД тоже готовы: тип шага id=6 (сиды), виджет 
 
 Сбор пар стережёт `tests/test_workflow_subflow_maps.py` (живая функция через
 node, DOM подменён тремя методами). Что карта доезжает до переменных родителя —
-`tests_llm/dating_talk/test_outputs.py`.
+`tests_llm/testing_subflow_io/test_subflow_io.py`.
 
 Формат metadata шага `workflow_invoke` (id=6):
 ```json

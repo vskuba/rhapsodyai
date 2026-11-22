@@ -727,7 +727,7 @@ curl -s http://localhost:8011/api/team | python3 -m json.tool
 .venv/bin/python3 -m pytest tests/test_team_ping.py -v
 ```
 
-`tests/test_team_task_pages.py` — Playwright-проверки страниц `/admin/team` и `/admin/task`
+`tests_browser/test_team_task_pages.py` — Playwright-проверки страниц `/admin/team` и `/admin/task`
 (sync API, headless chromium). Логин — общая учётка `tests.constants.TEST_AUTH` через
 `/login` (`#username` / `#password`, редирект на `/`). Одна авторизованная вкладка на
 модуль. Проверяют: карточки и их поля (`.team-role`, `.status-indicator`,
@@ -739,7 +739,7 @@ API-запросы идут через `page.request` / `context.request` — о
 голый `requests` с одним `csrf_token` сессию не передаёт и получил бы 401.
 
 ```bash
-.venv/bin/python3 -m pytest tests/test_team_task_pages.py -v
+.venv/bin/python3 -m pytest tests_browser/test_team_task_pages.py -v
 ```
 
 `tests/test_team_dsh.py` — включатель ролей DeepSeek Harness (`dsh.md`). Сеть подменена
