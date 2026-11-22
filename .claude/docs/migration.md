@@ -120,7 +120,7 @@ SET FOREIGN_KEY_CHECKS = 1;
 
 `/admin/seed` — страница управления seed-файлами.
 
-### API эндпоинты (`src/uvicorn/routers/seed/seed.py`)
+### API эндпоинты (`dashboard/src/panel/panel_seed_api.py`)
 
 | Метод | URL | Действие |
 |-------|-----|----------|
@@ -204,7 +204,7 @@ yoyo не обновится, и при старте файл прогонитс
 
 - `POST /backup/create` → mysqldump (или Python-fallback) + gzip → `data/backups/backup_YYYY-MM-DD_HH-MM-SS.sql.gz`
 - Скачать / Восстановить / Удалить (Удалить скрыт, если бэкап один)
-- **Файл:** `src/uvicorn/routers/backup/backup.py`
+- **Файл:** `dashboard/src/panel/panel_backup_api.py`
 
 ## 5. Сброс БД для разработки
 

@@ -47,7 +47,7 @@
 | `GET` | `/api/seed/download/{filename}` | Скачать .sql файл |
 | `DELETE` | `/seed/{filename}` | Удалить файл |
 
-**Файл роутера:** `src/uvicorn/routers/seed/seed.py`
+**Файл роутера:** `dashboard/src/panel/panel_seed_api.py`
 
 ## Генерация seed
 
@@ -108,7 +108,7 @@ SQL парсится `mysql_seed_split()` **общего слоя** — тем �
 
 | Путь | Роль |
 |------|------|
-| `src/uvicorn/routers/seed/seed.py` | API роутер |
+| `dashboard/src/panel/panel_seed_api.py` | API роутер |
 | `py_modules/mysql_/mysql_seed.py` | Автоприменение при старте |
 | `data/seeds/seed_*.sql` | Хранилище seed-файлов |
-| `data/uvicorn/template/admin/seed.html` | UI страница |
+| `dashboard/template/admin/seed.html` | UI страница |
