@@ -1,5 +1,5 @@
 import asyncio
-from logging_.logging_ import logger_info, logging_init
+from logging_.logging_ import logger_info, logger_exception, logging_init
 from dashboard.src.page.journal.journal_install import journal_install_here
 from dashboard.src.page.journal.journal_mysql import (journal_mysql_watch_start,
                                       journal_mysql_watch_stop)
@@ -21,7 +21,9 @@ async def main():
         logger_info(result)
         print(result)
     except Exception as e:
-        logger_info(f"Критическая ошибка в процессе синхронизации: {e}")
+        # Критический сбой кронджоба — уровнем ERROR, иначе отказ процесса
+        # теряется вместе с ним: журнал процесса короткого жить не будет.
+        logger_exception(f"Критическая ошибка в процессе синхронизации: {e}", exc=e)
         print(f"Критическая ошибка в процессе синхронизации: {e}")
     finally:
         # Счёт запросов за этот заход — в подвкладку «MySQL»: процесс короткий,
@@ -34,7 +36,7 @@ async def main():
                 logger_info("Соединение с Qdrant закрыто.")
                 print("Соединение с Qdrant закрыто.")
         except Exception as close_err:
-            logger_info(f"Ошибка при закрытии соединения с Qdrant: {close_err}")
+            logger_exception(f"Ошибка при закрытии соединения с Qdrant: {close_err}", exc=close_err)
             print(f"Ошибка при закрытии соединения с Qdrant: {close_err}")
 
 

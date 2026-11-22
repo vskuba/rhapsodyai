@@ -8,7 +8,7 @@ import traceback
 from pathlib import Path
 from typing import Any, get_args, get_origin, Union
 
-from logging_.logging_ import logger_info
+from logging_.logging_ import logger_info, logger_exception
 from src.mysql_.repository.tool_group_repository import ToolGroupRepository
 from src.mysql_.repository.tool_repository import ToolRepository
 
@@ -162,11 +162,9 @@ async def ai_tool_sync(force: bool = False) -> int:
                         })
 
         except Exception as e:
-            backtrace = traceback.format_exc()
-            logger_info(
-                f"❌ Возникла ошибка: {e}."
-                f"Полный стек вызовов:\n{backtrace}"
-            )
+            # Сбой сканирования папки инструментов — в журнал ошибок: без него
+            # реестр tools молча останется неполным.
+            logger_exception(f"❌ Ошибка сканирования инструментов: {e}", exc=e)
 
     # 6. Запись в базу данных
     if all_tools_data:
@@ -211,11 +209,9 @@ async def ai_tool_sync(force: bool = False) -> int:
             await tool_repo.add_many(final_batch)
 
         except Exception as e:
-            backtrace = traceback.format_exc()
-            logger_info(
-                f"❌ Возникла ошибка: {e}."
-                f"Полный стек вызовов:\n{backtrace}"
-            )
+            # Таблица `tool` уже очищена, а вставить не удалось — она осталась
+            # пустой. Такой сбой обязан светиться в журнале ошибок.
+            logger_exception(f"❌ Ошибка записи таблицы инструментов: {e}", exc=e)
             return 0
 
     return len(all_tools_data)

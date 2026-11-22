@@ -1,6 +1,4 @@
-import traceback
-
-from logging_.logging_ import logger_info
+from logging_.logging_ import logger_exception
 from mysql_.mysql_ import mysql_get_db_async
 from qdrant_.qdrant_ import qdrant_save
 
@@ -78,13 +76,11 @@ async def ai_fact_qdrant_sync() -> str:
                     elif hasattr(db, 'connection') and db.connection:
                         await db.connection.rollback()
                 except Exception as rollback_err:
-                    logger_info(f"⚠️ Ошибка отката транзакции: {rollback_err}")
+                    # Не откатился коммит — это сбой, а не штатная деградация.
+                    logger_exception(f"⚠️ Ошибка отката транзакции: {rollback_err}", exc=rollback_err)
 
-                backtrace = traceback.format_exc()
-                logger_info(
-                    f"❌ Сбой при синхронизации фактов для коллекции '{c_name}': {e}.\n"
-                    f"Полный стек вызовов:\n{backtrace}"
-                )
+                logger_exception(
+                    f"❌ Сбой при синхронизации фактов для коллекции '{c_name}': {e}", exc=e)
                 errors.append((c_name, str(e)))
 
     if errors:

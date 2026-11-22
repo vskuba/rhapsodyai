@@ -1,7 +1,6 @@
 import asyncio
 import os
 import tempfile
-import traceback
 import uuid
 
 from fastapi import APIRouter, Request, HTTPException, Depends
@@ -19,7 +18,7 @@ from setting_.setting_ import setting_get
 from src.tool.setting.setting_ import setting_value_get
 from i18n_.i18n_ import i18n_text_resolve, i18n_languages_parse
 from json_.json_ import json_from_string
-from logging_.logging_ import logger_info
+from logging_.logging_ import logger_info, logger_exception
 from mysql_.mysql_ import mysql_get_db_async
 from src.ai.ai_workflow import ai_workflow_variables_global_get
 from src.ai.ai_workflow_trace import ai_workflow_trace_run_contract
@@ -360,11 +359,9 @@ async def chat_ask_ai(
                       "detail": f"Превышено время ожидания ответа от ИИ ({timeout} сек.)"})
         raise HTTPException(status_code=504, detail=f"Превышено время ожидания ответа от ИИ ({timeout} сек.)")
     except Exception as e:
-        backtrace = traceback.format_exc()
-        logger_info(
-            f"❌ Ошибка при ответе web чата: {e}."
-            f"Полный стек вызовов:\n{backtrace}"
-        )
+        # Сбой отдаётся зовущему как 500 — но он обязан дойти и до журнала
+        # ошибок (/admin/journal): уровнем INFO все 500-ки чата проходили мимо.
+        logger_exception(f"❌ Ошибка при ответе web чата: {e}", exc=e)
         await ai_workflow_trace_run_contract(
             framework_model.trace_run_id,
             response={"status": 500, "detail": str(e)})

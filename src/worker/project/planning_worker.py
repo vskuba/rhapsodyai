@@ -29,7 +29,7 @@ supplements) прогоняет пул `rq worker-pool` из контейнер�
 """
 import asyncio
 
-from logging_.logging_ import logger_info, logging_init
+from logging_.logging_ import logger_info, logger_exception, logging_init
 from dashboard.src.page.journal.journal_install import journal_install_here
 from dashboard.src.page.journal.journal_mysql import (journal_mysql_watch_start,
                                       journal_mysql_watch_stop)
@@ -232,7 +232,8 @@ async def _run_project_chain(project_id: int) -> str:
         return 'complete'
 
     except Exception as e:
-        logger_info(f'planning_worker: project {project_id} — необработанная ошибка: {e}')
+        # Необработанная ошибка всего прогона — в журнал ошибок, а не в INFO.
+        logger_exception(f'planning_worker: project {project_id} — необработанная ошибка: {e}', exc=e)
         return f'error: {e}'
 
 
@@ -253,7 +254,7 @@ async def _run_supplements_sequential(project_id: int) -> None:
         try:
             await _run_supplement(project_id, stype)
         except Exception as e:
-            logger_info(f'planning_worker: project {project_id} [supplement_{stype}] — error: {e}')
+            logger_exception(f'planning_worker: project {project_id} [supplement_{stype}] — error: {e}', exc=e)
 
 
 async def _run_score(project_id: int) -> None:

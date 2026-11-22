@@ -138,7 +138,7 @@ async def _task_bug_insert(project_id: int | None, title: str, description: str,
     Returns:
         ID созданной задачи или None.
     """
-    from logging_.logging_ import logger_info
+    from logging_.logging_ import logger_info, logger_exception
     from mysql_.mysql_ import mysql_get_db_async
 
     try:
@@ -158,5 +158,7 @@ async def _task_bug_insert(project_id: int | None, title: str, description: str,
             logger_info(f'[bug_task] created task#{task_id} from trace error (project {project_id})')
             return task_id
     except Exception as e:
-        logger_info(f'[bug_task] INSERT failed: {e}')
+        # Баг-задача не создана — ошибка, ради которой всё затевалось, теряется
+        # вторично; сбой обязан дойти до журнала ошибок.
+        logger_exception(f'[bug_task] INSERT failed: {e}', exc=e)
         return None

@@ -26,7 +26,7 @@ import os
 import re
 import time
 
-from logging_.logging_ import logger_info
+from logging_.logging_ import logger_info, logger_exception
 from mysql_.mysql_ import mysql_get_db_async
 from sql_.sql_split import sql_split_statements
 
@@ -272,7 +272,9 @@ async def _log_write(name: str, database: str, status: str, statements: int, row
                  str(error or '')[:2000], sha1, str(by or '')[:64]))
             await db.connection.commit()
     except Exception as e:
-        logger_info(f'migration_file: журнал не записан для {name}: {type(e).__name__}: {e}')
+        # Миграция уже применилась, а строки в истории нет — сбой записи
+        # обязан светиться в журнале ошибок, иначе история врёт молча.
+        logger_exception(f'migration_file: журнал не записан для {name}', exc=e)
 
 
 def _statements_ddl(statements: list[str]) -> bool:

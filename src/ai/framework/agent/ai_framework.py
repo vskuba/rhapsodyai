@@ -2,7 +2,6 @@ import asyncio
 import inspect
 import queue
 import time
-import traceback
 
 from pydantic_ai import Agent, AgentRunResult, ModelSettings
 from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior
@@ -12,7 +11,7 @@ from src.ai.ai_session import ai_session_message_add
 from ai.ai_think import ai_think_strip
 from ai.framework.ai_framework import AbstractAiFramework, AiFrameworkResult, AgentRateLimitError, LlmProviderError
 from src.ai.framework.agent.ai_framework_model import AiFrameworkAgentModel
-from logging_.logging_ import logger_info
+from logging_.logging_ import logger_info, logger_exception
 from queue_.queue_ import queue_get
 
 
@@ -53,11 +52,9 @@ class AiFrameworkAgent(AbstractAiFramework):
             except asyncio.TimeoutError:
                 raise Exception('LLM request timed out after 180 seconds')
         except Exception as e:
-            backtrace = traceback.format_exc()
-            logger_info(
-                f"❌ Ошибка агента {framework_model.name}: {e}."
-                f"Полный стек вызовов:\n{backtrace}"
-            )
+            # Сбой вызова идёт наверх (там его ловит цикл и роутер), но в
+            # журнал ошибок он должен попасть отсюда: выше его могли и проглотить.
+            logger_exception(f"❌ Ошибка агента {framework_model.name}: {e}", exc=e)
             raise e
 
     async def engine_result_handle(
@@ -144,12 +141,9 @@ class AiFrameworkAgent(AbstractAiFramework):
                 return
 
             except Exception as e:
-
-                backtrace = traceback.format_exc()
-                logger_info(
-                    f"❌ Сбой в цикле агента: {e}."
-                    f"Полный стек вызовов:\n{backtrace}"
-                )
+                # Сбой цикла агента — в журнал ошибок: раньше стек писался
+                # уровнем INFO и до «Журнала» не доходил.
+                logger_exception(f"❌ Сбой в цикле агента: {e}", exc=e)
 
                 error_text = 'Произошла ошибка: %s' % e
                 if framework_model.is_gui_mode:

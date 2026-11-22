@@ -24,7 +24,7 @@ import asyncio
 from rq import Worker
 from rq.job import Job
 
-from logging_.logging_ import logger_info, logging_init
+from logging_.logging_ import logger_info, logger_exception, logging_init
 from dashboard.src.page.journal.journal_install import journal_install_here
 from dashboard.src.page.journal.journal_mysql import (journal_mysql_watch_start,
                                       journal_mysql_watch_stop)
@@ -121,7 +121,9 @@ def task_worker_live_targets() -> dict[str, set[int]] | None:
         jobs += [job for job in _jobs_fetch(queue, started)
                  if not job.worker_name or job.worker_name in alive]
     except Exception as e:
-        logger_info(f'[task] очередь не опрошена, блокировки только по таймауту: {e}')
+        # Сбой обхода очереди — в журнал ошибок: без него блокировки держатся
+        # только по таймауту, а журнал молчит.
+        logger_exception(f'[task] очередь не опрошена, блокировки только по таймауту: {e}', exc=e)
         return None
 
     for job in jobs:
