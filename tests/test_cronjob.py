@@ -108,3 +108,9 @@ class TestCronjobFlow:
         })
         assert response.status_code == 400, response.text
         assert "не найден" in response.json()["detail"]
+
+    async def test_public_forwarded_for_is_forbidden(self, client: httpx.AsyncClient):
+        """Запрос, прошедший через прокси с публичного адреса, ручка отвергает сама (вторая линия за Caddy)."""
+        payload = {"cronjob_path": "src/cronjob/fact/fact_qdrant_sync.py", "metadata": {}, "timeout": 5}
+        response = await client.post("/cronjob", json=payload, headers={"X-Forwarded-For": "93.184.216.34"})
+        assert response.status_code == 403
