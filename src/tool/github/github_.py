@@ -4,6 +4,8 @@ from typing import List
 from github import BadCredentialsException, Auth, Github, GithubException
 from github.Commit import Commit
 
+from logging_.logging_ import logger_info, logger_exception
+
 github_: Github | None = None
 
 async def github_repository_list(org: str | None = None) -> List[str]:
@@ -47,7 +49,8 @@ async def github_search_branch_with_last_commit(repo_full_name: str) -> str | No
         # Если событий пуша нет, возвращаем дефолтную ветку
         return repo.default_branch
     except Exception as e:
-        print(f"Ошибка: {e}")
+        # print миновал бы logging — сбой не попал бы ни в какой журнал.
+        logger_exception(f"github: ветка с последним коммитом не найдена: {e}", exc=e)
         return None
 
 async def github_search_repo_by_last_commit() -> str | None:
@@ -170,14 +173,15 @@ def _github_auth() -> Github:
         # Проверка "на вшивость": пробуем получить логин
         # Если токен битый, вылетит ошибка здесь
         user_login = github_.get_user().login
-        print(f"✅ Робот авторизован как: {user_login}")
+        logger_info(f"✅ Робот авторизован как: {user_login}")
 
         return github_
 
     except BadCredentialsException:
-        print("❌ Ошибка: Неверный GitHub токен!")
+        # print миновал бы logging: сбой не попал бы в журнал ошибок.
+        logger_exception("❌ Ошибка: Неверный GitHub токен!")
         raise
     except Exception as e:
-        print(f"❌ Робот не смог подключиться: {e}")
+        logger_exception(f"❌ Робот не смог подключиться: {e}", exc=e)
         raise
 

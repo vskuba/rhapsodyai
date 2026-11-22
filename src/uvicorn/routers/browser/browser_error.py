@@ -20,7 +20,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
-from logging_.logging_ import logger_info
+from logging_.logging_ import logger_exception
 from mysql_.mysql_ import mysql_get_db_async
 
 from src.auth.auth import AuthChecker
@@ -220,7 +220,9 @@ async def browser_error_write(source: str, message: str, session_id: str = '',
                  browser_error_tags(message, source)))
             await db.connection.commit()
     except Exception as e:
-        logger_info(f'[browser] ошибка не записалась в журнал: {e}')
+        # Сбой у самого регистратора: журнал /admin/browser пустеет молча,
+        # поэтому строка обязана уйти уровнем ERROR в общий журнал.
+        logger_exception(f'[browser] ошибка не записалась в журнал: {e}', exc=e)
 
 
 def _site_id_of(site_id, context: dict):
